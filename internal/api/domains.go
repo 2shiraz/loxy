@@ -15,6 +15,7 @@ import (
 	"github.com/2shiraz/loxy/internal/dns"
 	"github.com/2shiraz/loxy/internal/events"
 	"github.com/2shiraz/loxy/internal/model"
+	"github.com/2shiraz/loxy/internal/reconcile"
 	"github.com/2shiraz/loxy/internal/state"
 	"github.com/2shiraz/loxy/internal/store/db"
 )
@@ -258,17 +259,8 @@ func (s *Server) respondDomain(w http.ResponseWriter, status int, id int64) {
 
 // domainRefs validates frontend / provider references; returns the detected zone.
 func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors) string {
-	if in.FrontendId != nil && *in.FrontendId != 0 {
-		snap := s.Snap.Get()
-		if f := snap.Frontend(*in.FrontendId); f == nil {
-			fe.Add("frontend_id", "unknown frontend")
-		} else if !needsACME(snap, f.ID, f.CertIDs) {
-			// The frontend starts answering HTTP-01 challenges on :80 (§8.9): that listener
-			// must not collide with another frontend.
-			if msg := listenerCollision(snap, f, true); msg != "" {
-				fe.Add("frontend_id", "HTTP-01 challenges need :80 on this frontend's addresses: "+msg)
-			}
-		}
+	if in.FrontendId != nil && *in.FrontendId != 0 && s.Snap.Get().Frontend(*in.FrontendId) == nil {
+		fe.Add("frontend_id", "unknown frontend")
 	}
 	zone := ""
 	if in.DnsProviderId != nil && *in.DnsProviderId != 0 {
@@ -315,12 +307,18 @@ func (s *Server) CreateDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var row db.Domain
-	if err := s.mutate(r, "domain.create", "domain", func() int64 { return row.ID }, in, func(q *db.Queries) error {
-		var err error
-		row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, FrontendID: i64(in.FrontendId), DnsProviderID: i64(in.DnsProviderId),
-			Zone: zone, AutoRecords: b2i(in.AutoRecords != nil && *in.AutoRecords), CreatedAt: nowMs(), UpdatedAt: nowMs()})
-		return err
-	}); err != nil {
+	s.listenMu.Lock()
+	err := s.acmeCollision(in.FrontendId)
+	if err == nil {
+		err = s.mutate(r, "domain.create", "domain", func() int64 { return row.ID }, in, func(q *db.Queries) error {
+			var err error
+			row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, FrontendID: i64(in.FrontendId), DnsProviderID: i64(in.DnsProviderId),
+				Zone: zone, AutoRecords: b2i(in.AutoRecords != nil && *in.AutoRecords), CreatedAt: nowMs(), UpdatedAt: nowMs()})
+			return err
+		})
+	}
+	s.listenMu.Unlock()
+	if err != nil {
 		fail(w, err)
 		return
 	}
@@ -356,16 +354,23 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		fail(w, errInput(fe))
 		return
 	}
+	s.listenMu.Lock()
+	err := s.acmeCollision(merged.FrontendId)
+	if err == nil {
+		err = s.mutate(r, "domain.update", "domain", func() int64 { return id }, in, func(q *db.Queries) error {
+			return q.UpdateDomain(r.Context(), db.UpdateDomainParams{FrontendID: i64(merged.FrontendId), DnsProviderID: i64(merged.DnsProviderId),
+				Zone: zone, AutoRecords: b2i(merged.AutoRecords != nil && *merged.AutoRecords), UpdatedAt: nowMs(), ID: id})
+		})
+	}
+	s.listenMu.Unlock()
+	if err != nil {
+		fail(w, err)
+		return
+	}
+	// d is the pre-update copy: it still lists the records Loxy created.
 	turningOff := d.AutoRecords != 0 && (merged.AutoRecords == nil || !*merged.AutoRecords)
 	if turningOff || (merged.FrontendId == nil || *merged.FrontendId == 0) {
 		s.removeManagedRecords(r.Context(), d)
-	}
-	if err := s.mutate(r, "domain.update", "domain", func() int64 { return id }, in, func(q *db.Queries) error {
-		return q.UpdateDomain(r.Context(), db.UpdateDomainParams{FrontendID: i64(merged.FrontendId), DnsProviderID: i64(merged.DnsProviderId),
-			Zone: zone, AutoRecords: b2i(merged.AutoRecords != nil && *merged.AutoRecords), UpdatedAt: nowMs(), ID: id})
-	}); err != nil {
-		fail(w, err)
-		return
 	}
 	s.SyncDomain(r.Context(), id)
 	s.VerifyDomainNow(r.Context(), id)
@@ -412,10 +417,7 @@ func (s *Server) VerifyDomainNow(ctx context.Context, id int64) {
 	_ = s.Store.Q.SetDomainStatus(ctx, db.SetDomainStatusParams{Status: res.Status, StatusDetail: sql.NullString{String: res.Detail, Valid: res.Detail != ""},
 		Observed: string(obs), CheckedAt: sql.NullInt64{Int64: nowMs(), Valid: true}, ID: id})
 	if res.Status != d.Status {
-		var feID *int64
-		if d.FrontendID.Valid {
-			feID = events.I64(d.FrontendID.Int64)
-		}
+		feID := domainFE(d)
 		sev := "info"
 		if res.Status != "ok" {
 			sev = "warning"
@@ -490,7 +492,7 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	}
 	existing, err := dns.ListRecords(ctx, p, zone)
 	if err != nil {
-		s.Hub.Publish(events.Event{Kind: "domain.sync.failed", Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+		s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 		return
 	}
 	wantKeys := map[string]bool{}
@@ -509,7 +511,7 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 			continue
 		}
 		if !mset[k] {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", Severity: "warning",
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning",
 				Message: fmt.Sprintf("%s: existing %s record %s was not created by Loxy; not overwriting", d.Fqdn, e.Type, e.Value)})
 			return
 		}
@@ -529,13 +531,13 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	}
 	if len(toDelete) > 0 {
 		if _, err := p.DeleteRecords(ctx, zone, toDelete); err != nil {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 			return
 		}
 	}
 	if len(toAdd) > 0 {
 		if _, err := p.AppendRecords(ctx, zone, toAdd); err != nil {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 			return
 		}
 	}
@@ -614,4 +616,29 @@ func (s *Server) domainAddresses(d *state.Domain) (v4, v6 []string) {
 		return nil, nil
 	}
 	return s.frontendAddresses(f)
+}
+
+// domainFE is the frontend a domain's events belong to (nil when unattached).
+func domainFE(d *state.Domain) *int64 {
+	if !d.FrontendID.Valid {
+		return nil
+	}
+	return events.I64(d.FrontendID.Int64)
+}
+
+// acmeCollision checks, under listenMu, that attaching a domain to frontend feID (which then
+// answers HTTP-01 challenges on :80, §8.9) does not collide with another frontend's listeners.
+func (s *Server) acmeCollision(feID *int64) error {
+	if feID == nil || *feID == 0 {
+		return nil
+	}
+	snap := s.Snap.Get()
+	f := snap.Frontend(*feID)
+	if f == nil || reconcile.NeedsACME(snap, f.ID, f.CertIDs) {
+		return nil
+	}
+	if msg := listenerCollision(snap, f, true); msg != "" {
+		return errField("frontend_id", "HTTP-01 challenges need :80 on this frontend's addresses: "+msg)
+	}
+	return nil
 }

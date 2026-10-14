@@ -195,9 +195,6 @@ func New(cfg *config.Config, version string) (*App, error) {
 		a.Issuer.Kick()
 	}
 	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(e events.Event) map[string]string {
-		if e.BackendID == nil && e.FrontendID == nil {
-			return nil // node-wide event
-		}
 		snap := a.Snap.Get()
 		out := map[string]string{}
 		if e.BackendID != nil {

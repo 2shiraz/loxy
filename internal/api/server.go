@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/2shiraz/loxy/internal/api/gen"
@@ -34,6 +35,9 @@ import (
 )
 
 type Server struct {
+	// listenMu serializes changes that add listeners (frontend create/update/enable, domain
+	// attach) so a collision check and its commit cannot interleave with another request.
+	listenMu sync.Mutex
 	Cfg      *config.Config
 	Store    *store.Store
 	Box      *secrets.Box

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/netip"
 	"path"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -147,7 +146,11 @@ func bindAddrs(in *Input, addr string, port int64) []string {
 func bindAddr(addr string, port int64) string {
 	a, err := netip.ParseAddr(addr)
 	if err == nil && a.Is6() {
-		return "ipv6@" + a.String() + ":" + strconv.FormatInt(port, 10)
+		line := "ipv6@" + a.String() + ":" + strconv.FormatInt(port, 10)
+		if a.IsUnspecified() {
+			line += " v6only" // "::" means IPv6 only; "*" covers both families
+		}
+		return line
 	}
 	return addr + ":" + strconv.FormatInt(port, 10)
 }
@@ -305,8 +308,9 @@ func Render(in Input) (*Output, error) {
 	}
 	bes := append([]*state.Backend(nil), in.Backends...)
 	sort.Slice(bes, func(i, j int) bool { return bes[i].ID < bes[j].ID })
+	tlsOnly := tlsOnlyBackends(in.Frontends)
 	for _, b := range bes {
-		sec, err := renderBackend(&in, b)
+		sec, err := renderBackend(&in, b, tlsOnly)
 		if err != nil {
 			return nil, fmt.Errorf("backend %d: %w", b.ID, err)
 		}
@@ -512,23 +516,25 @@ func Ports80(f *state.Frontend, acme bool) []string {
 	return addrs(f)
 }
 
-// onlyTLS reports whether backend id is used, and only by frontends that terminate TLS
-// (its sticky cookie can then be marked secure, §7.5).
-func onlyTLS(in *Input, id int64) bool {
-	used := false
-	for _, f := range in.Frontends {
-		if f.Enabled == 0 || !slices.Contains(f.BackendIDs(), id) {
+// tlsOnlyBackends returns the backends that are used, and only by enabled frontends that
+// terminate TLS: their sticky cookie can be marked secure (§7.5).
+func tlsOnlyBackends(fes []*state.Frontend) map[int64]bool {
+	out := map[int64]bool{}
+	for _, f := range fes {
+		if f.Enabled == 0 {
 			continue
 		}
-		if f.Mode != "http" || f.Tls == 0 {
-			return false
+		tls := f.Mode == "http" && f.Tls != 0
+		for _, id := range f.BackendIDs() {
+			if v, seen := out[id]; !seen || v {
+				out[id] = tls
+			}
 		}
-		used = true
 	}
-	return used
+	return out
 }
 
-func renderBackend(in *Input, b *state.Backend) (section, error) {
+func renderBackend(in *Input, b *state.Backend, tlsOnly map[int64]bool) (section, error) {
 	mode := "loxy_http"
 	if b.Mode == "tcp" {
 		mode = "loxy_tcp"
@@ -543,7 +549,7 @@ func renderBackend(in *Input, b *state.Backend) (section, error) {
 			return be, fmt.Errorf("invalid cookie name")
 		}
 		secure := ""
-		if onlyTLS(in, b.ID) {
+		if tlsOnly[b.ID] {
 			secure = " secure"
 		}
 		be.Lines = append(be.Lines, fmt.Sprintf("cookie %s insert indirect nocache httponly%s maxlife %ds", b.StickyCookieName, secure, b.StickyCookieLifetimeS))

@@ -2,6 +2,7 @@ package render
 
 import (
 	"context"
+	"database/sql"
 	"flag"
 	"os"
 	"path/filepath"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/2shiraz/loxy/internal/certs"
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
+	"github.com/2shiraz/loxy/internal/state"
+	"github.com/2shiraz/loxy/internal/store/db"
 	"github.com/2shiraz/loxy/internal/testutil"
 )
 
@@ -85,5 +88,17 @@ func WriteTree(t testing.TB, dir string, out *Output) {
 		if err := os.WriteFile(fp, b, 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestSecureCookieOnlyWhenAllFrontendsTLS(t *testing.T) {
+	be := func(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
+	tls := &state.Frontend{Frontend: db.Frontend{ID: 1, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(5)}}
+	plain := &state.Frontend{Frontend: db.Frontend{ID: 2, Mode: "http", Enabled: 1, DefaultBackendID: be(6)}, Routes: []state.Route{{BackendID: 5}}}
+	off := &state.Frontend{Frontend: db.Frontend{ID: 3, Mode: "http", Enabled: 0, DefaultBackendID: be(7)}}
+	tlsOnly := &state.Frontend{Frontend: db.Frontend{ID: 4, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(7)}}
+	got := tlsOnlyBackends([]*state.Frontend{tls, plain, off, tlsOnly})
+	if got[5] || got[6] || !got[7] {
+		t.Fatalf("tlsOnly = %v (5: shared with plain HTTP, 6: plain only, 7: TLS + disabled plain)", got)
 	}
 }

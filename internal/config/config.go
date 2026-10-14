@@ -86,14 +86,18 @@ func Load() (*Config, error) {
 	}
 	c.ACMEInsecure, _ = strconv.ParseBool(env("LOXY_ACME_INSECURE", "false"))
 	c.NoHAProxy, _ = strconv.ParseBool(env("LOXY_NO_HAPROXY", "false"))
-	switch v := env("LOXY_IPV6", "auto"); v {
+	switch v := strings.ToLower(env("LOXY_IPV6", "auto")); v {
 	case "auto":
 		c.IPv6 = ipv6Available()
-	case "on", "true", "1":
+	case "on":
 		c.IPv6 = true
-	case "off", "false", "0":
+	case "off":
 	default:
-		return nil, fmt.Errorf("LOXY_IPV6: want auto, on or off, got %q", v)
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("LOXY_IPV6: want auto, on, off or a boolean, got %q", v)
+		}
+		c.IPv6 = b
 	}
 	for _, s := range strings.Split(env("LOXY_PANEL_ALLOW", ""), ",") {
 		if s = strings.TrimSpace(s); s != "" {

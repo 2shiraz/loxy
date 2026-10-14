@@ -43,9 +43,6 @@ func Open(file string) (*Store, error) {
 func (s *Store) Close() error { return s.DB.Close() }
 
 func (s *Store) migrate(ctx context.Context) error {
-	if _, err := s.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
-		return err
-	}
 	// Pre-release databases used a load-balancer schema that was rewritten in place (ADR 0005);
 	// refuse them clearly instead of failing later on missing tables.
 	var legacy int
@@ -54,6 +51,9 @@ func (s *Store) migrate(ctx context.Context) error {
 	}
 	if legacy > 0 {
 		return errors.New("this database uses the pre-release load-balancer schema, which this version cannot read (see docs/adr/0005-product-direction.md); back it up and start with an empty data directory")
+	}
+	if _, err := s.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)`); err != nil {
+		return err
 	}
 	entries, err := migrations.ReadDir("migrations")
 	if err != nil {

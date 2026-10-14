@@ -89,22 +89,6 @@ func listeners(f *state.Frontend, acme bool) []state.Bind {
 	return out
 }
 
-// needsACME reports whether frontend id (0 = new) answers HTTP-01 challenges on :80 with
-// the given certificates: it has a domain or a managed http01 certificate (cf. reconcile.ACMEFrontends).
-func needsACME(snap *state.Snapshot, id int64, certs []int64) bool {
-	for _, d := range snap.Domains {
-		if id != 0 && d.FrontendID.Valid && d.FrontendID.Int64 == id {
-			return true
-		}
-	}
-	for _, cid := range certs {
-		if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
-			return true
-		}
-	}
-	return false
-}
-
 // listenerCollision describes the first overlap between a frontend's listeners (explicit and
 // implicit :80) and those of another enabled frontend, or returns ""; probe.ID is skipped
 // (0 for a new frontend).
@@ -126,12 +110,25 @@ func listenerCollision(snap *state.Snapshot, probe *state.Frontend, acme bool) s
 	return ""
 }
 
+// bindsCollide reports whether two listeners overlap: same port and either the same address
+// or a wildcard covering the other ("*" covers both families, 0.0.0.0 all IPv4, :: all IPv6).
 func bindsCollide(a, b state.Bind) bool {
 	if a.Port != b.Port {
 		return false
 	}
-	wa, wb := a.Address == "*" || a.Address == "", b.Address == "*" || b.Address == ""
-	return wa || wb || a.Address == b.Address
+	if a.Address == "*" || a.Address == "" || b.Address == "*" || b.Address == "" {
+		return true
+	}
+	pa, ea := netip.ParseAddr(a.Address)
+	pb, eb := netip.ParseAddr(b.Address)
+	if ea != nil || eb != nil {
+		return a.Address == b.Address
+	}
+	pa, pb = pa.Unmap(), pb.Unmap()
+	if pa.Is4() != pb.Is4() {
+		return false
+	}
+	return pa == pb || pa.IsUnspecified() || pb.IsUnspecified()
 }
 
 // buildFrontend validates a frontend input (§8.3).
@@ -319,7 +316,7 @@ func (s *Server) buildFrontend(existing *state.Frontend, in gen.FrontendInput) (
 		selfID = existing.ID
 	}
 	probe.ID = selfID
-	if msg := listenerCollision(snap, probe, needsACME(snap, selfID, plan.certs)); msg != "" {
+	if msg := listenerCollision(snap, probe, reconcile.NeedsACME(snap, selfID, plan.certs)); msg != "" {
 		return nil, errField("binds", msg)
 	}
 	bj, _ := json.Marshal(plan.binds)
@@ -351,6 +348,8 @@ func writeFrontendChildren(r *http.Request, q *db.Queries, id int64, plan *front
 }
 
 func (s *Server) CreateFrontend(w http.ResponseWriter, r *http.Request) {
+	s.listenMu.Lock()
+	defer s.listenMu.Unlock()
 	var in gen.FrontendInput
 	if err := decode(r, &in); err != nil {
 		fail(w, err)
@@ -377,6 +376,8 @@ func (s *Server) CreateFrontend(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) UpdateFrontend(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	s.listenMu.Lock()
+	defer s.listenMu.Unlock()
 	f, err := s.frontend(id)
 	if err != nil {
 		fail(w, err)
@@ -413,6 +414,8 @@ func (s *Server) UpdateFrontend(w http.ResponseWriter, r *http.Request, id gen.I
 }
 
 func (s *Server) PatchFrontend(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	s.listenMu.Lock()
+	defer s.listenMu.Unlock()
 	f, err := s.frontend(id)
 	if err != nil {
 		fail(w, err)
@@ -463,7 +466,7 @@ func (s *Server) PatchFrontend(w http.ResponseWriter, r *http.Request, id gen.Id
 		probe := *f
 		probe.Enabled = 1
 		snap := s.Snap.Get()
-		if msg := listenerCollision(snap, &probe, needsACME(snap, f.ID, f.CertIDs)); msg != "" {
+		if msg := listenerCollision(snap, &probe, reconcile.NeedsACME(snap, f.ID, f.CertIDs)); msg != "" {
 			fail(w, errField("enabled", msg))
 			return
 		}

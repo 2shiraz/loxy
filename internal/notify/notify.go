@@ -103,6 +103,17 @@ func (n *Notifier) Run(ctx context.Context) {
 }
 
 // Matches reports whether a rule applies to an event (pure, tested).
+// NodeWide reports whether events of this kind concern the whole node rather than one
+// frontend or backend (alert label filters do not narrow them).
+func NodeWide(kind string) bool {
+	for _, p := range []string{"apply.", "config.", "backup.", "node.", "notification."} {
+		if strings.HasPrefix(kind, p) {
+			return true
+		}
+	}
+	return false
+}
+
 func Matches(r db.AlertRule, e events.Event, objLabels map[string]string) bool {
 	if sevRank[e.Severity] < sevRank[r.MinSeverity] {
 		return false
@@ -120,9 +131,9 @@ func Matches(r db.AlertRule, e events.Event, objLabels map[string]string) bool {
 			return false
 		}
 	}
-	// The label filter scopes events about a frontend/backend. Node-wide events (nil labels,
-	// e.g. apply.failed, backup.failed) concern every object, so they always pass it.
-	if r.LabelFilter != "" && objLabels != nil {
+	// The label filter scopes events about a frontend/backend. Node-wide events (apply, config,
+	// backup, node) concern every object, so they always pass it.
+	if r.LabelFilter != "" && !NodeWide(e.Kind) {
 		sel, err := model.ParseSelector(r.LabelFilter)
 		if err != nil || !sel.Matches(objLabels) {
 			return false

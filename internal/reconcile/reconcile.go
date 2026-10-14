@@ -125,19 +125,29 @@ func (r *Reconciler) Run(ctx context.Context) {
 // (managed HTTP-01 certificates attached, or domains attached).
 func ACMEFrontends(snap *state.Snapshot) map[int64]bool {
 	acme := map[int64]bool{}
-	for _, d := range snap.Domains {
-		if d.FrontendID.Valid {
-			acme[d.FrontendID.Int64] = true
-		}
-	}
 	for _, f := range snap.Frontends {
-		for _, cid := range f.CertIDs {
-			if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
-				acme[f.ID] = true
-			}
+		if NeedsACME(snap, f.ID, f.CertIDs) {
+			acme[f.ID] = true
 		}
 	}
 	return acme
+}
+
+// NeedsACME reports whether frontend id (0 = not created yet) with the given certificates
+// answers HTTP-01 challenges on :80: it has a domain or a managed http01 certificate.
+// The API's listener-collision checks use the same rule as the renderer.
+func NeedsACME(snap *state.Snapshot, id int64, certIDs []int64) bool {
+	for _, d := range snap.Domains {
+		if id != 0 && d.FrontendID.Valid && d.FrontendID.Int64 == id {
+			return true
+		}
+	}
+	for _, cid := range certIDs {
+		if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
+			return true
+		}
+	}
+	return false
 }
 
 // Input builds the render input for a snapshot.
