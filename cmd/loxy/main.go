@@ -149,13 +149,24 @@ func run(cmd string, args []string) error {
 		_, err = io.Copy(dst, src)
 		return err
 	case "admin":
-		if len(args) == 0 || args[0] != "reset-password" {
-			return fmt.Errorf("usage: loxy admin reset-password")
+		if len(args) == 0 || (args[0] != "reset-password" && args[0] != "seed") {
+			return fmt.Errorf("usage: loxy admin reset-password | loxy admin seed [target-ip]")
 		}
 		cfg.NoHAProxy = true
 		a, err := app.New(cfg, version)
 		if err != nil {
 			return err
+		}
+		if args[0] == "seed" {
+			ip := "127.0.0.1"
+			if len(args) > 1 {
+				ip = args[1]
+			}
+			if err := a.SeedDemo(context.Background(), ip); err != nil {
+				return err
+			}
+			fmt.Println("demo data created; a running loxy applies it on its next reconcile (or restart)")
+			return nil
 		}
 		email, pw, err := a.ResetOwnerPassword(context.Background())
 		if err != nil {

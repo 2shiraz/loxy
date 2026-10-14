@@ -66,7 +66,7 @@ image:
 
 ## seed: demo project (§17)
 seed:
-	@echo "seed: not implemented yet — create demo data through the UI or API (see README)"
+	$(GO) run ./cmd/loxy admin seed $(SEED_TARGET)
 
 ## e2e: Playwright against a running Loxy (make dev or all-in-one); see test/e2e/playwright.config.ts for env vars
 e2e:
