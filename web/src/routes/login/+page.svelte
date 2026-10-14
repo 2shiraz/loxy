@@ -8,13 +8,16 @@
   let password = $state('');
   let error = $state('');
   let busy = $state(false);
+  let needTotp = $state(false);
+  let totp = $state('');
+  const totpOk = $derived(/^\d{6}$/.test(totp));
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     error = '';
     busy = true;
     try {
-      const r = await api.POST('/auth/login', { body: { email, password } });
+      const r = await api.POST('/auth/login', { body: needTotp ? { email, password, totp } : { email, password } });
       if (r.data) {
         setCsrf(r.data.csrf_token);
         session.user = r.data.user;
@@ -22,6 +25,12 @@
         void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/load-balancers', { replaceState: true });
       } else if (r.response.status === 429) {
         error = 'Too many attempts. Wait a minute and try again.';
+      } else if (r.response.status === 401 && (r.error as { error?: { code?: string } })?.error?.code === 'totp_required') {
+        if (needTotp) {
+          error = (r.error as { error?: { message?: string } })?.error?.message ?? 'That code is not valid. Try the current one.';
+          totp = '';
+        }
+        needTotp = true;
       } else {
         error = (r.error as { error?: { message?: string } })?.error?.message ?? 'Email or password is incorrect.';
       }
@@ -49,8 +58,18 @@
       <label for="password">Password</label>
       <input id="password" class="input" type="password" autocomplete="current-password" required bind:value={password} />
     </div>
+    {#if needTotp}
+      <div class="field">
+        <label for="totp">Two-factor code</label>
+        <!-- svelte-ignore a11y_autofocus -->
+        <input id="totp" class="input mono code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6"
+          required autofocus spellcheck="false" bind:value={totp} oninput={() => (totp = totp.replace(/\D/g, '').slice(0, 6))}
+          aria-invalid={error ? 'true' : undefined} aria-describedby="totp-hint" />
+        <span id="totp-hint" class="hint">Enter the 6-digit code from your authenticator app.</span>
+      </div>
+    {/if}
     {#if error}<p class="err small" role="alert">{error}</p>{/if}
-    <button class="btn primary" type="submit" disabled={busy || !email || !password}>{busy ? 'Signing in…' : 'Sign in'}</button>
+    <button class="btn primary" type="submit" disabled={busy || !email || !password || (needTotp && !totpOk)}>{busy ? (needTotp ? 'Verifying…' : 'Signing in…') : needTotp ? 'Verify' : 'Sign in'}</button>
   </form>
 </div>
 
@@ -60,5 +79,6 @@
   .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
   h1 { font-size: var(--fs-xl); }
   .err { color: var(--err); }
+  .code { letter-spacing: 0.2em; font-variant-numeric: tabular-nums; }
   .btn { height: 36px; margin-top: 4px; }
 </style>

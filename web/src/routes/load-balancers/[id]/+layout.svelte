@@ -44,7 +44,8 @@
     { id: 'services', label: 'Services' },
     { id: 'networking', label: 'Networking' },
     { id: 'rescale', label: 'Rescale' },
-    { id: 'delete', label: 'Delete' }
+    { id: 'delete', label: 'Delete' },
+    { id: 'logs', label: 'Logs' }
   ].map((t) => ({ ...t, href: `/load-balancers/${id}/${t.id}` })));
 
   async function patch(body: Record<string, unknown>, msg?: string) {

@@ -13,6 +13,7 @@
   import Tabs from '$lib/components/Tabs.svelte';
   import ApiTokens from './ApiTokens.svelte';
   import Notifications from './Notifications.svelte';
+  import TwoFactor from './TwoFactor.svelte';
 
   const TABS = [{ id: 'general', label: 'General' }, { id: 'tokens', label: 'API tokens' }, { id: 'notifications', label: 'Notifications' }];
   let tab = $state(TABS.some((t) => '#' + t.id === location.hash) ? location.hash.slice(1) : 'general');
@@ -89,6 +90,7 @@
   </section>
 
   <div class="grid-2">
+    <div class="stack-lg">
     <section class="card" aria-labelledby="spw">
       <div class="card-head"><h2 id="spw">Change password</h2></div>
       <form class="stack" onsubmit={changePw} novalidate>
@@ -99,6 +101,8 @@
         <div><button class="btn primary" type="submit" disabled={!pw.current || !pw.next}>Change password</button></div>
       </form>
     </section>
+    <TwoFactor />
+    </div>
 
     <div class="stack-lg">
       <section class="card" aria-labelledby="sth">
