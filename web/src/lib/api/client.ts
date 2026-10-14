@@ -28,6 +28,9 @@ export type LoxyEvent = Schemas['Event'];
 export type AuditEntry = Schemas['AuditEntry'];
 export type User = Schemas['User'];
 export type Labels = Schemas['Labels'];
+export type APIToken = Schemas['APIToken'];
+export type NotificationChannel = Schemas['NotificationChannel'];
+export type AlertRule = Schemas['AlertRule'];
 export type ApiErrorBody = Schemas['ErrorResponse'];
 
 let csrf = '';

@@ -9,6 +9,19 @@
   import Modal from '$lib/components/Modal.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
   import ErrorBox from '$lib/components/ErrorBox.svelte';
+  import { replaceState } from '$app/navigation';
+  import Tabs from '$lib/components/Tabs.svelte';
+  import ApiTokens from './ApiTokens.svelte';
+  import Notifications from './Notifications.svelte';
+
+  const TABS = [{ id: 'general', label: 'General' }, { id: 'tokens', label: 'API tokens' }, { id: 'notifications', label: 'Notifications' }];
+  let tab = $state(TABS.some((t) => '#' + t.id === location.hash) ? location.hash.slice(1) : 'general');
+  $effect(() => {
+    const h = tab === 'general' ? location.pathname + location.search : '#' + tab;
+    if (h !== location.pathname + location.search + location.hash) {
+      try { replaceState(h, {}); } catch { /* router not ready */ }
+    }
+  });
 
   const users = resource(async () => (await unwrap(api.GET('/users'))).users);
   const health = resource(async () => (await api.GET('/healthz')).data);
@@ -48,7 +61,14 @@
 <svelte:head><title>Settings · Loxy</title></svelte:head>
 <div class="page-head"><h1>Settings</h1></div>
 
-<div class="stack-lg">
+<div class="tabs-wrap"><Tabs tabs={TABS} bind:active={tab} label="Settings sections" /></div>
+
+{#if tab === 'tokens'}
+  <div role="tabpanel" aria-label="API tokens"><ApiTokens {canAdmin} /></div>
+{:else if tab === 'notifications'}
+  <div role="tabpanel" aria-label="Notifications"><Notifications {canAdmin} /></div>
+{:else}
+<div class="stack-lg" role="tabpanel" aria-label="General">
   <section class="card" aria-labelledby="su">
     <div class="card-head"><h2 id="su">Users</h2><span class="spacer"></span>{#if canAdmin}<button class="btn sm" onclick={() => { nu = { email: '', password: '', role: 'operator' }; uErr = {}; uOpen = true; }}><Icon name="plus" size={13} />Add user</button>{/if}</div>
     {#if users.error && !users.data}<ErrorBox message={users.error} onretry={users.reload} />
@@ -102,6 +122,8 @@
   </div>
 </div>
 
+{/if}
+
 <Modal bind:open={uOpen} title="Add user" width={440}>
   <form id="uf" class="stack" onsubmit={(e) => { e.preventDefault(); void createUser(); }} novalidate autocomplete="off">
     <div class="field"><label for="ue">Email</label><input id="ue" class="input" type="email" bind:value={nu.email} aria-invalid={uErr.email ? 'true' : undefined} />{#if uErr.email}<span class="ferr">{uErr.email}</span>{/if}</div>
@@ -116,6 +138,7 @@
 </Modal>
 
 <style>
+  .tabs-wrap { margin: calc(-1 * var(--sp-3)) 0 var(--sp-5); }
   .seg { display: inline-flex; padding: 2px; background: var(--surface-2); border-radius: 8px; }
   .seg button { border: 0; background: none; padding: 5px 14px; border-radius: 6px; color: var(--muted); cursor: pointer; font-weight: 500; font-size: var(--fs-sm); }
   .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }

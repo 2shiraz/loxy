@@ -19,6 +19,7 @@ linters:
         - (*github.com/2shiraz/loxy/internal/store.Store).Close
         - fmt.Fprintf
         - fmt.Fprint
+        - fmt.Fprintln
         - fmt.Sscan
   exclusions:
     generated: lax

@@ -890,6 +890,126 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api_tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAPITokens"];
+        put?: never;
+        post: operations["createAPIToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api_tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteAPIToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notification_channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listChannels"];
+        put?: never;
+        post: operations["createChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notification_channels/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteChannel"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notification_channels/{id}/actions/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["testChannel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert_rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listAlertRules"];
+        put?: never;
+        post: operations["createAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/alert_rules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteAlertRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1434,6 +1554,66 @@ export interface components {
             after?: {
                 [key: string]: unknown;
             } | null;
+        };
+        APIToken: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            prefix: string;
+            /** @enum {string} */
+            role: "admin" | "operator" | "viewer";
+            /** Format: int64 */
+            expires_at?: number | null;
+            /** Format: int64 */
+            last_used_at?: number | null;
+            /** Format: int64 */
+            created_at: number;
+        };
+        APITokenCreate: {
+            name: string;
+            /** @enum {string} */
+            role: "admin" | "operator" | "viewer";
+            expires_in_days?: number;
+        };
+        NotificationChannel: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            /** @enum {string} */
+            kind: "webhook" | "email" | "telegram" | "slack";
+            enabled: boolean;
+            /** Format: int64 */
+            created_at: number;
+        };
+        NotificationChannelInput: {
+            name: string;
+            /** @enum {string} */
+            kind: "webhook" | "email" | "telegram" | "slack";
+            config: {
+                [key: string]: string;
+            };
+        };
+        AlertRule: {
+            /** Format: int64 */
+            id: number;
+            event_kinds: string[];
+            lb_filter: string;
+            /** Format: int64 */
+            channel_id: number;
+            /** @enum {string} */
+            min_severity: "info" | "warning" | "error";
+            cooldown_s: number;
+        };
+        AlertRuleInput: {
+            /** @description e.g. target.health.changed, lb.apply.*; empty = all */
+            event_kinds?: string[];
+            /** @description label selector on LB labels */
+            lb_filter?: string;
+            /** Format: int64 */
+            channel_id: number;
+            /** @enum {string} */
+            min_severity?: "info" | "warning" | "error";
+            cooldown_s?: number;
         };
     };
     responses: {
@@ -3166,6 +3346,242 @@ export interface operations {
         };
     };
     deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listAPITokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Tokens */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        api_tokens: components["schemas"]["APIToken"][];
+                    };
+                };
+            };
+        };
+    };
+    createAPIToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["APITokenCreate"];
+            };
+        };
+        responses: {
+            /** @description Created; `token` is shown once */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        api_token: components["schemas"]["APIToken"];
+                        token: string;
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteAPIToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Revoked */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listChannels: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Channels */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        notification_channels: components["schemas"]["NotificationChannel"][];
+                        kinds: {
+                            [key: string]: {
+                                name: string;
+                                label: string;
+                                secret: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+    };
+    createChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationChannelInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        notification_channel: components["schemas"]["NotificationChannel"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    testChannel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Test message delivered */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            502: components["responses"]["Error"];
+        };
+    };
+    listAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rules */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        alert_rules: components["schemas"]["AlertRule"][];
+                    };
+                };
+            };
+        };
+    };
+    createAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertRuleInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        alert_rule: components["schemas"]["AlertRule"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteAlertRule: {
         parameters: {
             query?: never;
             header?: never;
