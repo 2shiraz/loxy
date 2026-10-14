@@ -425,3 +425,12 @@ func (h *Holder) Refresh(ctx context.Context, q *db.Queries, box *secrets.Box) (
 	h.p.Store(s)
 	return s, nil
 }
+
+// TestSnapshot builds an indexed snapshot from LBs (tests only).
+func TestSnapshot(lbs []*LB) *Snapshot {
+	s := &Snapshot{LBs: lbs, planByID: map[int64]*Plan{}, lbByID: map[int64]*LB{}, certByID: map[int64]*Cert{}, serverByID: map[int64]*Server{}, nodeByID: map[int64]*Node{}}
+	for _, lb := range lbs {
+		s.lbByID[lb.ID] = lb
+	}
+	return s
+}

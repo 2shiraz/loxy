@@ -282,11 +282,11 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 			Data:    map[string]any{"service_id": ch.ServiceID, "slot_id": ch.SlotID, "status": ch.Status}})
 	}
 	for lb, tr := range traffic {
-		if tr[0] > 0 || tr[1] > 0 {
+		if c.Q != nil && (tr[0] > 0 || tr[1] > 0) {
 			_ = c.Q.AddTraffic(ctx, db.AddTrafficParams{LbID: lb, Month: month, BytesIn: int64(tr[0]), BytesOut: int64(tr[1])})
 		}
 	}
-	if flush != nil {
+	if flush != nil && c.Q != nil {
 		c.rollup(ctx, flush)
 	}
 	return nil
