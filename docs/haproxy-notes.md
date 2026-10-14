@@ -25,6 +25,13 @@ All items below are covered by `test/integration` (`make test-integration`, real
 - `server-state-file` missing on first start only logs a NOTICE.
 - `docker inspect .NetworkSettings.IPAddress` is empty on Docker 29; tests read `.NetworkSettings.Networks.*.IPAddress`.
 
+- **crt-list paths must be relative to `crt-base`.** Absolute `live/…` paths inside crt-list files made `haproxy -c` of a staged revision look at the old live tree (failed for newly attached certs). Fixed with `crt-base <root>/certs`; runtime `set ssl cert /usr/local/etc/haproxy/live/certs/<id>.pem` still matches the loaded store name (`TestVerifySSLRuntimeAndMaps`, `TestACMEHTTP01Pebble`).
+- **Named defaults ambiguity (3.4 warning):** a section without `from` that implicitly uses a defaults section that is also referenced explicitly triggers a warning; every rendered section now uses `from`.
+- **LB cap rejection** shows up either as an immediate close after accept or as a reset during connect, depending on timing; both are rejections.
+- **`show stat -1 3 -1`** (type mask frontends|backends) works and is used on alternate ticks to keep the 1 s poll cheap with 1 000+ servers; full `show stat` (servers, health) every 2 s.
+- **ACME HTTP-01 via `virt@acme_http01`:** the virtual map only exists once a loaded config references it, so issuance waits until the certificate is served by an applied config (then lego → `add map virt@acme_http01` → Pebble validation → `Success`, ~9 s end-to-end in `TestACMEHTTP01Pebble`).
+- **Zero-downtime:** 100 consecutive reloads plus a runtime target add/remove under ~6 000 rps (8 keep-alive clients): 884 116 requests, 0 failures (`TestApplyPathZeroDowntime`, `LOXY_IT_RELOADS=100`). Default CI run uses 20 reloads.
+
 ## Not yet verified
 - `shm-stats-file` counter preservation (§10.3) — not used.
 - `chroot auto` (§7.4) — not enabled.
