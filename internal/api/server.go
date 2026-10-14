@@ -52,7 +52,7 @@ type Server struct {
 	Static   http.Handler
 	Limiter  *auth.Limiter
 	NodeInfo func() (version string, features []string)
-	Drain    func(backendID, serverID int64)
+	Drain    func(projectID, targetID int64)
 	Notifier *notify.Notifier
 	Logs     *logrecv.Receiver
 }

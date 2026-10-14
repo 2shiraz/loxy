@@ -17,8 +17,8 @@ import (
 	"github.com/2shiraz/loxy/internal/config"
 )
 
-// TestACMEHTTP01Pebble: TLS frontend with a managed certificate → lego HTTP-01 via the
-// virt@acme_http01 map → Pebble-issued certificate served on :443 and 301 on :80 (§8.7, §11.2).
+// TestACMEHTTP01Pebble: https service with a managed certificate → lego HTTP-01 via the
+// virt@acme_http01 map → Pebble-issued certificate served on the service port, sys_http 404 for unknown hosts (§8.7, §11.2).
 // Needs `pebble` and `pebble-challtestsrv` on PATH (go install github.com/letsencrypt/pebble/v2/cmd/...).
 func TestACMEHTTP01Pebble(t *testing.T) {
 	dockerOK(t)
@@ -65,15 +65,11 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 		t.Fatalf("cert %d %v", st, body)
 	}
 	certID := body["certificate"].(map[string]any)["id"].(float64)
-	st, body = s.c.do("POST", "/backends", map[string]any{"name": "app", "mode": "http", "port": 9001})
+	// An https service with the managed certificate; HTTP-01 is answered by the shared sys_http on :80.
+	st, body = s.c.do("POST", "/projects", map[string]any{"name": "tls",
+		"service": map[string]any{"protocol": "https", "listen_port": 8443, "destination_port": 9001, "certificates": []float64{certID}}})
 	if st != 201 {
-		t.Fatalf("backend %d %v", st, body)
-	}
-	beID := body["backend"].(map[string]any)["id"].(float64)
-	st, body = s.c.do("POST", "/frontends", map[string]any{"name": "tls", "mode": "http", "tls": true, "http_redirect": true,
-		"certificates": []float64{certID}, "binds": []any{map[string]any{"address": "*", "port": 443}}, "default_backend_id": beID})
-	if st != 201 {
-		t.Fatalf("frontend %d %v", st, body)
+		t.Fatalf("project %d %v", st, body)
 	}
 	start := time.Now()
 	var status string
@@ -89,7 +85,7 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 	t.Logf("issued after %v", time.Since(start))
 	var issuer string
 	waitFor(t, 15*time.Second, "issued cert served on :443", func() bool {
-		conn, err := tls.Dial("tcp", s.haIP+":443", &tls.Config{ServerName: "app.loxy.test", InsecureSkipVerify: true}) //nolint:gosec
+		conn, err := tls.Dial("tcp", s.haIP+":8443", &tls.Config{ServerName: "app.loxy.test", InsecureSkipVerify: true}) //nolint:gosec
 		if err != nil {
 			return false
 		}
@@ -97,14 +93,14 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 		issuer = conn.ConnectionState().PeerCertificates[0].Issuer.CommonName
 		return strings.Contains(strings.ToLower(issuer), "pebble")
 	})
-	hc := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	r, err := hc.Get("http://" + s.haIP + "/")
+	// sys_http answers unknown hosts with 404 (no domains attached).
+	r, err := http.Get("http://" + s.haIP + "/")
 	if err != nil {
 		t.Fatal(err)
 	}
 	r.Body.Close()
-	if r.StatusCode != 301 {
-		t.Fatalf("redirect: %d", r.StatusCode)
+	if r.StatusCode != 404 {
+		t.Fatalf("sys_http unknown host: %d", r.StatusCode)
 	}
 	revs, _ := s.a.Store.Q.ListRevisions(ctx, 1)
 	t.Logf("served cert issuer %q; revisions: %d", issuer, len(revs))

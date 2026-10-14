@@ -48,12 +48,17 @@ func TestSeedDemo(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ := a.Snap.Refresh(context.Background(), a.Store.Q, a.Box)
-	if len(snap.Frontends) != 3 || len(snap.Backends) != 3 || len(snap.Backends[0].Slots()) != 3 || len(snap.Frontends[0].Routes) != 1 {
-		t.Fatalf("seed: %d frontends, %d backends", len(snap.Frontends), len(snap.Backends))
+	if len(snap.Projects) != 2 || len(snap.Frontends) != 3 || len(snap.Projects[0].Slots()) != 3 || len(snap.DomainsOf(snap.Projects[0].ID)) != 1 {
+		t.Fatalf("seed: %d projects, %d services", len(snap.Projects), len(snap.Frontends))
 	}
 	out, err := a.Rec.RenderLive(context.Background())
-	if err != nil || !strings.Contains(out.Config(), "frontend fe_2") || !strings.Contains(out.Config(), "backend be_3") {
+	if err != nil {
 		t.Fatalf("render: %v", err)
+	}
+	for _, want := range []string{"frontend fe_1 ", "frontend fe_3 from loxy_tcp", "frontend sys_http", "use_backend be_1 if", "backend be_2"} {
+		if !strings.Contains(out.Config(), want) {
+			t.Fatalf("config misses %q:\n%s", want, out.Config())
+		}
 	}
 }
 

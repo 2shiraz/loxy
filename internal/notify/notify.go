@@ -152,10 +152,8 @@ func (n *Notifier) handle(ctx context.Context, e events.Event) {
 	if n.Labels != nil {
 		labels = n.Labels(e)
 	}
-	if e.FrontendID != nil {
-		obj = *e.FrontendID
-	} else if e.BackendID != nil {
-		obj = -*e.BackendID
+	if e.ProjectID != nil {
+		obj = *e.ProjectID
 	}
 	for _, r := range rules {
 		if !Matches(r, e, labels) {

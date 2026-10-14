@@ -2,13 +2,13 @@ openapi: 3.0.3
 info:
   title: Loxy API
   version: 1.0.0
-  description: 'REST API of Loxy, a self-hosted management panel for HAProxy 3.4.
+  description: 'REST API of Loxy, a self-hosted load balancer panel on HAProxy 3.4.
 
-    Objects map directly to HAProxy: frontends (listeners + routing rules), backends (server pools + health checks),
+    A project is one load balancer: targets (the servers traffic goes to), services (ports it listens on)
 
-    servers, certificates. Session cookie or `Authorization: Bearer loxy_<prefix>_<secret>`. Mutating requests with a
+    and domains (hostnames routed to it on the shared :80/:443). Session cookie or
 
-    session cookie must send `X-LOXY-CSRF`.
+    `Authorization: Bearer loxy_<prefix>_<secret>`. Mutating requests with a session cookie must send `X-LOXY-CSRF`.
 
     '
 servers:
@@ -18,8 +18,7 @@ security:
 - bearer: []
 tags:
 - name: auth
-- name: frontends
-- name: backends
+- name: projects
 - name: certificates
 - name: domains
 - name: inventory
@@ -288,6 +287,12 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Domain'
+      parameters:
+      - name: project_id
+        in: query
+        schema: &id001
+          type: integer
+          format: int64
     post:
       operationId: createDomain
       tags:
@@ -703,14 +708,6 @@ paths:
       tags:
       - system
       parameters:
-      - name: frontend_id
-        in: query
-        schema: &id001
-          type: integer
-          format: int64
-      - name: backend_id
-        in: query
-        schema: *id001
       - name: kind
         in: query
         schema:
@@ -719,6 +716,9 @@ paths:
         in: query
         schema:
           type: integer
+      - name: project_id
+        in: query
+        schema: *id001
       responses:
         '200':
           description: Events
@@ -1002,203 +1002,6 @@ paths:
       responses:
         '204':
           description: Deleted
-  /frontends:
-    get:
-      operationId: listFrontends
-      tags:
-      - frontends
-      parameters:
-      - name: label_selector
-        in: query
-        schema:
-          type: string
-      responses:
-        '200':
-          description: List
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - frontends
-                properties:
-                  frontends:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Frontend'
-    post:
-      operationId: createFrontend
-      tags:
-      - frontends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FrontendInput'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - frontend
-                properties:
-                  frontend:
-                    $ref: '#/components/schemas/Frontend'
-        '422': &id002
-          $ref: '#/components/responses/Error'
-  /frontends/{id}:
-    parameters:
-    - &id003
-      $ref: '#/components/parameters/Id'
-    get:
-      operationId: getFrontend
-      tags:
-      - frontends
-      responses:
-        '200':
-          description: Frontend
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - frontend
-                properties:
-                  frontend:
-                    $ref: '#/components/schemas/Frontend'
-        '404': *id002
-    put:
-      operationId: updateFrontend
-      tags:
-      - frontends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FrontendInput'
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - frontend
-                properties:
-                  frontend:
-                    $ref: '#/components/schemas/Frontend'
-        '409': *id002
-        '422': *id002
-    patch:
-      operationId: patchFrontend
-      tags:
-      - frontends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/FrontendPatch'
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - frontend
-                properties:
-                  frontend:
-                    $ref: '#/components/schemas/Frontend'
-        '422': *id002
-    delete:
-      operationId: deleteFrontend
-      tags:
-      - frontends
-      responses:
-        '204':
-          description: Deleted
-        '423': *id002
-  /frontends/{id}/config:
-    parameters:
-    - *id003
-    get:
-      operationId: getFrontendConfig
-      tags:
-      - frontends
-      responses:
-        '200':
-          description: Rendered HAProxy sections of this frontend (and the backends it uses)
-          content:
-            text/plain:
-              schema:
-                type: string
-  /frontends/{id}/metrics:
-    parameters:
-    - *id003
-    get:
-      operationId: getFrontendMetrics
-      tags:
-      - frontends
-      parameters: &id004
-      - name: type
-        in: query
-        schema:
-          type: string
-        description: comma separated series names
-      - name: start
-        in: query
-        schema: *id001
-      - name: end
-        in: query
-        schema: *id001
-      - name: step
-        in: query
-        schema:
-          type: integer
-      responses:
-        '200':
-          description: Columnar series
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Metrics'
-  /frontends/{id}/metrics/stream:
-    parameters:
-    - *id003
-    get:
-      operationId: streamFrontendMetrics
-      tags:
-      - frontends
-      responses:
-        '200':
-          description: 'SSE: event `metrics.tick`, data MetricsPoint'
-          content:
-            text/event-stream:
-              schema:
-                type: string
-  /frontends/{id}/logs/stream:
-    parameters:
-    - *id003
-    get:
-      operationId: streamFrontendLogs
-      tags:
-      - frontends
-      responses:
-        '200':
-          description: 'SSE: event `log`, data {ts, text}; off unless LOXY_LIVE_LOGS is set'
-          content:
-            text/event-stream:
-              schema:
-                type: string
-        '404': *id002
   /apply/retry:
     post:
       operationId: retryApply
@@ -1207,216 +1010,6 @@ paths:
       responses:
         '202':
           description: Queued
-  /backends:
-    get:
-      operationId: listBackends
-      tags:
-      - backends
-      parameters:
-      - name: label_selector
-        in: query
-        schema:
-          type: string
-      responses:
-        '200':
-          description: List
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - backends
-                properties:
-                  backends:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Backend'
-    post:
-      operationId: createBackend
-      tags:
-      - backends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackendInput'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - backend
-                properties:
-                  backend:
-                    $ref: '#/components/schemas/Backend'
-        '422': *id002
-  /backends/{id}:
-    parameters:
-    - *id003
-    get:
-      operationId: getBackend
-      tags:
-      - backends
-      responses:
-        '200':
-          description: Backend
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - backend
-                properties:
-                  backend:
-                    $ref: '#/components/schemas/Backend'
-        '404': *id002
-    put:
-      operationId: updateBackend
-      tags:
-      - backends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackendInput'
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - backend
-                properties:
-                  backend:
-                    $ref: '#/components/schemas/Backend'
-        '409': *id002
-        '422': *id002
-    delete:
-      operationId: deleteBackend
-      tags:
-      - backends
-      responses:
-        '204':
-          description: Deleted
-        '409': *id002
-  /backends/{id}/status:
-    parameters:
-    - *id003
-    get:
-      operationId: getBackendStatus
-      tags:
-      - backends
-      responses:
-        '200':
-          description: Health of every server
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/BackendHealth'
-  /backends/{id}/metrics:
-    parameters:
-    - *id003
-    get:
-      operationId: getBackendMetrics
-      tags:
-      - backends
-      parameters: *id004
-      responses:
-        '200':
-          description: Columnar series
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Metrics'
-  /backends/{id}/servers:
-    parameters:
-    - *id003
-    get:
-      operationId: listBackendServers
-      tags:
-      - backends
-      responses:
-        '200':
-          description: Servers
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - servers
-                properties:
-                  servers:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/BackendServer'
-    post:
-      operationId: createBackendServers
-      tags:
-      - backends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackendServersCreate'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - servers
-                properties:
-                  servers:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/BackendServer'
-        '422': *id002
-  /backends/{id}/servers/{sid}:
-    parameters:
-    - *id003
-    - name: sid
-      in: path
-      required: true
-      schema: *id001
-    patch:
-      operationId: updateBackendServer
-      tags:
-      - backends
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/BackendServerUpdate'
-      responses:
-        '200':
-          description: Updated
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - server
-                properties:
-                  server:
-                    $ref: '#/components/schemas/BackendServer'
-    delete:
-      operationId: deleteBackendServer
-      tags:
-      - backends
-      responses:
-        '204':
-          description: Removal started (graceful drain)
   /hosts:
     get:
       operationId: listHosts
@@ -1458,10 +1051,11 @@ paths:
                 properties:
                   host:
                     $ref: '#/components/schemas/Host'
-        '422': *id002
+        '422': &id002
+          $ref: '#/components/responses/Error'
   /hosts/{id}:
     parameters:
-    - *id003
+    - $ref: '#/components/parameters/Id'
     patch:
       operationId: updateHost
       tags:
@@ -1530,6 +1124,354 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Overview'
+  /projects:
+    get:
+      operationId: listProjects
+      tags:
+      - projects
+      parameters:
+      - name: label_selector
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - projects
+                properties:
+                  projects:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Project'
+    post:
+      operationId: createProject
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - project
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+        '422': &id003
+          $ref: '#/components/responses/Error'
+  /projects/{id}:
+    parameters:
+    - &id004
+      $ref: '#/components/parameters/Id'
+    get:
+      operationId: getProject
+      tags:
+      - projects
+      responses:
+        '200':
+          description: Project
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - project
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+        '404': *id003
+    patch:
+      operationId: updateProject
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - project
+                properties:
+                  project:
+                    $ref: '#/components/schemas/Project'
+        '409': *id003
+        '422': *id003
+    delete:
+      operationId: deleteProject
+      tags:
+      - projects
+      responses:
+        '204':
+          description: Deleted
+        '404': *id003
+  /projects/{id}/config:
+    parameters:
+    - *id004
+    get:
+      operationId: getProjectConfig
+      tags:
+      - projects
+      responses:
+        '200':
+          description: Rendered HAProxy sections of this project
+          content:
+            text/plain:
+              schema:
+                type: string
+  /projects/{id}/metrics:
+    parameters:
+    - *id004
+    get:
+      operationId: getProjectMetrics
+      tags:
+      - projects
+      parameters:
+      - name: type
+        in: query
+        schema:
+          type: string
+        description: comma separated series names
+      - name: start
+        in: query
+        schema: *id001
+      - name: end
+        in: query
+        schema: *id001
+      - name: step
+        in: query
+        schema:
+          type: integer
+      - name: service_id
+        in: query
+        schema: *id001
+        description: 'only this service (default: whole project)'
+      responses:
+        '200':
+          description: Columnar series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+  /projects/{id}/metrics/stream:
+    parameters:
+    - *id004
+    get:
+      operationId: streamProjectMetrics
+      tags:
+      - projects
+      responses:
+        '200':
+          description: 'SSE: event `metrics.tick`, data MetricsPoint (whole project)'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /projects/{id}/logs/stream:
+    parameters:
+    - *id004
+    get:
+      operationId: streamProjectLogs
+      tags:
+      - projects
+      responses:
+        '200':
+          description: 'SSE: event `log`, data {ts, text}; off unless LOXY_LIVE_LOGS is set'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404': *id003
+  /projects/{id}/services:
+    parameters:
+    - *id004
+    get:
+      operationId: listServices
+      tags:
+      - projects
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - services
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Service'
+    post:
+      operationId: createService
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - service
+                properties:
+                  service:
+                    $ref: '#/components/schemas/Service'
+        '422': *id003
+  /projects/{id}/services/{sid}:
+    parameters:
+    - *id004
+    - name: sid
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    put:
+      operationId: updateService
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - service
+                properties:
+                  service:
+                    $ref: '#/components/schemas/Service'
+        '422': *id003
+    delete:
+      operationId: deleteService
+      tags:
+      - projects
+      responses:
+        '204':
+          description: Deleted
+        '409': *id003
+  /projects/{id}/targets:
+    parameters:
+    - *id004
+    get:
+      operationId: listTargets
+      tags:
+      - projects
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - targets
+                properties:
+                  targets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Target'
+    post:
+      operationId: createTargets
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetsCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - targets
+                properties:
+                  targets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Target'
+        '422': *id003
+  /projects/{id}/targets/{tid}:
+    parameters:
+    - *id004
+    - name: tid
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    patch:
+      operationId: updateTarget
+      tags:
+      - projects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TargetUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - target
+                properties:
+                  target:
+                    $ref: '#/components/schemas/Target'
+        '422': *id003
+    delete:
+      operationId: deleteTarget
+      tags:
+      - projects
+      responses:
+        '202':
+          description: Draining, then removed
+        '404': *id003
 components:
   securitySchemes:
     session:
@@ -1898,6 +1840,7 @@ components:
       - required_records
       - observed
       - created_at
+      - https
       properties:
         id:
           type: integer
@@ -1953,10 +1896,21 @@ components:
         created_at:
           type: integer
           format: int64
-        frontend_id: &id005
+        project_id: &id005
           type: integer
           format: int64
           nullable: true
+        service_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: 'service the domain routes to (default: the project''s first http/https service)'
+        https:
+          type: boolean
+          description: serve on :443 with an automatic certificate and redirect :80 to it (default true)
+        url:
+          type: string
+          description: https://fqdn once the certificate is issued, else http://fqdn
     DomainInput:
       type: object
       properties:
@@ -1968,7 +1922,14 @@ components:
           nullable: true
         auto_records:
           type: boolean
-        frontend_id: *id005
+        project_id: *id001
+        service_id:
+          type: integer
+          format: int64
+          description: 'default: the project''s first http/https service'
+        https:
+          type: boolean
+          description: serve on :443 with an automatic certificate and redirect :80 to it (default true)
     DomainResponse:
       type: object
       required:
@@ -2087,7 +2048,9 @@ components:
       - address
       - family
       properties:
-        id: *id001
+        id: &id007
+          type: integer
+          format: int64
         address:
           type: string
         family:
@@ -2260,8 +2223,7 @@ components:
         data:
           type: object
           additionalProperties: true
-        frontend_id: *id005
-        backend_id: *id005
+        project_id: *id005
     AuditEntry:
       type: object
       required:
@@ -2423,7 +2385,7 @@ components:
           type: integer
         label_filter:
           type: string
-          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
+          description: label selector on project labels; node-wide events (apply, backup) are not filtered by it
     AlertRuleInput:
       type: object
       required:
@@ -2447,457 +2409,15 @@ components:
           type: integer
         label_filter:
           type: string
-          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
-    Bind:
-      type: object
-      required:
-      - address
-      - port
-      properties:
-        address:
-          type: string
-          description: IP address, or "*" for all interfaces
-        port:
-          type: integer
-    Route:
-      type: object
-      required:
-      - backend_id
-      properties:
-        id: *id001
-        hosts:
-          type: array
-          items:
-            type: string
-          description: Host header match; "*.example.com" matches subdomains
-        path_prefix:
-          type: string
-          description: e.g. /api; empty = any path
-        backend_id: *id001
-    FrontendInput:
-      type: object
-      required:
-      - name
-      - mode
-      - binds
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        mode:
-          type: string
-          enum:
-          - http
-          - tcp
-        tls:
-          type: boolean
-          description: terminate TLS (http mode); requires certificates
-        binds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Bind'
-        certificates:
-          type: array
-          items:
-            type: integer
-            format: int64
-        http_redirect:
-          type: boolean
-          description: 'tls only: also listen on :80 and redirect to https'
-        default_backend_id:
-          type: integer
-          format: int64
-          nullable: true
-        routes:
-          type: array
-          items:
-            $ref: '#/components/schemas/Route'
-        timeout_client_s:
-          type: integer
-        maxconn:
-          type: integer
-          description: 0 = unlimited
-        forwarded_headers:
-          type: boolean
-          description: 'http: X-Forwarded-For/Proto/Port'
-        enabled:
-          type: boolean
-        labels:
-          $ref: '#/components/schemas/Labels'
-    FrontendPatch:
-      type: object
-      properties:
-        name:
-          type: string
-        labels:
-          $ref: '#/components/schemas/Labels'
-        maintenance:
-          type: boolean
-        enabled:
-          type: boolean
-        description:
-          type: string
-    Frontend:
-      type: object
-      required:
-      - id
-      - name
-      - version
-      - mode
-      - tls
-      - binds
-      - certificates
-      - http_redirect
-      - default_backend_id
-      - routes
-      - timeout_client_s
-      - maxconn
-      - forwarded_headers
-      - enabled
-      - maintenance
-      - labels
-      - status
-      - created_at
-      - stats
-      - health
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        mode:
-          type: string
-          enum:
-          - http
-          - tcp
-        tls:
-          type: boolean
-          description: terminate TLS (http mode); requires certificates
-        binds:
-          type: array
-          items:
-            $ref: '#/components/schemas/Bind'
-        certificates:
-          type: array
-          items:
-            type: integer
-            format: int64
-        http_redirect:
-          type: boolean
-          description: 'tls only: also listen on :80 and redirect to https'
-        default_backend_id:
-          type: integer
-          format: int64
-          nullable: true
-        routes:
-          type: array
-          items:
-            $ref: '#/components/schemas/Route'
-        timeout_client_s:
-          type: integer
-        maxconn:
-          type: integer
-          description: 0 = unlimited
-        forwarded_headers:
-          type: boolean
-          description: 'http: X-Forwarded-For/Proto/Port'
-        enabled:
-          type: boolean
-        labels:
-          $ref: '#/components/schemas/Labels'
-        id: *id001
-        version: *id001
-        maintenance:
-          type: boolean
-        status:
-          type: string
-          enum:
-          - active
-          - applying
-          - apply_error
-        last_error: &id006
-          type: string
-          nullable: true
-        created_at: *id001
-        stats:
-          type: object
-          required:
-          - open_connections
-          - requests_per_second
-          - bytes_out_per_second
-          properties:
-            open_connections:
-              type: number
-            requests_per_second:
-              type: number
-            bytes_out_per_second:
-              type: number
-        health:
-          $ref: '#/components/schemas/HealthSummary'
-    BackendInput:
-      type: object
-      required:
-      - name
-      - mode
-      - port
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        mode:
-          type: string
-          enum:
-          - http
-          - tcp
-        algorithm:
-          type: string
-          enum:
-          - roundrobin
-          - leastconn
-          - source
-          - random
-        port:
-          type: integer
-          description: default server port
-        health_check:
-          $ref: '#/components/schemas/HealthCheck'
-        sticky_sessions:
-          type: boolean
-        cookie_name:
-          type: string
-        cookie_lifetime_s:
-          type: integer
-        proxy_protocol:
-          type: string
-          enum:
-          - none
-          - v1
-          - v2
-        timeout_server_s:
-          type: integer
-        labels:
-          $ref: '#/components/schemas/Labels'
-    Backend:
-      type: object
-      required:
-      - id
-      - name
-      - version
-      - mode
-      - algorithm
-      - port
-      - health_check
-      - sticky_sessions
-      - cookie_name
-      - cookie_lifetime_s
-      - proxy_protocol
-      - timeout_server_s
-      - labels
-      - created_at
-      - used_by
-      - servers_count
-      - health
-      - stats
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        mode:
-          type: string
-          enum:
-          - http
-          - tcp
-        algorithm:
-          type: string
-          enum:
-          - roundrobin
-          - leastconn
-          - source
-          - random
-        port:
-          type: integer
-          description: default server port
-        health_check:
-          $ref: '#/components/schemas/HealthCheck'
-        sticky_sessions:
-          type: boolean
-        cookie_name:
-          type: string
-        cookie_lifetime_s:
-          type: integer
-        proxy_protocol:
-          type: string
-          enum:
-          - none
-          - v1
-          - v2
-        timeout_server_s:
-          type: integer
-        labels:
-          $ref: '#/components/schemas/Labels'
-        id: *id001
-        version: *id001
-        created_at: *id001
-        used_by:
-          type: array
-          items: *id001
-          description: frontend ids
-        servers_count:
-          type: integer
-        health:
-          $ref: '#/components/schemas/HealthSummary'
-        stats:
-          type: object
-          required:
-          - sessions
-          - queue
-          - response_time_ms
-          properties:
-            sessions:
-              type: number
-            queue:
-              type: number
-            response_time_ms:
-              type: number
-    BackendServerInput:
-      type: object
-      required:
-      - type
-      properties:
-        type:
-          type: string
-          enum:
-          - ip
-          - host
-          - label_selector
-        ip:
-          type: string
-        host_id: *id001
-        label_selector:
-          type: string
-        port:
-          type: integer
-          description: override the backend port
-        use_private_ip:
-          type: boolean
-        weight:
-          type: integer
-        backup:
-          type: boolean
-    BackendServersCreate:
-      type: object
-      required:
-      - servers
-      properties:
-        servers:
-          type: array
-          items:
-            $ref: '#/components/schemas/BackendServerInput'
-    BackendServerUpdate:
-      type: object
-      properties:
-        weight:
-          type: integer
-        admin_state:
-          type: string
-          enum:
-          - ready
-          - drain
-          - maint
-        backup:
-          type: boolean
-    ResolvedServer:
-      type: object
-      required:
-      - slot_id
-      - address
-      - port
-      - status
-      properties:
-        slot_id: *id001
-        host_id: *id005
-        name: *id006
-        address:
-          type: string
-        port:
-          type: integer
-        status:
-          type: string
-          enum:
-          - healthy
-          - unhealthy
-          - maintenance
-          - draining
-          - unknown
-        check:
-          type: string
-        sessions:
-          type: number
-    BackendServer:
-      type: object
-      required:
-      - id
-      - backend_id
-      - type
-      - use_private_ip
-      - weight
-      - backup
-      - admin_state
-      - resolved
-      properties:
-        id: *id001
-        backend_id: *id001
-        type:
-          type: string
-          enum:
-          - ip
-          - host
-          - label_selector
-        ip: *id006
-        host_id: *id005
-        label_selector: *id006
-        port:
-          type: integer
-          nullable: true
-        use_private_ip:
-          type: boolean
-        weight:
-          type: integer
-        backup:
-          type: boolean
-        admin_state:
-          type: string
-          enum:
-          - ready
-          - drain
-          - maint
-        removing:
-          type: boolean
-        resolved:
-          type: array
-          items:
-            $ref: '#/components/schemas/ResolvedServer'
-    BackendHealth:
-      type: object
-      required:
-      - summary
-      - servers
-      properties:
-        summary:
-          $ref: '#/components/schemas/HealthSummary'
-        servers:
-          type: array
-          items:
-            $ref: '#/components/schemas/ResolvedServer'
+          description: label selector on project labels; node-wide events (apply, backup) are not filtered by it
     HostInput:
       type: object
       properties:
         name:
           type: string
-        ipv4: *id006
+        ipv4: &id006
+          type: string
+          nullable: true
         ipv6: *id006
         private_ipv4: *id006
         labels:
@@ -2911,7 +2431,7 @@ components:
       - name
       - labels
       properties:
-        id: *id001
+        id: *id007
         name:
           type: string
         ipv4: *id006
@@ -2923,36 +2443,28 @@ components:
           type: string
         used_by:
           type: array
-          items: *id001
-          description: backend ids
+          items: *id007
+          description: project ids
     Overview:
       type: object
       required:
-      - frontends
-      - backends
-      - servers
+      - projects
+      - targets
       - certificates
       - node
       properties:
-        frontends:
+        projects:
           type: object
           required:
           - total
           - apply_errors
-          properties:
-            total:
-              type: integer
-            apply_errors:
-              type: integer
-        backends:
-          type: object
-          required:
-          - total
           - healthy
           - degraded
           - unhealthy
           properties:
             total:
+              type: integer
+            apply_errors:
               type: integer
             healthy:
               type: integer
@@ -2960,7 +2472,7 @@ components:
               type: integer
             unhealthy:
               type: integer
-        servers:
+        targets:
           type: object
           required:
           - total
@@ -3001,3 +2513,368 @@ components:
               type: number
             bytes_out_per_second:
               type: number
+    Endpoint:
+      type: object
+      required:
+      - kind
+      - url
+      properties:
+        kind:
+          type: string
+          enum:
+          - port
+          - domain
+        url:
+          type: string
+        service_id: *id005
+        domain_id: *id005
+    Project:
+      type: object
+      required:
+      - id
+      - name
+      - version
+      - description
+      - algorithm
+      - labels
+      - maintenance
+      - status
+      - created_at
+      - endpoints
+      - counts
+      - health
+      - stats
+      properties:
+        id: *id001
+        name:
+          type: string
+        version: *id001
+        description:
+          type: string
+        algorithm:
+          type: string
+          enum:
+          - roundrobin
+          - leastconn
+          - source
+          - random
+        labels:
+          $ref: '#/components/schemas/Labels'
+        maintenance:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - applying
+          - ready
+          - error
+        last_error: &id009
+          type: string
+          nullable: true
+        created_at: *id001
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/Endpoint'
+          description: 'where the project is reachable: its ports and https/http domains'
+        counts:
+          type: object
+          required:
+          - targets
+          - services
+          - domains
+          properties:
+            targets:
+              type: integer
+            services:
+              type: integer
+            domains:
+              type: integer
+        health:
+          $ref: '#/components/schemas/HealthSummary'
+        stats:
+          type: object
+          required:
+          - open_connections
+          - requests_per_second
+          - bytes_out_per_second
+          properties:
+            open_connections:
+              type: number
+            requests_per_second:
+              type: number
+            bytes_out_per_second:
+              type: number
+    ProjectCreate:
+      type: object
+      required:
+      - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        algorithm:
+          type: string
+          enum:
+          - roundrobin
+          - leastconn
+          - source
+          - random
+        labels:
+          $ref: '#/components/schemas/Labels'
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetInput'
+          description: initial targets (optional)
+        service:
+          allOf:
+          - $ref: '#/components/schemas/ServiceInput'
+          description: first service; default http, own free port (listen_port omitted = auto), destination port 80
+    ProjectUpdate:
+      type: object
+      required: []
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        algorithm:
+          type: string
+          enum:
+          - roundrobin
+          - leastconn
+          - source
+          - random
+        labels:
+          $ref: '#/components/schemas/Labels'
+        maintenance:
+          type: boolean
+    ServiceInput:
+      type: object
+      required:
+      - protocol
+      - destination_port
+      properties:
+        protocol:
+          type: string
+          enum:
+          - http
+          - https
+          - tcp
+        listen_port:
+          type: integer
+          description: omit for a free port picked automatically (20000+); 80/443 are reserved for domains
+        destination_port:
+          type: integer
+        proxy_protocol:
+          type: string
+          enum:
+          - none
+          - v1
+          - v2
+        timeout_s:
+          type: integer
+          description: client/server timeout (default 60)
+        certificates:
+          type: array
+          items: *id001
+          description: https only
+        sticky_sessions:
+          type: boolean
+        cookie_name:
+          type: string
+        cookie_lifetime_s:
+          type: integer
+        health_check: &id008
+          $ref: '#/components/schemas/HealthCheck'
+    Service:
+      type: object
+      required:
+      - id
+      - project_id
+      - protocol
+      - listen_port
+      - destination_port
+      - proxy_protocol
+      - timeout_s
+      - certificates
+      - sticky_sessions
+      - cookie_name
+      - cookie_lifetime_s
+      - health_check
+      - health
+      properties:
+        id: *id001
+        project_id: *id001
+        protocol:
+          type: string
+          enum:
+          - http
+          - https
+          - tcp
+        listen_port:
+          type: integer
+        destination_port:
+          type: integer
+        proxy_protocol:
+          type: string
+          enum:
+          - none
+          - v1
+          - v2
+        timeout_s:
+          type: integer
+        certificates:
+          type: array
+          items: *id001
+        sticky_sessions:
+          type: boolean
+        cookie_name:
+          type: string
+        cookie_lifetime_s:
+          type: integer
+        health_check: *id008
+        health:
+          $ref: '#/components/schemas/HealthSummary'
+        domains:
+          type: array
+          items:
+            type: string
+          description: domains routed to this service
+    TargetInput:
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          enum:
+          - ip
+          - host
+          - label_selector
+        ip:
+          type: string
+          description: ip, optionally ip:port or [v6]:port
+        host_id: *id001
+        label_selector:
+          type: string
+        use_private_ip:
+          type: boolean
+        port:
+          type: integer
+          description: override the service destination port for this target
+        weight:
+          type: integer
+        backup:
+          type: boolean
+    TargetsCreate:
+      type: object
+      required:
+      - targets
+      properties:
+        targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetInput'
+    TargetUpdate:
+      type: object
+      required: []
+      properties:
+        weight:
+          type: integer
+        backup:
+          type: boolean
+        admin_state:
+          type: string
+          enum:
+          - ready
+          - drain
+          - maint
+    TargetCheck:
+      type: object
+      required:
+      - service_id
+      - status
+      properties:
+        service_id: *id001
+        status:
+          type: string
+          enum:
+          - healthy
+          - unhealthy
+          - unknown
+        check:
+          type: string
+        sessions:
+          type: number
+    ResolvedTarget:
+      type: object
+      required:
+      - slot_id
+      - address
+      - status
+      - checks
+      properties:
+        slot_id: *id001
+        host_id: *id005
+        name: *id009
+        address:
+          type: string
+        status:
+          type: string
+          enum:
+          - healthy
+          - unhealthy
+          - degraded
+          - unknown
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TargetCheck'
+    Target:
+      type: object
+      required:
+      - id
+      - project_id
+      - type
+      - use_private_ip
+      - weight
+      - backup
+      - admin_state
+      - removing
+      - resolved
+      properties:
+        id: *id001
+        project_id: *id001
+        type:
+          type: string
+          enum:
+          - ip
+          - host
+          - label_selector
+        ip: *id009
+        host_id: *id005
+        label_selector: *id009
+        port:
+          type: integer
+          nullable: true
+        use_private_ip:
+          type: boolean
+        weight:
+          type: integer
+        backup:
+          type: boolean
+        admin_state:
+          type: string
+          enum:
+          - ready
+          - drain
+          - maint
+        removing:
+          type: boolean
+        resolved:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedTarget'

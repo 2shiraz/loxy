@@ -13,14 +13,13 @@ import (
 )
 
 type Event struct {
-	ID         int64          `json:"id"`
-	TS         int64          `json:"ts"`
-	FrontendID *int64         `json:"frontend_id"`
-	BackendID  *int64         `json:"backend_id"`
-	Kind       string         `json:"kind"`
-	Severity   string         `json:"severity"`
-	Message    string         `json:"message"`
-	Data       map[string]any `json:"data,omitempty"`
+	ID        int64          `json:"id"`
+	TS        int64          `json:"ts"`
+	ProjectID *int64         `json:"project_id"`
+	Kind      string         `json:"kind"`
+	Severity  string         `json:"severity"`
+	Message   string         `json:"message"`
+	Data      map[string]any `json:"data,omitempty"`
 	// Ephemeral events are only streamed, not stored (e.g. config.updated).
 	Ephemeral bool `json:"-"`
 }
@@ -54,7 +53,7 @@ func (h *Hub) Publish(e Event) {
 			}
 			return sql.NullInt64{Int64: *p, Valid: true}
 		}
-		id, err := h.q.CreateEvent(context.Background(), db.CreateEventParams{Ts: e.TS, FrontendID: nn(e.FrontendID), BackendID: nn(e.BackendID),
+		id, err := h.q.CreateEvent(context.Background(), db.CreateEventParams{Ts: e.TS, BalancerID: nn(e.ProjectID),
 			Kind: e.Kind, Severity: e.Severity, Message: e.Message, Data: string(data)})
 		if err != nil {
 			slog.Warn("store event", "err", err)

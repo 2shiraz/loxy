@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -73,68 +71,44 @@ func runAPI(args []string) error {
 	return nil
 }
 
-// runList implements `loxy frontends ls` and `loxy backends ls`.
-func runList(kind string, args []string) error {
+// runProjects implements `loxy projects ls`.
+func runProjects(args []string) error {
 	if len(args) == 0 || args[0] != "ls" {
-		return fmt.Errorf("usage: loxy %s ls   (other operations: loxy api ...)", kind)
+		return fmt.Errorf("usage: loxy projects ls   (other operations: loxy api ...)")
 	}
-	b, status, err := apiCall("GET", "/"+kind, nil)
+	b, status, err := apiCall("GET", "/projects", nil)
 	if err != nil {
 		return err
 	}
 	if status != 200 {
 		return fmt.Errorf("HTTP %d: %s", status, b)
 	}
-	type health struct {
-		Status  string `json:"status"`
-		Healthy int    `json:"healthy"`
-		Total   int    `json:"total"`
-	}
-	type bind struct {
-		Address string `json:"address"`
-		Port    int64  `json:"port"`
-	}
 	var res struct {
-		Frontends []struct {
-			ID     int64  `json:"id"`
-			Name   string `json:"name"`
-			Mode   string `json:"mode"`
-			TLS    bool   `json:"tls"`
-			Binds  []bind `json:"binds"`
-			Status string `json:"status"`
-			Health health `json:"health"`
-		} `json:"frontends"`
-		Backends []struct {
+		Projects []struct {
 			ID        int64  `json:"id"`
 			Name      string `json:"name"`
-			Mode      string `json:"mode"`
-			Algorithm string `json:"algorithm"`
-			Servers   int    `json:"servers_count"`
-			Health    health `json:"health"`
-		} `json:"backends"`
+			Status    string `json:"status"`
+			Endpoints []struct {
+				URL string `json:"url"`
+			} `json:"endpoints"`
+			Health struct {
+				Status  string `json:"status"`
+				Healthy int    `json:"healthy"`
+				Total   int    `json:"total"`
+			} `json:"health"`
+		} `json:"projects"`
 	}
 	if err := json.Unmarshal(b, &res); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	if kind == "frontends" {
-		fmt.Fprintln(tw, "ID\tNAME\tMODE\tBINDS\tSTATUS\tHEALTH")
-		for _, f := range res.Frontends {
-			mode := f.Mode
-			if f.TLS {
-				mode += "+tls"
-			}
-			var bs []string
-			for _, x := range f.Binds {
-				bs = append(bs, net.JoinHostPort(x.Address, strconv.FormatInt(x.Port, 10)))
-			}
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s %d/%d\n", f.ID, f.Name, mode, strings.Join(bs, ","), f.Status, f.Health.Status, f.Health.Healthy, f.Health.Total)
+	fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tHEALTH\tENDPOINTS")
+	for _, p := range res.Projects {
+		var eps []string
+		for _, e := range p.Endpoints {
+			eps = append(eps, e.URL)
 		}
-	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tMODE\tALGORITHM\tSERVERS\tHEALTH")
-		for _, x := range res.Backends {
-			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%d\t%s %d/%d\n", x.ID, x.Name, x.Mode, x.Algorithm, x.Servers, x.Health.Status, x.Health.Healthy, x.Health.Total)
-		}
+		fmt.Fprintf(tw, "%d\t%s\t%s\t%s %d/%d\t%s\n", p.ID, p.Name, p.Status, p.Health.Status, p.Health.Healthy, p.Health.Total, strings.Join(eps, " "))
 	}
 	return tw.Flush()
 }

@@ -121,29 +121,32 @@ func (r *Reconciler) Run(ctx context.Context) {
 	}
 }
 
-// ACMEFrontends returns frontend ids that must answer HTTP-01 challenges on :80
-// (managed HTTP-01 certificates attached, or domains attached).
-func ACMEFrontends(snap *state.Snapshot) map[int64]bool {
-	acme := map[int64]bool{}
-	for _, f := range snap.Frontends {
-		if NeedsACME(snap, f.ID, f.CertIDs) {
-			acme[f.ID] = true
+// DomainRoutes lists the domains routed on the shared :80/:443 frontends. A domain needs a
+// project with an http/https service; it redirects to HTTPS once its certificate is issued.
+func DomainRoutes(snap *state.Snapshot) []render.DomainRoute {
+	var out []render.DomainRoute
+	for _, d := range snap.Domains {
+		sv := snap.DomainService(d)
+		if sv == nil {
+			continue
 		}
+		dr := render.DomainRoute{Host: d.Fqdn, BackendID: sv.ID}
+		if d.CertificateID.Valid {
+			if c := snap.Cert(d.CertificateID.Int64); c != nil && c.PEM() != "" {
+				dr.CertID = c.ID
+				dr.HTTPS = d.Https != 0
+			}
+		}
+		out = append(out, dr)
 	}
-	return acme
+	return out
 }
 
-// NeedsACME reports whether frontend id (0 = not created yet) with the given certificates
-// answers HTTP-01 challenges on :80: it has a domain or a managed http01 certificate.
-// The API's listener-collision checks use the same rule as the renderer.
-func NeedsACME(snap *state.Snapshot, id int64, certIDs []int64) bool {
-	for _, d := range snap.Domains {
-		if id != 0 && d.FrontendID.Valid && d.FrontendID.Int64 == id {
-			return true
-		}
-	}
-	for _, cid := range certIDs {
-		if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
+// SharedHTTP reports whether sys_http must listen on :80 without domains: managed HTTP-01
+// certificates are validated through it.
+func SharedHTTP(snap *state.Snapshot) bool {
+	for _, c := range snap.Certs {
+		if c.Type == "managed" && c.Challenge == "http01" {
 			return true
 		}
 	}
@@ -156,7 +159,7 @@ func (r *Reconciler) Input(snap *state.Snapshot, root string, rev, desired int64
 		Root: root, NodeID: r.Opt.NodeID, Revision: rev, DesiredVersion: desired,
 		PanelPort: r.Opt.PanelPort, PanelAllow: r.Opt.PanelAllow, LoxyAddr: r.Opt.LoxyAddr, Promex: r.promex,
 		StateFile: filepath.Join(r.Opt.StateDir, "server-state"), SocketPath: r.Opt.SocketPath, GlobalMaxConn: r.Opt.GlobalMaxConn,
-		Frontends: snap.FrontendsOnNode(r.Opt.NodeID), Backends: snap.BackendsOnNode(r.Opt.NodeID), Cert: snap.Cert, ACMEHTTP01: ACMEFrontends(snap),
+		Frontends: snap.FrontendsOnNode(r.Opt.NodeID), Backends: snap.BackendsOnNode(r.Opt.NodeID), Cert: snap.Cert, Domains: DomainRoutes(snap), SharedHTTP: SharedHTTP(snap),
 		PanelPEM: r.Opt.PanelPEM, PlaceholderPEM: r.Opt.PlaceholderPEM, IPv6: r.Opt.IPv6,
 	}
 }
@@ -366,9 +369,9 @@ func (r *Reconciler) succeed(ctx context.Context, snap *state.Snapshot, desired 
 	q := r.Store.Q
 	_ = q.SetAppliedVersion(ctx, db.SetAppliedVersionParams{AppliedVersion: desired, ID: r.Opt.NodeID})
 	changed := false
-	for _, f := range snap.FrontendsOnNode(r.Opt.NodeID) {
-		if f.Status != "active" || f.LastError.Valid {
-			_ = q.SetFrontendStatus(ctx, db.SetFrontendStatusParams{Status: "active", ID: f.ID})
+	for _, p := range snap.Projects {
+		if p.NodeID == r.Opt.NodeID && (p.Status != "ready" || p.LastError.Valid) {
+			_ = q.SetBalancerStatus(ctx, db.SetBalancerStatusParams{Status: "ready", ID: p.ID})
 			changed = true
 		}
 	}
@@ -384,8 +387,10 @@ func (r *Reconciler) fail(ctx context.Context, snap *state.Snapshot, rev, desire
 		StateJson: "{}", CreatedBy: by, CreatedAt: time.Now().UnixMilli()})
 	_ = os.RemoveAll(r.FS.RevDir(rev))
 	Stats.record(kind, "failed", time.Since(start).Milliseconds())
-	for _, f := range snap.FrontendsOnNode(r.Opt.NodeID) {
-		_ = q.SetFrontendStatus(ctx, db.SetFrontendStatusParams{Status: "apply_error", LastError: sql.NullString{String: truncate(msg, 4000), Valid: true}, ID: f.ID})
+	for _, p := range snap.Projects {
+		if p.NodeID == r.Opt.NodeID {
+			_ = q.SetBalancerStatus(ctx, db.SetBalancerStatusParams{Status: "error", LastError: sql.NullString{String: truncate(msg, 4000), Valid: true}, ID: p.ID})
+		}
 	}
 	r.Hub.Publish(events.Event{Kind: "apply.failed", Severity: "error", Message: "Apply failed: " + firstLine(msg)})
 	return fmt.Errorf("apply rev %d failed: %s", rev, firstLine(msg))

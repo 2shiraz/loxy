@@ -51,49 +51,20 @@ type AuditLog struct {
 	After        sql.NullString
 }
 
-type Backend struct {
-	ID                    int64
-	ProjectID             int64
-	NodeID                int64
-	Name                  string
-	Description           string
-	Mode                  string
-	Algorithm             string
-	Port                  int64
-	StickyEnabled         int64
-	StickyCookieName      string
-	StickyCookieLifetimeS int64
-	ProxyProtocol         string
-	TimeoutServerS        int64
-	HcProtocol            string
-	HcPort                int64
-	HcIntervalS           int64
-	HcTimeoutS            int64
-	HcRetries             int64
-	HcDomain              string
-	HcPath                string
-	HcResponse            string
-	HcStatusCodes         string
-	HcTlsVerify           int64
-	Labels                string
-	Version               int64
-	CreatedAt             int64
-}
-
-type BackendServer struct {
-	ID            int64
-	BackendID     int64
-	Type          string
-	HostID        sql.NullInt64
-	LabelSelector string
-	Ip            string
-	Port          sql.NullInt64
-	UsePrivateIp  int64
-	Weight        int64
-	Backup        int64
-	AdminState    string
-	Removing      int64
-	CreatedAt     int64
+type Balancer struct {
+	ID          int64
+	ProjectID   int64
+	NodeID      int64
+	Name        string
+	Description string
+	Algorithm   string
+	Labels      string
+	Maintenance int64
+	Status      string
+	LastError   sql.NullString
+	Version     int64
+	CreatedAt   int64
+	UpdatedAt   int64
 }
 
 type Certificate struct {
@@ -152,7 +123,9 @@ type Domain struct {
 	ID               int64
 	ProjectID        int64
 	Fqdn             string
-	FrontendID       sql.NullInt64
+	BalancerID       sql.NullInt64
+	ServiceID        sql.NullInt64
+	Https            int64
 	DnsProviderID    sql.NullInt64
 	Zone             string
 	AutoRecords      int64
@@ -171,42 +144,11 @@ type Event struct {
 	ID         int64
 	Ts         int64
 	ProjectID  int64
-	FrontendID sql.NullInt64
-	BackendID  sql.NullInt64
+	BalancerID sql.NullInt64
 	Kind       string
 	Severity   string
 	Message    string
 	Data       string
-}
-
-type Frontend struct {
-	ID               int64
-	ProjectID        int64
-	NodeID           int64
-	Name             string
-	Description      string
-	Mode             string
-	Tls              int64
-	Binds            string
-	HttpRedirect     int64
-	DefaultBackendID sql.NullInt64
-	TimeoutClientS   int64
-	Maxconn          int64
-	ForwardedHeaders int64
-	Enabled          int64
-	Maintenance      int64
-	Labels           string
-	Status           string
-	LastError        sql.NullString
-	Version          int64
-	CreatedAt        int64
-	UpdatedAt        int64
-}
-
-type FrontendCertificate struct {
-	FrontendID    int64
-	CertificateID int64
-	Position      int64
 }
 
 type Host struct {
@@ -275,21 +217,35 @@ type Project struct {
 	CreatedAt int64
 }
 
-type Route struct {
-	ID         int64
-	FrontendID int64
-	Position   int64
-	Hosts      string
-	PathPrefix string
-	BackendID  int64
+type Service struct {
+	ID                    int64
+	BalancerID            int64
+	Protocol              string
+	ListenPort            int64
+	DestinationPort       int64
+	ProxyProtocol         string
+	TimeoutS              int64
+	StickyEnabled         int64
+	StickyCookieName      string
+	StickyCookieLifetimeS int64
+	HcProtocol            string
+	HcPort                int64
+	HcIntervalS           int64
+	HcTimeoutS            int64
+	HcRetries             int64
+	HcDomain              string
+	HcPath                string
+	HcResponse            string
+	HcStatusCodes         string
+	HcTlsVerify           int64
+	Version               int64
+	CreatedAt             int64
 }
 
-type ServerSlot struct {
-	ID        int64
-	BackendID int64
-	ServerID  int64
-	HostID    sql.NullInt64
-	Address   string
+type ServiceCertificate struct {
+	ServiceID     int64
+	CertificateID int64
+	Position      int64
 }
 
 type Session struct {
@@ -305,6 +261,30 @@ type Session struct {
 type Setting struct {
 	Key   string
 	Value string
+}
+
+type Target struct {
+	ID            int64
+	BalancerID    int64
+	Type          string
+	HostID        sql.NullInt64
+	LabelSelector string
+	Ip            string
+	Port          sql.NullInt64
+	UsePrivateIp  int64
+	Weight        int64
+	Backup        int64
+	AdminState    string
+	Removing      int64
+	CreatedAt     int64
+}
+
+type TargetSlot struct {
+	ID         int64
+	BalancerID int64
+	TargetID   int64
+	HostID     sql.NullInt64
+	Address    string
 }
 
 type User struct {

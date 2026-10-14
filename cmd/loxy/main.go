@@ -1,4 +1,4 @@
-// Command loxy is the Loxy control plane: a self-hosted management panel for HAProxy 3.4.
+// Command loxy is the Loxy control plane: a self-hosted load-balancer panel for HAProxy 3.4.
 package main
 
 import (
@@ -22,7 +22,7 @@ import (
 
 var version = "dev"
 
-const usage = `loxy — self-hosted management panel for HAProxy
+const usage = `loxy — self-hosted load-balancer panel for HAProxy
 
 Usage:
   loxy all-in-one              run panel + local node agent (default)
@@ -33,8 +33,7 @@ Usage:
   loxy admin reset-password    set a new random owner password
   loxy version                 print the version
   loxy api METHOD PATH [JSON]  call the REST API (env LOXY_URL, LOXY_TOKEN)
-  loxy frontends ls            list frontends (env LOXY_URL, LOXY_TOKEN)
-  loxy backends ls             list backends (env LOXY_URL, LOXY_TOKEN)
+  loxy projects ls             list projects (env LOXY_URL, LOXY_TOKEN)
   loxy panel | agent           multi-node modes (Phase 3, not available yet)
 `
 
@@ -66,10 +65,8 @@ func run(cmd string, args []string) error {
 		return nil
 	case "api":
 		return runAPI(args)
-	case "frontends", "fe":
-		return runList("frontends", args)
-	case "backends", "be":
-		return runList("backends", args)
+	case "projects", "project":
+		return runProjects(args)
 	case "panel", "agent":
 		return fmt.Errorf("%s mode is part of Phase 3 and not implemented yet; use all-in-one", cmd)
 	}

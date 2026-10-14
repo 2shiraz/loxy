@@ -73,6 +73,8 @@ type Scope string
 const (
 	FE Scope = "fe"
 	BE Scope = "be"
+	// PR is a project: the sum of its services' backends (covers port and domain traffic).
+	PR Scope = "pr"
 )
 
 type key struct {
@@ -100,6 +102,8 @@ type Collector struct {
 	Q        *db.Queries
 	Hub      *events.Hub
 	Interval time.Duration
+	// Owner maps a service id (backend be_<id>) to its project id and name for events.
+	Owner func(serviceID int64) (int64, string)
 
 	mu      sync.RWMutex
 	rings   map[key]*ring
@@ -185,7 +189,15 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		case 0:
 			id, ok := parseName(r.PxName, "fe_")
 			if !ok {
-				continue
+				// Shared domain frontends count towards the node total only.
+				switch r.PxName {
+				case "sys_http":
+					id = -80
+				case "sys_https":
+					id = -443
+				default:
+					continue
+				}
 			}
 			k := key{FE, id}
 			cc := counters{connTot: float64(r.Int("conn_tot")), reqTot: float64(r.Int("req_tot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
@@ -204,7 +216,11 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 				continue
 			}
 			k := key{BE, id}
-			cur[k] = counters{connTot: float64(r.Int("stot")), reqTot: float64(r.Int("stot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
+			req := r.Int("req_tot") // http backends; tcp backends count sessions
+			if req == 0 {
+				req = r.Int("stot")
+			}
+			cur[k] = counters{connTot: float64(r.Int("stot")), reqTot: float64(req), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
 				h2: float64(r.Int("hrsp_2xx")), h3: float64(r.Int("hrsp_3xx")), h4: float64(r.Int("hrsp_4xx")), h5: float64(r.Int("hrsp_5xx")),
 				errs: float64(r.Int("econ") + r.Int("eresp"))}
 			p := get(k)
@@ -272,10 +288,40 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 			total.Errors += p.Errors
 		}
 		c.addPoint(k, *p)
-		if k.scope == FE {
-			for ch := range c.subs[k.id] {
+	}
+	if c.Owner != nil {
+		agg := map[int64]*Point{}
+		for k, p := range pts {
+			if k.scope != BE {
+				continue
+			}
+			pid, _ := c.Owner(k.id)
+			if pid == 0 {
+				continue
+			}
+			a := agg[pid]
+			if a == nil {
+				a = &Point{TS: ts}
+				agg[pid] = a
+			}
+			a.Open += p.Open
+			a.CPS += p.CPS
+			a.RPS += p.RPS
+			a.In += p.In
+			a.Out += p.Out
+			a.H2 += p.H2
+			a.H3 += p.H3
+			a.H4 += p.H4
+			a.H5 += p.H5
+			a.Errors += p.Errors
+			a.Queue += p.Queue
+			a.RespMS = max(a.RespMS, p.RespMS)
+		}
+		for pid, a := range agg {
+			c.addPoint(key{PR, pid}, *a)
+			for ch := range c.subs[pid] {
 				select {
-				case ch <- *p:
+				case ch <- *a:
 				default:
 				}
 			}
@@ -303,9 +349,16 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		if ch.Status == "unhealthy" {
 			sev, msg = "warning", "is unhealthy: "+ch.Detail
 		}
-		c.Hub.Publish(events.Event{Kind: "server.health.changed", BackendID: events.I64(ch.BackendID), Severity: sev,
-			Message: fmt.Sprintf("Server %d of backend %d %s", ch.SlotID, ch.BackendID, msg),
-			Data:    map[string]any{"backend_id": ch.BackendID, "slot_id": ch.SlotID, "status": ch.Status}})
+		var project *int64
+		name := fmt.Sprintf("service %d", ch.BackendID)
+		if c.Owner != nil {
+			if id, pname := c.Owner(ch.BackendID); id != 0 {
+				project, name = events.I64(id), pname
+			}
+		}
+		c.Hub.Publish(events.Event{Kind: "target.health.changed", ProjectID: project, Severity: sev,
+			Message: fmt.Sprintf("Target #%d of %s %s", ch.SlotID, name, msg),
+			Data:    map[string]any{"service_id": ch.BackendID, "slot_id": ch.SlotID, "status": ch.Status}})
 	}
 	if flush != nil && c.Q != nil {
 		c.rollup(ctx, flush)
@@ -367,18 +420,18 @@ func (c *Collector) rollup(ctx context.Context, m map[key][]Point) {
 	_ = c.Q.PurgeMetrics1m(ctx, time.Now().Add(-35*24*time.Hour).Unix())
 }
 
-// Subscribe streams frontend-level points (1 s) for SSE.
-func (c *Collector) Subscribe(fe int64) (<-chan Point, func()) {
+// Subscribe streams project-level points (1 s) for SSE.
+func (c *Collector) Subscribe(project int64) (<-chan Point, func()) {
 	ch := make(chan Point, 16)
 	c.mu.Lock()
-	if c.subs[fe] == nil {
-		c.subs[fe] = map[chan Point]struct{}{}
+	if c.subs[project] == nil {
+		c.subs[project] = map[chan Point]struct{}{}
 	}
-	c.subs[fe][ch] = struct{}{}
+	c.subs[project][ch] = struct{}{}
 	c.mu.Unlock()
 	return ch, func() {
 		c.mu.Lock()
-		delete(c.subs[fe], ch)
+		delete(c.subs[project], ch)
 		c.mu.Unlock()
 	}
 }

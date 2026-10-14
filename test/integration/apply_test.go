@@ -130,8 +130,7 @@ func startStack(t *testing.T, tweak func(*config.Config)) *stack {
 }
 
 // TestApplyPathZeroDowntime drives the real API + reconciler against HAProxy 3.4:
-// create a backend + frontend (reload), add/remove servers (runtime, no reload), repeated
-// reloads under load.
+// create a project (reload), add/remove targets (runtime, no reload), repeated reloads under load.
 func TestApplyPathZeroDowntime(t *testing.T) {
 	s := startStack(t, nil)
 	a, c, dir, haIP := s.a, s.c, s.dir, s.haIP
@@ -139,23 +138,14 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 	b1, b2 := echoServer(t, dir, "one"), echoServer(t, dir, "two")
 	var st int
 	var body map[string]any
-	beSpec := func(alg string) map[string]any {
-		return map[string]any{"name": "it", "mode": "http", "port": 9001, "algorithm": alg,
-			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}}
-	}
-	st, body = c.do("POST", "/backends", beSpec("roundrobin"))
+	st, body = c.do("POST", "/projects", map[string]any{"name": "it",
+		"service": map[string]any{"protocol": "http", "listen_port": 8080, "destination_port": 9001,
+			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}},
+		"targets": []any{map[string]any{"type": "ip", "ip": b1}}})
 	if st != 201 {
-		t.Fatalf("create backend %d %v", st, body)
+		t.Fatalf("create project %d %v", st, body)
 	}
-	beID := int64(body["backend"].(map[string]any)["id"].(float64))
-	if st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b1}}}); st != 201 {
-		t.Fatalf("add server %d %v", st, body)
-	}
-	st, body = c.do("POST", "/frontends", map[string]any{"name": "it", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 8080}},
-		"default_backend_id": beID})
-	if st != 201 {
-		t.Fatalf("create frontend %d %v", st, body)
-	}
+	pid := int64(body["project"].(map[string]any)["id"].(float64))
 	apply := func(wantKind string) {
 		t.Helper()
 		if err := a.Rec.Apply(ctx, "test"); err != nil {
@@ -213,20 +203,20 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 			}
 		}()
 	}
-	// Runtime: add and remove a server under load — no reload allowed.
-	st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b2}}})
+	// Runtime: add and remove a target under load — no reload allowed.
+	st, body = c.do("POST", fmt.Sprintf("/projects/%d/targets", pid), map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": b2}}})
 	if st != 201 {
-		t.Fatalf("add server %d %v", st, body)
+		t.Fatalf("add target %d %v", st, body)
 	}
 	apply("runtime")
 	time.Sleep(4 * time.Second) // let the new server pass its first check
-	sid := int64(body["servers"].([]any)[0].(map[string]any)["id"].(float64))
-	st, _ = c.do("DELETE", fmt.Sprintf("/backends/%d/servers/%d", beID, sid), nil)
-	if st != 204 && st != 202 {
-		t.Fatalf("delete server %d", st)
+	tid := int64(body["targets"].([]any)[0].(map[string]any)["id"].(float64))
+	st, _ = c.do("DELETE", fmt.Sprintf("/projects/%d/targets/%d", pid, tid), nil)
+	if st != 202 {
+		t.Fatalf("delete target %d", st)
 	}
 	apply("runtime") // drain
-	waitFor(t, 10*time.Second, "server removed", func() bool { return a.Snap.Get().Backend(beID).Server(sid) == nil })
+	waitFor(t, 10*time.Second, "target removed", func() bool { return a.Snap.Get().Project(pid).Target(tid) == nil })
 	apply("runtime") // del server
 	// Repeated reloads under load (algorithm flip forces a reload).
 	reloads := 20
@@ -235,7 +225,7 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 	}
 	algs := []string{"leastconn", "roundrobin"}
 	for i := 0; i < reloads; i++ {
-		if st, b := c.do("PUT", fmt.Sprintf("/backends/%d", beID), beSpec(algs[i%2])); st != 200 {
+		if st, b := c.do("PATCH", fmt.Sprintf("/projects/%d", pid), map[string]any{"algorithm": algs[i%2]}); st != 200 {
 			t.Fatalf("patch %d %v", st, b)
 		}
 		apply("reload")

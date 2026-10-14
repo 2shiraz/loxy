@@ -13,7 +13,6 @@ import (
 	"github.com/2shiraz/loxy/internal/certs"
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
 	"github.com/2shiraz/loxy/internal/state"
-	"github.com/2shiraz/loxy/internal/store/db"
 	"github.com/2shiraz/loxy/internal/testutil"
 )
 
@@ -27,7 +26,9 @@ func input(t *testing.T, root string) Input {
 	fes, bes, cf := fixture(c, k)
 	return Input{
 		Root: root, NodeID: 1, Revision: 123, DesiredVersion: 456, PanelPort: 8443, PanelAllow: []string{"10.0.0.0/8", "192.0.2.1"},
-		Promex: true, Frontends: fes, Backends: bes, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k, ACMEHTTP01: map[int64]bool{7: true}, IPv6: true,
+		Promex: true, Frontends: fes, Backends: bes, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k, IPv6: true,
+		Domains: []DomainRoute{{Host: "shop.example.com", BackendID: 4, CertID: 12, HTTPS: true}, {Host: "*.api.example.com", BackendID: 5},
+			{Host: "beta.api.example.com", BackendID: 4}},
 	}
 }
 
@@ -93,10 +94,10 @@ func WriteTree(t testing.TB, dir string, out *Output) {
 
 func TestSecureCookieOnlyWhenAllFrontendsTLS(t *testing.T) {
 	be := func(id int64) sql.NullInt64 { return sql.NullInt64{Int64: id, Valid: true} }
-	tls := &state.Frontend{Frontend: db.Frontend{ID: 1, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(5)}}
-	plain := &state.Frontend{Frontend: db.Frontend{ID: 2, Mode: "http", Enabled: 1, DefaultBackendID: be(6)}, Routes: []state.Route{{BackendID: 5}}}
-	off := &state.Frontend{Frontend: db.Frontend{ID: 3, Mode: "http", Enabled: 0, DefaultBackendID: be(7)}}
-	tlsOnly := &state.Frontend{Frontend: db.Frontend{ID: 4, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(7)}}
+	tls := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 1, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(5)}}
+	plain := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 2, Mode: "http", Enabled: 1, DefaultBackendID: be(6)}, Routes: []state.Route{{BackendID: 5}}}
+	off := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 3, Mode: "http", Enabled: 0, DefaultBackendID: be(7)}}
+	tlsOnly := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 4, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(7)}}
 	got := tlsOnlyBackends([]*state.Frontend{tls, plain, off, tlsOnly})
 	if got[5] || got[6] || !got[7] {
 		t.Fatalf("tlsOnly = %v (5: shared with plain HTTP, 6: plain only, 7: TLS + disabled plain)", got)

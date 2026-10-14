@@ -77,65 +77,59 @@ UPDATE hosts SET name = ?, ipv4 = ?, ipv6 = ?, private_ipv4 = ?, labels = ?, not
 DELETE FROM hosts WHERE id = ?;
 
 -- ===== backends =====
--- name: ListBackends :many
-SELECT * FROM backends ORDER BY id;
--- name: CreateBackend :one
-INSERT INTO backends (project_id, name, description, mode, algorithm, port, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s,
-  proxy_protocol, timeout_server_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response,
-  hc_status_codes, hc_tls_verify, labels, created_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
--- name: UpdateBackend :exec
-UPDATE backends SET name = ?, description = ?, mode = ?, algorithm = ?, port = ?, sticky_enabled = ?, sticky_cookie_name = ?, sticky_cookie_lifetime_s = ?,
-  proxy_protocol = ?, timeout_server_s = ?, hc_protocol = ?, hc_port = ?, hc_interval_s = ?, hc_timeout_s = ?, hc_retries = ?, hc_domain = ?,
-  hc_path = ?, hc_response = ?, hc_status_codes = ?, hc_tls_verify = ?, labels = ?, version = version + 1 WHERE id = ?;
--- name: DeleteBackend :exec
-DELETE FROM backends WHERE id = ?;
+-- ===== projects (table balancers) =====
+-- name: ListBalancers :many
+SELECT * FROM balancers ORDER BY id;
+-- name: CreateBalancer :one
+INSERT INTO balancers (project_id, name, description, algorithm, labels, status, created_at, updated_at)
+VALUES (1, ?, ?, ?, ?, 'applying', ?, ?) RETURNING *;
+-- name: UpdateBalancer :exec
+UPDATE balancers SET name = ?, description = ?, algorithm = ?, labels = ?, maintenance = ?, version = version + 1, updated_at = ? WHERE id = ?;
+-- name: SetBalancerStatus :exec
+UPDATE balancers SET status = ?, last_error = ? WHERE id = ?;
+-- name: DeleteBalancer :exec
+DELETE FROM balancers WHERE id = ?;
 
--- name: ListBackendServers :many
-SELECT * FROM backend_servers ORDER BY id;
--- name: CreateBackendServer :one
-INSERT INTO backend_servers (backend_id, type, host_id, label_selector, ip, port, use_private_ip, weight, backup, created_at)
+-- name: ListServices :many
+SELECT * FROM services ORDER BY balancer_id, id;
+-- name: ListListenPorts :many
+SELECT listen_port FROM services ORDER BY listen_port;
+-- name: CreateService :one
+INSERT INTO services (balancer_id, protocol, listen_port, destination_port, proxy_protocol, timeout_s, sticky_enabled, sticky_cookie_name,
+  sticky_cookie_lifetime_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes,
+  hc_tls_verify, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+-- name: UpdateService :exec
+UPDATE services SET protocol = ?, listen_port = ?, destination_port = ?, proxy_protocol = ?, timeout_s = ?, sticky_enabled = ?, sticky_cookie_name = ?,
+  sticky_cookie_lifetime_s = ?, hc_protocol = ?, hc_port = ?, hc_interval_s = ?, hc_timeout_s = ?, hc_retries = ?, hc_domain = ?, hc_path = ?,
+  hc_response = ?, hc_status_codes = ?, hc_tls_verify = ?, version = version + 1 WHERE id = ?;
+-- name: DeleteService :exec
+DELETE FROM services WHERE id = ?;
+-- name: ListServiceCertificates :many
+SELECT * FROM service_certificates ORDER BY service_id, position;
+-- name: ClearServiceCertificates :exec
+DELETE FROM service_certificates WHERE service_id = ?;
+-- name: AddServiceCertificate :exec
+INSERT INTO service_certificates (service_id, certificate_id, position) VALUES (?, ?, ?);
+
+-- name: ListTargets :many
+SELECT * FROM targets ORDER BY id;
+-- name: CreateTarget :one
+INSERT INTO targets (balancer_id, type, host_id, label_selector, ip, port, use_private_ip, weight, backup, created_at)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
--- name: UpdateBackendServer :exec
-UPDATE backend_servers SET weight = ?, backup = ?, admin_state = ? WHERE id = ?;
--- name: MarkBackendServerRemoving :exec
-UPDATE backend_servers SET removing = 1 WHERE id = ?;
--- name: DeleteBackendServer :exec
-DELETE FROM backend_servers WHERE id = ?;
+-- name: UpdateTarget :exec
+UPDATE targets SET weight = ?, backup = ?, admin_state = ? WHERE id = ?;
+-- name: MarkTargetRemoving :exec
+UPDATE targets SET removing = 1 WHERE id = ?;
+-- name: DeleteTarget :exec
+DELETE FROM targets WHERE id = ?;
 
 -- name: ListSlots :many
-SELECT * FROM server_slots ORDER BY id;
+SELECT * FROM target_slots ORDER BY id;
 -- name: CreateSlot :one
-INSERT INTO server_slots (backend_id, server_id, host_id, address) VALUES (?, ?, ?, ?) RETURNING id;
+INSERT INTO target_slots (balancer_id, target_id, host_id, address) VALUES (?, ?, ?, ?) RETURNING id;
 -- name: DeleteSlot :exec
-DELETE FROM server_slots WHERE id = ?;
-
--- ===== frontends =====
--- name: ListFrontends :many
-SELECT * FROM frontends ORDER BY id;
--- name: CreateFrontend :one
-INSERT INTO frontends (project_id, name, description, mode, tls, binds, http_redirect, default_backend_id, timeout_client_s, maxconn,
-  forwarded_headers, enabled, labels, status, created_at, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'applying', ?, ?) RETURNING *;
--- name: UpdateFrontend :exec
-UPDATE frontends SET name = ?, description = ?, mode = ?, tls = ?, binds = ?, http_redirect = ?, default_backend_id = ?, timeout_client_s = ?,
-  maxconn = ?, forwarded_headers = ?, enabled = ?, maintenance = ?, labels = ?, version = version + 1, updated_at = ? WHERE id = ?;
--- name: SetFrontendStatus :exec
-UPDATE frontends SET status = ?, last_error = ? WHERE id = ?;
--- name: DeleteFrontend :exec
-DELETE FROM frontends WHERE id = ?;
--- name: ListRoutes :many
-SELECT * FROM routes ORDER BY frontend_id, position;
--- name: ClearRoutes :exec
-DELETE FROM routes WHERE frontend_id = ?;
--- name: AddRoute :exec
-INSERT INTO routes (frontend_id, position, hosts, path_prefix, backend_id) VALUES (?, ?, ?, ?, ?);
--- name: ListFrontendCertificates :many
-SELECT * FROM frontend_certificates ORDER BY frontend_id, position;
--- name: ClearFrontendCertificates :exec
-DELETE FROM frontend_certificates WHERE frontend_id = ?;
--- name: AddFrontendCertificate :exec
-INSERT INTO frontend_certificates (frontend_id, certificate_id, position) VALUES (?, ?, ?);
+DELETE FROM target_slots WHERE id = ?;
 
 -- ===== certificates / acme / dns / domains =====
 -- name: ListCertificates :many
@@ -172,9 +166,10 @@ SELECT * FROM domains ORDER BY fqdn;
 -- name: GetDomain :one
 SELECT * FROM domains WHERE id = ?;
 -- name: CreateDomain :one
-INSERT INTO domains (project_id, fqdn, frontend_id, dns_provider_id, zone, auto_records, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
+INSERT INTO domains (project_id, fqdn, balancer_id, service_id, https, dns_provider_id, zone, auto_records, created_at, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *;
 -- name: UpdateDomain :exec
-UPDATE domains SET frontend_id = ?, dns_provider_id = ?, zone = ?, auto_records = ?, updated_at = ? WHERE id = ?;
+UPDATE domains SET balancer_id = ?, service_id = ?, https = ?, dns_provider_id = ?, zone = ?, auto_records = ?, updated_at = ? WHERE id = ?;
 -- name: SetDomainStatus :exec
 UPDATE domains SET status = ?, status_detail = ?, observed = ?, checked_at = ? WHERE id = ?;
 -- name: SetDomainCertificate :exec
@@ -194,10 +189,9 @@ FROM config_revisions WHERE node_id = ? ORDER BY revision DESC LIMIT 100;
 -- name: MaxRevision :one
 SELECT CAST(coalesce(max(revision), 0) AS INTEGER) FROM config_revisions WHERE node_id = ?;
 -- name: CreateEvent :one
-INSERT INTO events (ts, frontend_id, backend_id, kind, severity, message, data) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id;
+INSERT INTO events (ts, balancer_id, kind, severity, message, data) VALUES (?, ?, ?, ?, ?, ?) RETURNING id;
 -- name: ListEvents :many
-SELECT * FROM events WHERE (sqlc.narg(frontend_id) IS NULL OR frontend_id = sqlc.narg(frontend_id))
-  AND (sqlc.narg(backend_id) IS NULL OR backend_id = sqlc.narg(backend_id))
+SELECT * FROM events WHERE (sqlc.narg(balancer_id) IS NULL OR balancer_id = sqlc.narg(balancer_id))
   AND (sqlc.narg(kind) IS NULL OR kind = sqlc.narg(kind))
 ORDER BY id DESC LIMIT sqlc.arg(max_rows);
 -- name: CreateAudit :exec

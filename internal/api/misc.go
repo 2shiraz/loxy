@@ -450,16 +450,10 @@ func (s *Server) RenewCertificate(w http.ResponseWriter, r *http.Request, id gen
 
 func (s *Server) viewHost(h *state.Host) map[string]any {
 	used := []int64{}
-	for _, b := range s.Snap.Get().Backends {
-		for _, sv := range b.Servers {
-			hit := false
-			for _, sl := range sv.Slots {
-				if sl.HostID == h.ID {
-					hit = true
-				}
-			}
-			if hit {
-				used = append(used, b.ID)
+	for _, p := range s.Snap.Get().Projects {
+		for _, sl := range p.Slots() {
+			if sl.HostID == h.ID {
+				used = append(used, p.ID)
 				break
 			}
 		}
@@ -793,11 +787,8 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request, p gen.ListEv
 		lim = int64(*p.Limit)
 	}
 	arg := db.ListEventsParams{MaxRows: lim}
-	if p.FrontendId != nil {
-		arg.FrontendID = *p.FrontendId
-	}
-	if p.BackendId != nil {
-		arg.BackendID = *p.BackendId
+	if p.ProjectId != nil {
+		arg.BalancerID = *p.ProjectId
 	}
 	if p.Kind != nil && *p.Kind != "" {
 		arg.Kind = *p.Kind
@@ -811,7 +802,7 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request, p gen.ListEv
 	for _, e := range evs {
 		var data map[string]any
 		_ = json.Unmarshal([]byte(e.Data), &data)
-		out = append(out, map[string]any{"id": e.ID, "ts": e.Ts, "frontend_id": nullI64(e.FrontendID), "backend_id": nullI64(e.BackendID), "kind": e.Kind, "severity": e.Severity, "message": e.Message, "data": data})
+		out = append(out, map[string]any{"id": e.ID, "ts": e.Ts, "project_id": nullI64(e.BalancerID), "kind": e.Kind, "severity": e.Severity, "message": e.Message, "data": data})
 	}
 	writeJSON(w, 200, map[string]any{"events": out})
 }
@@ -878,9 +869,9 @@ func (s *Server) StreamEvents(w http.ResponseWriter, r *http.Request) {
 
 var _ = context.Background
 
-// StreamFrontendLogs streams sampled HAProxy log lines of one frontend (§20 live logs).
-func (s *Server) StreamFrontendLogs(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	if _, err := s.frontend(id); err != nil {
+// StreamProjectLogs streams sampled HAProxy log lines of one project (§20 live logs).
+func (s *Server) StreamProjectLogs(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	if _, err := s.project(id); err != nil {
 		fail(w, err)
 		return
 	}
