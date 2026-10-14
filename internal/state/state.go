@@ -408,3 +408,20 @@ func SyncSlots(ctx context.Context, q *db.Queries) error {
 	}
 	return nil
 }
+
+// Holder keeps the current snapshot for lock-free API reads.
+type Holder struct {
+	p atomicSnap
+}
+
+func (h *Holder) Get() *Snapshot { return h.p.Load() }
+
+// Refresh rebuilds the snapshot from the database.
+func (h *Holder) Refresh(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, error) {
+	s, err := Load(ctx, q, box)
+	if err != nil {
+		return nil, err
+	}
+	h.p.Store(s)
+	return s, nil
+}

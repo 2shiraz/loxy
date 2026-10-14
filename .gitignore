@@ -17,4 +17,4 @@ web/.svelte-kit/
 # embedded SPA (built by `make web`; placeholder kept)
 internal/webui/dist/*
 !internal/webui/dist/.gitkeep
-!internal/webui/dist/index.html
+bin/
