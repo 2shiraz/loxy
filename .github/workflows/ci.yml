@@ -66,6 +66,11 @@ jobs:
           go-version-file: go.mod
       - name: pull pinned HAProxy image
         run: docker pull haproxy:${HAPROXY_VERSION}-alpine
+      - name: install Pebble (ACME test server)
+        run: |
+          go install github.com/letsencrypt/pebble/v2/cmd/pebble@v2.10.1
+          go install github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@v2.10.1
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: integration tests
         run: make test-integration
 

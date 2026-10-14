@@ -62,6 +62,8 @@ type Reconciler struct {
 	tokens map[string]string // ACME HTTP-01 token → keyAuth
 
 	lastReload time.Time
+	// OnApplied runs after every successful apply (e.g. to resume pending ACME orders).
+	OnApplied func()
 }
 
 type applied struct {
@@ -318,6 +320,9 @@ func (r *Reconciler) Apply(ctx context.Context, by string) error {
 	r.Hub.Publish(events.Event{Kind: "config.applied", Message: fmt.Sprintf("Revision %d applied (%s) in %d ms", rev, kind, time.Since(start).Milliseconds()),
 		Data: map[string]any{"revision": rev, "kind": kind}})
 	r.gc(ctx)
+	if r.OnApplied != nil {
+		go r.OnApplied()
+	}
 	slog.Info("applied", "revision", rev, "kind", kind, "ops", len(ops), "ms", time.Since(start).Milliseconds())
 	return nil
 }

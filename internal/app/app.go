@@ -166,6 +166,32 @@ func New(cfg *config.Config, version string) (*App, error) {
 			a.Hub.Publish(events.Event{Kind: "certificate.updated", Message: fmt.Sprintf("Certificate %d updated", id), Ephemeral: true, Data: map[string]any{"certificate_id": id}})
 		}}
 	a.API.Issuer = a.Issuer
+	a.Issuer.Ready = func(id int64) bool {
+		snap := a.Snap.Get()
+		n := snap.Node(1)
+		if n == nil || n.AppliedVersion < n.DesiredVersion {
+			return false
+		}
+		for _, lb := range snap.LBs {
+			for _, sv := range lb.Services {
+				for _, c := range sv.CertIDs {
+					if c == id {
+						return true
+					}
+				}
+			}
+		}
+		for _, d := range snap.Domains {
+			if d.CertificateID.Valid && d.CertificateID.Int64 == id && d.LbID.Valid {
+				return true
+			}
+		}
+		return false
+	}
+	a.Rec.OnApplied = func() {
+		_, _ = a.Snap.Refresh(context.Background(), st.Q, box)
+		a.Issuer.Kick()
+	}
 	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(id int64) map[string]string {
 		if lb := a.Snap.Get().LB(id); lb != nil {
 			return lb.Labels

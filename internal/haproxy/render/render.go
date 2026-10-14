@@ -211,6 +211,8 @@ func Render(in Input) (*Output, error) {
 		"hard-stop-after " + in.HardStopAfter,
 		"mworker-max-reloads 50",
 		"server-state-file " + in.StateFile,
+		// crt-list entries are relative to crt-base, so a staged revision validates against its own files.
+		"crt-base " + path.Join(in.Root, "certs"),
 		"ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets",
 		"ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305",
 		"ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256",
@@ -396,11 +398,11 @@ func renderLB(in *Input, lb *state.LB, maintMap string, usedCerts map[int64]bool
 					continue
 				}
 				usedCerts[cid] = true
-				lst = append(lst, CertPath(in.Root, cid)+" [alpn h2,http/1.1]")
+				lst = append(lst, fmt.Sprintf("%d.pem [alpn h2,http/1.1]", cid))
 			}
 			if len(lst) == 0 {
 				*needPlaceholder = true
-				lst = append(lst, PlaceholderPath(in.Root)+" [alpn h2,http/1.1]")
+				lst = append(lst, "_placeholder.pem [alpn h2,http/1.1]")
 			}
 			out.Files[fmt.Sprintf("crt-lists/s%d.lst", s.ID)] = []byte(strings.Join(lst, "\n") + "\n")
 		}

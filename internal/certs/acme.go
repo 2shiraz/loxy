@@ -46,6 +46,9 @@ type Issuer struct {
 	HTTP      HTTP01
 	DNS       func(ctx context.Context, providerID int64) (challenge.Provider, error)
 	OnChange  func(certID int64)
+	// Ready reports whether an HTTP-01 certificate is served by an applied config
+	// (otherwise the challenge map does not exist yet and issuance waits).
+	Ready func(certID int64) bool
 
 	mu       sync.Mutex
 	running  map[int64]bool
@@ -198,6 +201,9 @@ func (i *Issuer) Issue(ctx context.Context, certID int64) error {
 		i.changed(certID)
 		return err
 	}
+	if c.Challenge != "dns01" && i.Ready != nil && !i.Ready(certID) {
+		return nil // stays pending; Kick() retries after the next successful apply
+	}
 	cl, err := i.client(ctx)
 	if err != nil {
 		return fail(err)
@@ -246,6 +252,19 @@ func (i *Issuer) Issue(ctx context.Context, certID int64) error {
 func (i *Issuer) changed(id int64) {
 	if i.OnChange != nil {
 		i.OnChange(id)
+	}
+}
+
+// Kick starts issuance of pending certificates now (called after successful applies).
+func (i *Issuer) Kick() {
+	list, err := i.Q.ListCertificates(context.Background())
+	if err != nil {
+		return
+	}
+	for _, c := range list {
+		if c.Type == "managed" && c.Status == "pending" {
+			i.IssueAsync(c.ID)
+		}
 	}
 }
 

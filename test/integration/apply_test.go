@@ -65,9 +65,15 @@ func (c *client) do(method, path string, body any) (int, map[string]any) {
 	return resp.StatusCode, m
 }
 
-// TestApplyPathZeroDowntime drives the real API + reconciler against HAProxy 3.4:
-// create LB (reload), add/remove targets (runtime, no reload), repeated reloads under load.
-func TestApplyPathZeroDowntime(t *testing.T) {
+type stack struct {
+	a    *app.App
+	c    *client
+	dir  string
+	lbIP string
+}
+
+// startStack builds the app with temp dirs, applies bootstrap, starts HAProxy and logs in.
+func startStack(t *testing.T, tweak func(*config.Config)) *stack {
 	dockerOK(t)
 	dir := t.TempDir()
 	for _, d := range []string{"conf", "run", "state", "data"} {
@@ -82,6 +88,9 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 	cfg := &config.Config{Listen: "127.0.0.1:0", PanelPort: 18443, DataDir: filepath.Join(dir, "data"), HAProxyConfDir: filepath.Join(dir, "conf"),
 		HAProxyRunDir: filepath.Join(dir, "run"), HAProxyStateDir: filepath.Join(dir, "state"), HAProxyBin: wrapper, StatsInterval: time.Second,
 		Dev: true, ACMEDirectory: "https://127.0.0.1:1/dir", SecretKey: make([]byte, 32)}
+	if tweak != nil {
+		tweak(cfg)
+	}
 	a, err := app.New(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
@@ -108,9 +117,8 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 	waitFor(t, 15*time.Second, "admin socket", func() bool { _, err := os.Stat(filepath.Join(dir, "run", "admin.sock")); return err == nil })
 	go a.Metrics.Run(ctx)
 
-	b1, b2 := backend(t, dir, "one"), backend(t, dir, "two")
 	srv := httptest.NewServer(a.API.Handler())
-	defer srv.Close()
+	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	c := &client{t: t, base: srv.URL, hc: &http.Client{Jar: jar}}
 	st, body := c.do("POST", "/auth/login", map[string]any{"email": "admin@loxy.local", "password": "integration-test-pw"})
@@ -118,6 +126,18 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 		t.Fatalf("login %d %v", st, body)
 	}
 	c.csrf = body["csrf_token"].(string)
+	return &stack{a: a, c: c, dir: dir, lbIP: lbIP}
+}
+
+// TestApplyPathZeroDowntime drives the real API + reconciler against HAProxy 3.4:
+// create LB (reload), add/remove targets (runtime, no reload), repeated reloads under load.
+func TestApplyPathZeroDowntime(t *testing.T) {
+	s := startStack(t, nil)
+	a, c, dir, lbIP := s.a, s.c, s.dir, s.lbIP
+	ctx := context.Background()
+	b1, b2 := backend(t, dir, "one"), backend(t, dir, "two")
+	var st int
+	var body map[string]any
 	st, body = c.do("POST", "/load_balancers", map[string]any{"name": "it", "plan_id": 1,
 		"services": []any{map[string]any{"protocol": "http", "listen_port": 8080, "destination_port": 9001,
 			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}}},
