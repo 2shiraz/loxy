@@ -5,6 +5,7 @@
   import Icon from './Icon.svelte';
   import Modal from './Modal.svelte';
   import PortField from './PortField.svelte';
+  import CertificatePicker from './CertificatePicker.svelte';
 
   let {
     value,
@@ -30,25 +31,16 @@
   let s = $state<ServiceInput>(normalise(value));
   let touched = $state(false);
   let advOpen = $state(false);
-  let certPick = $state<number | ''>('');
   const uid = Math.random().toString(36).slice(2, 7);
 
   const local = $derived(validateService(s, others));
   const errs = $derived({ ...(touched ? local : {}), ...serverErrors } as Record<string, string>);
-  const certs = $derived(s.http?.certificates ?? []);
-  const certName = (id: number) => certificates.find((c) => c.id === id)?.name ?? `#${id}`;
 
   function submit(e: SubmitEvent) {
     e.preventDefault();
     touched = true;
     if (Object.keys(local).length) return;
     onsave(normalise(s));
-  }
-  function addCert() {
-    if (certPick === '' || !s.http) return;
-    if (!s.http.certificates) s.http.certificates = [];
-    if (!s.http.certificates.includes(certPick)) s.http.certificates.push(certPick);
-    certPick = '';
   }
   function setProtocol(p: 'tcp' | 'http' | 'https') {
     s.protocol = p;
@@ -78,24 +70,7 @@
     <label class="check"><input type="checkbox" bind:checked={s.http.redirect_http} />HTTP redirect (301 from :80 to HTTPS)</label>
     {#if errs.redirect_http}<span class="ferr small err-text">{errs.redirect_http}</span>{/if}
 
-    <div class="field">
-      <span class="label">Certificates</span>
-      <div class="row-wrap">
-        {#each certs as cid (cid)}
-          <span class="chip"><Icon name="shield" size={11} />{certName(cid)}
-            <button type="button" class="x" aria-label="Remove certificate {certName(cid)}" onclick={() => s.http!.certificates = certs.filter((c) => c !== cid)}><Icon name="x" size={11} /></button>
-          </span>
-        {/each}
-        <select class="select sm" aria-label="Add certificate" bind:value={certPick} onchange={addCert}>
-          <option value="">Add certificate…</option>
-          {#each certificates.filter((c) => !certs.includes(c.id)) as c (c.id)}
-            <option value={c.id}>{c.name} ({c.domains.slice(0, 2).join(', ')}{c.domains.length > 2 ? '…' : ''}) · {c.status}</option>
-          {/each}
-        </select>
-        <a class="small" href="/certificates">Manage certificates</a>
-      </div>
-      {#if errs.certificates}<span class="ferr">{errs.certificates}</span>{/if}
-    </div>
+    <CertificatePicker id="c-{uid}" bind:selected={s.http.certificates} {certificates} error={errs.certificates} />
   {/if}
 
   <div class="summary">
@@ -219,8 +194,5 @@
   .summary { display: flex; align-items: flex-start; gap: 12px; padding: 10px 12px; background: var(--surface-2); border-radius: var(--radius-sm); flex-wrap: wrap; }
   .sumgrid { flex: 1; display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; min-width: 240px; }
   .sumgrid .mono { overflow-wrap: anywhere; }
-  .select.sm { height: 26px; width: auto; font-size: var(--fs-sm); }
-  .x { border: 0; background: none; padding: 0; cursor: pointer; color: var(--muted); display: inline-flex; }
-  .x:hover { color: var(--text); }
   legend { font-weight: 600; margin-bottom: 8px; padding: 0; }
 </style>

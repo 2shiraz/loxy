@@ -8,16 +8,22 @@
   import TargetPicker from '$lib/components/TargetPicker.svelte';
   import LabelEditor from '$lib/components/LabelEditor.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
+  import CertificatePicker from '$lib/components/CertificatePicker.svelte';
   import { toast } from '$lib/stores/toast.svelte';
 
   const nodes = resource(async () => (await unwrap(api.GET('/nodes'))).nodes);
   const plans = resource(async () => (await unwrap(api.GET('/plans'))).plans);
+  const certs = resource(async () => (await unwrap(api.GET('/certificates'))).certificates, { keys: () => ['certificates'] });
 
   let nodeId = $state<number | null>(null);
   let planId = $state<number | null>(null);
   let publicEnabled = $state(true);
   let algorithm = $state<'roundrobin' | 'leastconn'>('roundrobin');
   let services = $state<ServiceInput[]>([]);
+  // Stable keys so per-service component state survives removals.
+  let svcKeys = $state<number[]>([]);
+  let nextKey = 0;
+  let certTried = $state(false);
   let targetMode = $state<'server' | 'label_selector' | 'ip'>('ip');
   let targets = $state<TargetInput[]>([]);
   let targetErr = $state('');
@@ -39,14 +45,51 @@
   const nameErr = $derived(name && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/i.test(name) ? 'Use letters, digits and dashes (max 63)' : '');
   const blocking = $derived(!name || !!nameErr || !planId || !!labelErr || !!targetErr || svcErrs.some((e) => Object.keys(e).some((k) => k !== 'certificates')));
 
+  /** Server field errors for services[i].*, keyed by the last path segment (e.g. `certificates`). */
+  const svcServerErrs = $derived.by(() => {
+    const out: Record<string, string>[] = services.map(() => ({}));
+    for (const [k, msg] of Object.entries(fieldErrs)) {
+      const m = /^services\[(\d+)\]\.(.+)$/.exec(k);
+      if (!m || !out[Number(m[1])]) continue;
+      out[Number(m[1])][m[2].split('.').pop()!] = msg;
+    }
+    return out;
+  });
+  const KNOWN = ['listen_port', 'destination_port', 'certificates'];
+  const svcOtherErrs = $derived(svcServerErrs.map((e) => Object.entries(e).filter(([k]) => !KNOWN.includes(k)).map(([, v]) => v)));
+  const certErr = (i: number) => svcServerErrs[i]?.certificates || (certTried ? svcErrs[i]?.certificates : '') || '';
+
+  function clearServerErr(i: number, field: string) {
+    const next = { ...fieldErrs };
+    for (const k of Object.keys(next)) if (k.startsWith(`services[${i}].`) && k.endsWith(field)) delete next[k];
+    fieldErrs = next;
+  }
+  function setProtocol(i: number, p: 'tcp' | 'http' | 'https') {
+    const s = normalise({ ...services[i], protocol: p });
+    if (s.health_check) s.health_check.protocol = p === 'tcp' ? 'tcp' : 'http';
+    services[i] = normalise(s);
+  }
+  function removeService(i: number) {
+    services.splice(i, 1);
+    svcKeys.splice(i, 1);
+    // Server errors are index-based; they no longer line up.
+    fieldErrs = Object.fromEntries(Object.entries(fieldErrs).filter(([k]) => !k.startsWith('services[')));
+  }
+
   function addTemplate(id: string) {
     const t = TEMPLATES.find((x) => x.id === id);
-    if (t) services.push(t.make());
+    if (t) { services.push(t.make()); svcKeys.push(nextKey++); }
   }
 
   async function submit(e: SubmitEvent) {
     e.preventDefault();
     if (blocking) return;
+    const missing = services.findIndex((s, i) => s.protocol === 'https' && svcErrs[i].certificates);
+    if (missing >= 0) {
+      certTried = true;
+      document.getElementById(`sc-${svcKeys[missing]}-sel`)?.focus();
+      return;
+    }
     busy = true;
     fieldErrs = {};
     const res = await mutate(
@@ -138,32 +181,39 @@
         <button type="button" class="btn sm" onclick={() => addTemplate(t.id)} title={t.desc}><Icon name="plus" size={13} />{t.label}</button>
       {/each}
     </div>
-    {#each services as s, i (i)}
+    {#each services as s, i (svcKeys[i])}
       <div class="svc">
         <div class="row">
           <b class="mono">{serviceTitle(s)}</b>
           <span class="spacer"></span>
-          <button type="button" class="btn ghost icon sm" aria-label="Remove service {serviceTitle(s)}" onclick={() => services.splice(i, 1)}><Icon name="x" size={14} /></button>
+          <button type="button" class="btn ghost icon sm" aria-label="Remove service {serviceTitle(s)}" onclick={() => removeService(i)}><Icon name="x" size={14} /></button>
         </div>
         <div class="form-grid">
           <div class="field">
             <label for="sp-{i}">Protocol</label>
-            <select id="sp-{i}" class="select" bind:value={s.protocol}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="https">HTTPS</option></select>
+            <select id="sp-{i}" class="select" value={s.protocol} onchange={(e) => setProtocol(i, (e.currentTarget as HTMLSelectElement).value as 'tcp')}><option value="tcp">TCP</option><option value="http">HTTP</option><option value="https">HTTPS</option></select>
           </div>
           <div class="field">
             <label for="sl-{i}">Source port</label>
-            <input id="sl-{i}" class="input mono" type="number" bind:value={s.listen_port} aria-invalid={svcErrs[i].listen_port ? 'true' : undefined} />
-            {#if svcErrs[i].listen_port}<span class="ferr">{svcErrs[i].listen_port}</span>{/if}
+            <input id="sl-{i}" class="input mono" type="number" bind:value={s.listen_port} aria-invalid={svcErrs[i].listen_port || svcServerErrs[i]?.listen_port ? 'true' : undefined} />
+            {#if svcErrs[i].listen_port || svcServerErrs[i]?.listen_port}<span class="ferr">{svcErrs[i].listen_port || svcServerErrs[i].listen_port}</span>{/if}
           </div>
           <div class="field">
             <label for="sd-{i}">Destination port</label>
-            <input id="sd-{i}" class="input mono" type="number" bind:value={s.destination_port} aria-invalid={svcErrs[i].destination_port ? 'true' : undefined} />
-            {#if svcErrs[i].destination_port}<span class="ferr">{svcErrs[i].destination_port}</span>{/if}
+            <input id="sd-{i}" class="input mono" type="number" bind:value={s.destination_port} aria-invalid={svcErrs[i].destination_port || svcServerErrs[i]?.destination_port ? 'true' : undefined} />
+            {#if svcErrs[i].destination_port || svcServerErrs[i]?.destination_port}<span class="ferr">{svcErrs[i].destination_port || svcServerErrs[i].destination_port}</span>{/if}
           </div>
         </div>
         {#if s.protocol === 'https'}
-          <p class="small warn-text"><Icon name="info" size={13} /> Add a certificate in the Services tab after creation. A self-signed placeholder is served until then.</p>
+          {#if s.http}
+            <CertificatePicker
+              id="sc-{svcKeys[i]}" bind:selected={s.http.certificates} certificates={certs.data ?? []} error={certErr(i)}
+              onchange={() => clearServerErr(i, 'certificates')} oncreated={() => void certs.reload()}
+            />
+          {/if}
+          <p class="small muted note"><Icon name="info" size={13} /> Pick or create a certificate. Managed certificates are issued automatically once the domain points to this load balancer; until then a self-signed placeholder is served.</p>
         {/if}
+        {#each svcOtherErrs[i] ?? [] as msg (msg)}<p class="ferr small err-text">{msg}</p>{/each}
       </div>
     {/each}
     {#if fieldErrs.services}<p class="ferr small err-text">{fieldErrs.services}</p>{/if}
@@ -220,6 +270,8 @@
   .limits { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 8px 0 0; font-size: var(--fs-sm); }
   .limits dt { color: var(--muted); }
   .limits dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .note { display: flex; align-items: flex-start; gap: 6px; }
+  .note :global(svg) { flex: none; margin-top: 3px; }
   .svc { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
   .submit {
     position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 12px 0;
