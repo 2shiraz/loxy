@@ -442,6 +442,12 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 		fail(w, errNotFound("domain"))
 		return
 	}
+	if d.LbID.Valid && d.ServiceID.Valid {
+		if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil && lb.Plan != nil && int64(distinctCerts(lb)) >= lb.Plan.MaxCertificates {
+			fail(w, errQuota(fmt.Sprintf("plan %s allows %d certificates", lb.Plan.Name, lb.Plan.MaxCertificates)))
+			return
+		}
+	}
 	challenge := "http01"
 	var provider *int64
 	if d.DnsProviderID.Valid {

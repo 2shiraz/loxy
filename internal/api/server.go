@@ -169,12 +169,14 @@ var adminPrefixes = []string{"/api/v1/users", "/api/v1/nodes", "/api/v1/api_toke
 // requiredRole maps a request to the minimum role (§14.2).
 func requiredRole(r *http.Request) string {
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		if strings.HasPrefix(r.URL.Path, "/api/v1/api_tokens") || strings.HasPrefix(r.URL.Path, "/api/v1/notification_channels") {
-			return "admin"
+		for _, p := range []string{"/api/v1/api_tokens", "/api/v1/notification_channels", "/api/v1/alert_rules", "/api/v1/users"} {
+			if strings.HasPrefix(r.URL.Path, p) {
+				return "admin"
+			}
 		}
 		return "viewer"
 	}
-	if r.URL.Path == "/api/v1/auth/logout" || r.URL.Path == "/api/v1/auth/password" {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/auth/") { // own session, password, 2FA
 		return "viewer"
 	}
 	for _, p := range adminPrefixes {

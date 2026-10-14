@@ -20,6 +20,10 @@ func (s *Server) TotpSetup(w http.ResponseWriter, r *http.Request) {
 		fail(w, &apiError{Status: 403, Code: "forbidden", Msg: "not available for API tokens"})
 		return
 	}
+	if totpEnabled(p.User) {
+		fail(w, errConflict("two-factor authentication is already enabled; disable it first"))
+		return
+	}
 	secret := auth.NewTOTPSecret()
 	enc, _ := json.Marshal(s.Box.Seal([]byte(secret)))
 	if err := s.Store.Q.PutSetting(r.Context(), db.PutSettingParams{Key: totpPendingKey(p.User.ID), Value: string(enc)}); err != nil {
@@ -63,7 +67,13 @@ func (s *Server) TotpDisable(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	key := fmt.Sprintf("totp:%d", p.User.ID)
+	if err := s.Limiter.Allow(key); err != nil {
+		writeErr(w, 429, "rate_limited", "too many attempts, try again later", nil)
+		return
+	}
 	if !s.totpOK(p.User, in.Code) {
+		s.Limiter.Fail(key)
 		fail(w, errField("code", "invalid code"))
 		return
 	}

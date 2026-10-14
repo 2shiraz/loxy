@@ -70,10 +70,11 @@ CREATE TABLE ip_addresses (
   family INTEGER NOT NULL CHECK (family IN (4,6)),
   kind TEXT NOT NULL DEFAULT 'additional' CHECK (kind IN ('primary','additional','failover','private')),
   network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
-  assigned_lb_id INTEGER UNIQUE REFERENCES load_balancers(id) ON DELETE SET NULL,
+  assigned_lb_id INTEGER REFERENCES load_balancers(id) ON DELETE SET NULL,
   rdns TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX ip_addresses_node ON ip_addresses(node_id);
+CREATE INDEX ip_addresses_lb ON ip_addresses(assigned_lb_id);
 
 CREATE TABLE plans (
   id INTEGER PRIMARY KEY,

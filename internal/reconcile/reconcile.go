@@ -234,7 +234,7 @@ func (r *Reconciler) Apply(ctx context.Context, by string) error {
 		r.succeed(ctx, snap, desired)
 		return nil
 	}
-	if r.applied != nil && hashFiles(r.applied.out.Files) == hashFiles(out.Files) {
+	if r.applied != nil && hashFiles(r.applied.out.Files) == hashFiles(out.Files) && stateSig(r.applied.snap, r.Opt.NodeID) == stateSig(snap, r.Opt.NodeID) {
 		r.applied.snap = snap
 		r.succeed(ctx, snap, desired)
 		return nil
@@ -460,11 +460,16 @@ func (r *Reconciler) Rollback(ctx context.Context, rev int64) error {
 		return err
 	}
 	if !r.Opt.NoHAProxy {
+		if wait := time.Second - time.Since(r.lastReload); wait > 0 {
+			time.Sleep(wait)
+		}
 		res, err := r.Node.Reload(ctx)
+		r.lastReload = time.Now()
 		if err != nil || !res.Success {
 			_ = r.FS.Swap(prev)
 			return fmt.Errorf("reload failed")
 		}
+		r.repushTokens(ctx)
 	}
 	r.applied = nil // next apply compares against disk
 	_, _ = r.Store.DB.ExecContext(ctx, `UPDATE config_revisions SET pinned = 1 WHERE node_id = ? AND revision = ?`, r.Opt.NodeID, rev)

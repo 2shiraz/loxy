@@ -3,6 +3,7 @@ package reconcile
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/2shiraz/loxy/internal/agent"
@@ -106,9 +107,15 @@ func classify(prev *applied, snap *state.Snapshot, out *render.Output, skel stri
 					}
 					continue
 				}
-				if render.ServerArgs(lb, s, o.t, o.sl) != render.ServerArgs(lb, s, n.t, n.sl) {
-					// weight / backup changes
-					if o.t.Backup != n.t.Backup {
+				oldSvc := old.Service(s.ID)
+				if oldSvc == nil {
+					return "reload", nil
+				}
+				// Service-level parameters (ports, checks, TLS, PROXY protocol, cookies) only
+				// appear on server lines: any difference other than weight needs a reload.
+				oa, na := render.ServerArgs(old, oldSvc, o.t, o.sl), render.ServerArgs(lb, s, n.t, n.sl)
+				if oa != na {
+					if stripWeight(oa) != stripWeight(na) {
 						return "reload", nil
 					}
 					ops = append(ops, agent.RuntimeCmd{Cmd: fmt.Sprintf("set server %s weight %d", name, n.t.Weight)})
@@ -133,4 +140,21 @@ func classify(prev *applied, snap *state.Snapshot, out *render.Output, skel stri
 		}
 	}
 	return "runtime", ops
+}
+
+var weightRe = regexp.MustCompile(` weight \d+`)
+
+func stripWeight(args string) string { return weightRe.ReplaceAllString(args, "") }
+
+// stateSig captures runtime-only state (admin states, maintenance) that is not fully
+// visible in the rendered files, so a pure state change still reaches HAProxy (§7.6).
+func stateSig(snap *state.Snapshot, nodeID int64) string {
+	var b strings.Builder
+	for _, lb := range snap.LBsOnNode(nodeID) {
+		fmt.Fprintf(&b, "L%d:%d;", lb.ID, lb.Maintenance)
+		for _, t := range lb.Targets {
+			fmt.Fprintf(&b, "T%d:%s;", t.ID, effState(t))
+		}
+	}
+	return b.String()
 }

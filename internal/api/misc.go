@@ -138,6 +138,9 @@ func (s *Server) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
+	// Revoke all other sessions of this user.
+	_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM sessions WHERE user_id = ? AND id_hash != ?`, p.User.ID, auth.HashSessionID(p.SessionID))
+	s.audit(r, "auth.password.change", "user", p.User.ID, nil)
 	w.WriteHeader(204)
 }
 
@@ -193,6 +196,13 @@ func (s *Server) CreateUser(w http.ResponseWriter, r *http.Request) {
 func (s *Server) DeleteUser(w http.ResponseWriter, r *http.Request, id gen.Id) {
 	if p := userFrom(r); p != nil && p.User.ID == id {
 		fail(w, errConflict("you cannot delete yourself"))
+		return
+	}
+	if u, err := s.Store.Q.GetUser(r.Context(), id); err != nil {
+		fail(w, errNotFound("user"))
+		return
+	} else if u.Role == "owner" {
+		fail(w, &apiError{Status: 403, Code: "forbidden", Msg: "the owner cannot be deleted"})
 		return
 	}
 	_ = s.Store.Q.DeleteUserSessions(r.Context(), id)
@@ -531,7 +541,7 @@ func (s *Server) CreateServer(w http.ResponseWriter, r *http.Request) {
 		fail(w, err)
 		return
 	}
-	writeJSON(w, 201, map[string]any{"server": viewServer(s.Snap.Get().Server(id))})
+	s.respondServer(w, 201, id)
 }
 
 func (s *Server) UpdateServer(w http.ResponseWriter, r *http.Request, id gen.Id) {
@@ -557,7 +567,7 @@ func (s *Server) UpdateServer(w http.ResponseWriter, r *http.Request, id gen.Id)
 		fail(w, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"server": viewServer(s.Snap.Get().Server(id))})
+	s.respondServer(w, 200, id)
 }
 
 func (s *Server) DeleteServer(w http.ResponseWriter, r *http.Request, id gen.Id) {
@@ -732,7 +742,7 @@ func (s *Server) AddNodeIP(w http.ResponseWriter, r *http.Request, id gen.Id) {
 		return
 	}
 	a, err := netip.ParseAddr(strings.TrimSpace(in.Address))
-	if err != nil || a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() || a.IsLinkLocalUnicast() {
+	if err != nil || a.Zone() != "" || a.IsLoopback() || a.IsUnspecified() || a.IsMulticast() || a.IsLinkLocalUnicast() {
 		fail(w, errField("address", "invalid address"))
 		return
 	}
@@ -945,4 +955,13 @@ func (s *Server) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, 
 			fl.Flush()
 		}
 	}
+}
+
+func (s *Server) respondServer(w http.ResponseWriter, status int, id int64) {
+	sv := s.Snap.Get().Server(id)
+	if sv == nil {
+		w.WriteHeader(204)
+		return
+	}
+	writeJSON(w, status, map[string]any{"server": viewServer(sv)})
 }

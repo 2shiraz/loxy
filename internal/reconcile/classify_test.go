@@ -84,3 +84,32 @@ func TestClassify(t *testing.T) {
 		}
 	}
 }
+
+// Review finding #1: service-level changes that only render on server lines must reload.
+func TestClassifyServiceLevelChangeReloads(t *testing.T) {
+	from := mk("roundrobin", false, tgt(1, "10.0.0.1", 100, "ready"))
+	to := mk("roundrobin", false, tgt(1, "10.0.0.1", 100, "ready"))
+	to.LB(1).Services[0].DestinationPort = 9090
+	to.LB(1).Services[0].HcPort = 9090
+	if kind, ops := run(t, from, to); kind != "reload" {
+		t.Fatalf("destination port change: %s %v", kind, ops)
+	}
+	to2 := mk("roundrobin", false, tgt(1, "10.0.0.1", 100, "ready"))
+	to2.LB(1).Services[0].ProxyProtocol = "v2"
+	if kind, ops := run(t, from, to2); kind != "reload" {
+		t.Fatalf("proxy protocol change: %s %v", kind, ops)
+	}
+}
+
+// Review finding #2: drain does not change any file, but must still produce runtime ops.
+func TestStateSigDetectsDrain(t *testing.T) {
+	a := mk("roundrobin", false, tgt(1, "10.0.0.1", 100, "ready"))
+	b := mk("roundrobin", false, tgt(1, "10.0.0.1", 100, "drain"))
+	pa, pb := prep(t, a), prep(t, b)
+	if hashFiles(pa.out.Files) != hashFiles(pb.out.Files) {
+		t.Fatal("expected identical files for a drain-only change")
+	}
+	if stateSig(a, 1) == stateSig(b, 1) {
+		t.Fatal("state signature must differ")
+	}
+}

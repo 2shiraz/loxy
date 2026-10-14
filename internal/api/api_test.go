@@ -312,3 +312,49 @@ func TestTOTP(t *testing.T) {
 	}
 	_ = a
 }
+
+// Review findings #3, #4, #5, #8.
+func TestReviewRegressions(t *testing.T) {
+	c, _ := setup(t)
+	login(c)
+	// #5: IPv6 zone with injected config is rejected.
+	if st, b := c.req("POST", "/nodes/1/ips", map[string]any{"address": "2001:db8::1%x\n    http-request deny"}); st != 422 {
+		t.Fatalf("zone accepted: %d %v", st, b)
+	}
+	// #4: dual-stack LB gets both a v4 and a v6 address.
+	c.req("POST", "/nodes/1/ips", map[string]any{"address": "192.0.2.10", "kind": "additional"})
+	c.req("POST", "/nodes/1/ips", map[string]any{"address": "2001:db8::10", "kind": "additional"})
+	st, b := c.req("POST", "/load_balancers", map[string]any{"name": "dual", "plan_id": 1})
+	if st != 201 {
+		t.Fatalf("dual-stack create: %d %v", st, b)
+	}
+	pn := b["load_balancer"].(map[string]any)["public_net"].(map[string]any)
+	if pn["ipv4"] != "192.0.2.10" || pn["ipv6"] != "2001:db8::10" {
+		t.Fatalf("public_net %v", pn)
+	}
+	id := b["load_balancer"].(map[string]any)["id"].(float64)
+	// #3: absurd metric ranges are clamped instead of exhausting memory.
+	st, b = c.req("GET", fmt.Sprintf("/load_balancers/%v/metrics?start=1&end=9000000000000000000&type=open_connections,bogus", id), nil)
+	if st != 200 || len(b["timestamps"].([]any)) > 2100 || len(b["series"].(map[string]any)) != 1 {
+		t.Fatalf("metrics clamp: %d points=%d series=%v", st, len(b["timestamps"].([]any)), b["series"] != nil)
+	}
+	// #8: viewers cannot list users.
+	c.req("POST", "/users", map[string]any{"email": "ro@x.io", "password": "viewer-password-1", "role": "viewer"})
+	jar, _ := cookiejar.New(nil)
+	v := &tc{t: t, srv: c.srv, hc: &http.Client{Jar: jar}}
+	_, lb := v.req("POST", "/auth/login", map[string]any{"email": "ro@x.io", "password": "viewer-password-1"})
+	v.csrf = lb["csrf_token"].(string)
+	if st, _ := v.req("GET", "/users", nil); st != 403 {
+		t.Fatalf("viewer GET /users: %d", st)
+	}
+	if st, _ := v.req("POST", "/auth/totp/setup", nil); st != 200 {
+		t.Fatalf("viewer 2FA setup: %d", st)
+	}
+	// owner cannot be deleted (and is not logged out)
+	if st, _ := c.req("DELETE", "/users/1", nil); st != 403 && st != 409 {
+		t.Fatalf("owner delete: %d", st)
+	}
+	if st, _ := c.req("GET", "/auth/me", nil); st != 200 {
+		t.Fatal("owner session revoked")
+	}
+}

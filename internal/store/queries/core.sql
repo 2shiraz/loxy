@@ -76,8 +76,8 @@ INSERT INTO ip_addresses (node_id, address, family, kind) VALUES (?, ?, ?, ?) RE
 -- name: DeleteIP :exec
 DELETE FROM ip_addresses WHERE id = ? AND node_id = ? AND assigned_lb_id IS NULL;
 
--- name: AssignIP :exec
-UPDATE ip_addresses SET assigned_lb_id = ? WHERE id = ?;
+-- name: AssignIP :execrows
+UPDATE ip_addresses SET assigned_lb_id = ? WHERE id = ? AND assigned_lb_id IS NULL;
 
 -- name: ReleaseLBIPs :exec
 UPDATE ip_addresses SET assigned_lb_id = NULL WHERE assigned_lb_id = ?;

@@ -189,8 +189,12 @@ func (s *Server) CreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
 		newID = lb.ID
 		for _, ip := range []*state.IP{v4, v6} {
 			if ip != nil {
-				if err := q.AssignIP(r.Context(), db.AssignIPParams{AssignedLbID: sql.NullInt64{Int64: lb.ID, Valid: true}, ID: ip.ID}); err != nil {
+				n, err := q.AssignIP(r.Context(), db.AssignIPParams{AssignedLbID: sql.NullInt64{Int64: lb.ID, Valid: true}, ID: ip.ID})
+				if err != nil {
 					return err
+				}
+				if n == 0 {
+					return errConflict("address " + ip.Address + " was just assigned to another load balancer; retry")
 				}
 			}
 		}
@@ -420,10 +424,18 @@ func (s *Server) AttachToNetwork(w http.ResponseWriter, r *http.Request, id gen.
 		fail(w, errField("network_id", "unknown network"))
 		return
 	}
-	ip, err := netip.ParseAddr(in.Ip)
-	if err != nil || !cidr.Contains(ip) {
+	ip, err := netip.ParseAddr(strings.TrimSpace(in.Ip))
+	if err != nil || ip.Zone() != "" || !cidr.Contains(ip) {
 		fail(w, errField("ip", "must be an address inside "+cidr.String()))
 		return
+	}
+	for _, o := range s.Snap.Get().LBs {
+		for _, n := range o.Networks {
+			if n.IP == ip.String() {
+				fail(w, errConflict(fmt.Sprintf("address %s is already used by load balancer %q", ip, o.Name)))
+				return
+			}
+		}
 	}
 	for _, n := range lb.Networks {
 		if n.NetworkID == in.NetworkId {
@@ -1019,6 +1031,10 @@ func (s *Server) CreateTargets(w http.ResponseWriter, r *http.Request, id gen.Id
 	}
 	nlb := s.Snap.Get().LB(lb.ID)
 	out := []map[string]any{}
+	if nlb == nil {
+		writeJSON(w, 201, map[string]any{"targets": out})
+		return
+	}
 	for _, tid := range ids {
 		if t := nlb.Target(tid); t != nil {
 			out = append(out, s.viewTarget(nlb, t))
@@ -1068,6 +1084,10 @@ func (s *Server) UpdateTarget(w http.ResponseWriter, r *http.Request, id gen.Id,
 		return
 	}
 	nlb := s.Snap.Get().LB(lb.ID)
+	if nlb == nil || nlb.Target(t.ID) == nil {
+		w.WriteHeader(204)
+		return
+	}
 	writeJSON(w, 200, map[string]any{"target": s.viewTarget(nlb, nlb.Target(t.ID))})
 }
 

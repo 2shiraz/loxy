@@ -47,8 +47,8 @@ func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
 	return err
 }
 
-const assignIP = `-- name: AssignIP :exec
-UPDATE ip_addresses SET assigned_lb_id = ? WHERE id = ?
+const assignIP = `-- name: AssignIP :execrows
+UPDATE ip_addresses SET assigned_lb_id = ? WHERE id = ? AND assigned_lb_id IS NULL
 `
 
 type AssignIPParams struct {
@@ -56,9 +56,12 @@ type AssignIPParams struct {
 	ID           int64
 }
 
-func (q *Queries) AssignIP(ctx context.Context, arg AssignIPParams) error {
-	_, err := q.db.ExecContext(ctx, assignIP, arg.AssignedLbID, arg.ID)
-	return err
+func (q *Queries) AssignIP(ctx context.Context, arg AssignIPParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, assignIP, arg.AssignedLbID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const attachLBNetwork = `-- name: AttachLBNetwork :exec

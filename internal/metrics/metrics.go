@@ -469,22 +469,32 @@ func pick32(p Point, t string) float32 {
 // Query returns a range with resolution chosen per §10.4 (memory for ≤1 h, else 1 m rollups
 // aggregated to 5 m / 1 h on read).
 func (c *Collector) Query(ctx context.Context, lb, svc, start, end, step int64, types []string) (*Series, error) {
-	if end <= 0 {
-		end = time.Now().Unix()
+	now := time.Now().Unix()
+	if end <= 0 || end > now+60 {
+		end = now
 	}
 	if start <= 0 || start >= end {
 		start = end - 300
+	}
+	if end-start > 35*86400 { // retention of metrics_1m
+		start = end - 35*86400
 	}
 	span := end - start
 	if len(types) == 0 {
 		types = allTypes
 	} else {
+		known := map[string]bool{}
+		for _, t := range allTypes {
+			known[t] = true
+		}
+		seen := map[string]bool{}
 		var exp []string
 		for _, t := range types {
-			if t == "bandwidth" {
-				exp = append(exp, "bandwidth.in", "bandwidth.out")
-			} else {
-				exp = append(exp, t)
+			for _, x := range map[bool][]string{true: {"bandwidth.in", "bandwidth.out"}, false: {t}}[t == "bandwidth"] {
+				if known[x] && !seen[x] {
+					seen[x] = true
+					exp = append(exp, x)
+				}
 			}
 		}
 		types = exp
@@ -502,6 +512,9 @@ func (c *Collector) Query(ctx context.Context, lb, svc, start, end, step int64, 
 		default:
 			step = 3600
 		}
+	}
+	if minStep := span / 2000; step < minStep { // at most ~2000 points per series
+		step = minStep
 	}
 	var pts []Point
 	if time.Now().Unix()-start <= 3600 && step < 60 {

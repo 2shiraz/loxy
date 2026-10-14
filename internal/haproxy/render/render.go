@@ -309,7 +309,27 @@ func Render(in Input) (*Output, error) {
 	return out, nil
 }
 
+func validAddr(a string) bool {
+	if a == "" {
+		return true // wildcard
+	}
+	x, err := netip.ParseAddr(a)
+	return err == nil && x.Zone() == ""
+}
+
 func renderLB(in *Input, lb *state.LB, maintMap string, usedCerts map[int64]bool, needPlaceholder *bool, out *Output) (lbBlock, error) {
+	for _, a := range BindAddrs(lb) {
+		if !validAddr(a) {
+			return lbBlock{}, fmt.Errorf("invalid bind address %q", a)
+		}
+	}
+	for _, t := range lb.Targets {
+		for _, sl := range t.Slots {
+			if sl.Address == "" || !validAddr(sl.Address) {
+				return lbBlock{}, fmt.Errorf("invalid target address %q", sl.Address)
+			}
+		}
+	}
 	planName, maxconn, enforce := "-", int64(0), false
 	if lb.Plan != nil {
 		planName, maxconn, enforce = lb.Plan.Name, lb.Plan.MaxConnections, lb.Plan.EnforceLbCap != 0
