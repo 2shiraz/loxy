@@ -9,7 +9,6 @@ All items below are covered by `test/integration` (`make test-integration`, real
 | §7.1 master CLI one-shot commands | **Behaviour differs from a naive client:** the master CLI only answers after the client half-closes its write side (`shutdown(SHUT_WR)`); otherwise the connection hangs. The runtime client always calls `CloseWrite()` after sending. | all integration tests |
 | §7.1 synchronous `reload` | **Confirmed.** Prints `Success=1` / `Success=0`, then `--` and the startup log (image is built with SHM_OPEN). A config that passes `-c` but fails at startup (unbindable address) returns `Success=0` and the old worker keeps serving. | `TestReloadSuccessAndFailure` |
 | §7.1 prompt mode on the worker socket | **Confirmed.** `prompt` → each answer ends with `\n> `; multiple commands per connection work. The collector still uses one connection per command (simpler, fast enough at 1 s). | `TestVerifyPromptMode` |
-| §7.4 LB-wide cap (`track-sc0 int(1) table lb<L>_cap`) across frontends | **Confirmed.** With `max_connections=1`, a held connection on one frontend makes a second connection to another frontend of the same LB get rejected. | `TestVerifyLBCapAcrossFrontends` |
 | §7.5 two `http-check expect` rules (status + string) | **Confirmed AND semantics.** 200 without the string → DOWN, 500 with the string → DOWN, 200 with the string → UP. No tcp-check fallback needed. | `TestVerifyHTTPCheckAND` |
 | §7.5 `ca-file @system-ca` | **Confirmed** accepted by the image (config with `check-ssl verify required ca-file @system-ca check-sni …` loads). | `TestVerifySSLRuntimeAndMaps` |
 | §7.6 dynamic servers | **Confirmed.** `add server` with the exact `render.ServerArgs` (incl. `cookie`) → `New server registered.`; `enable server`/`enable health` → empty output; `set server … weight/state` → empty; `del server` after maint → `Server deleted.` | `TestDynamicServers` |
@@ -27,11 +26,13 @@ All items below are covered by `test/integration` (`make test-integration`, real
 
 - **crt-list paths must be relative to `crt-base`.** Absolute `live/…` paths inside crt-list files made `haproxy -c` of a staged revision look at the old live tree (failed for newly attached certs). Fixed with `crt-base <root>/certs`; runtime `set ssl cert /usr/local/etc/haproxy/live/certs/<id>.pem` still matches the loaded store name (`TestVerifySSLRuntimeAndMaps`, `TestACMEHTTP01Pebble`).
 - **Named defaults ambiguity (3.4 warning):** a section without `from` that implicitly uses a defaults section that is also referenced explicitly triggers a warning; every rendered section now uses `from`.
-- **LB cap rejection** shows up either as an immediate close after accept or as a reset during connect, depending on timing; both are rejections.
 - **`show stat -1 3 -1`** (type mask frontends|backends) works and is used on alternate ticks to keep the 1 s poll cheap with 1 000+ servers; full `show stat` (servers, health) every 2 s.
 - **ACME HTTP-01 via `virt@acme_http01`:** the virtual map only exists once a loaded config references it, so issuance waits until the certificate is served by an applied config (then lego → `add map virt@acme_http01` → Pebble validation → `Success`, ~9 s end-to-end in `TestACMEHTTP01Pebble`).
-- **Zero-downtime:** 100 consecutive reloads plus a runtime target add/remove under ~6 000 rps (8 keep-alive clients): 884 116 requests, 0 failures (`TestApplyPathZeroDowntime`, `LOXY_IT_RELOADS=100`). Default CI run uses 20 reloads.
+- **Zero-downtime:** 100 consecutive reloads plus a runtime server add/remove under ~6 000 rps (8 keep-alive clients): 884 116 requests, 0 failures (`TestApplyPathZeroDowntime`, `LOXY_IT_RELOADS=100`). Default CI run uses 20 reloads.
 
 ## Not yet verified
 - `shm-stats-file` counter preservation (§10.3) — not used.
 - `chroot auto` (§7.4) — not enabled.
+
+## Retired
+- The cross-frontend connection cap (`track-sc0 … table lb<L>_cap`) was verified for the earlier load-balancer model and is no longer rendered: limits are per frontend (`maxconn`) since the frontend/backend rework (ADR 0005). Its test was removed.

@@ -1,4 +1,4 @@
-# Loxy — a lightweight, Hetzner‑style managed Load Balancer on HAProxy
+# Loxy — a self‑hosted management panel for HAProxy
 
 **Build instructions for the implementing agent**
 
@@ -7,8 +7,8 @@
 | Name | **Loxy** — repo `github.com/2shiraz/loxy`, Go module `github.com/2shiraz/loxy`, binary `loxy`, image `ghcr.io/2shiraz/loxy`, env prefix `LOXY_`, DB file `loxy.db` |
 | Data plane | **HAProxy 3.4 LTS** (official Docker image `haproxy:3.4.x-alpine`, patch version pinned) |
 | Control plane | Single Go binary with embedded web UI, SQLite, no other services |
-| UX reference | The Hetzner Cloud Load Balancer console (Overview · Graphs · Targets · Services · Networking · Rescale · Delete). Copy the *information architecture and behaviour*, not the brand (no Hetzner name, logo or exact colours). |
-| Spec date | 2026‑10‑14 |
+| Purpose | Manage the **frontends, backends, servers, certificates and DNS** of HAProxy safely: every change is validated (`haproxy -c`), versioned as a revision, applied without dropping traffic (runtime API or hitless reload) and observable (health, graphs, logs, activity). A replacement for hand‑editing `haproxy.cfg` and for heavier HAProxy GUIs. |
+| Spec date | 2026‑10‑14 (product direction: ADR 0005) |
 
 ---
 
@@ -26,63 +26,64 @@
 ## 1. Product summary
 
 ### 1.1 What we are building
-A self‑hosted control panel + REST API that turns one or more Linux servers running HAProxy into a "managed load balancer" product, with the same mental model as Hetzner Cloud Load Balancers:
+A self‑hosted control panel + REST API for one or more Linux servers running HAProxy. The operator works with HAProxy's own concepts, presented safely:
 
-- An operator creates **Load Balancers** (LBs). Each LB has its own public IPv4/IPv6 (and optionally a private IP), a **plan** (limits), an **algorithm**, **labels** and **delete protection**.
-- Each LB has **Services** (a listener: protocol `tcp | http | https`, listen port → destination port) with health checks, sticky sessions, PROXY protocol, HTTP→HTTPS redirect and TLS certificates.
-- Each LB has **Targets** (backend servers): a server from the inventory, a **label selector** that matches many servers, or a raw **IP**.
-- The panel shows **health** per target/service, **live and historical graphs** (open connections, connections/s, HTTP requests/s, bandwidth in/out), usage vs plan limits and monthly traffic.
+- **Frontends** — where traffic enters: a mode (`http | tcp`), one or more **binds** (`address:port`, address `*` = all interfaces), optional **TLS termination** with certificates, an optional HTTP→HTTPS redirect listener, a **default backend** and (http) **host/path routing rules** to other backends, timeouts, `maxconn`, forwarded headers, enable/maintenance switches and labels.
+- **Backends** — where traffic goes: a mode, a load‑balancing **algorithm**, a default server port, **health checks**, sticky sessions, PROXY protocol, timeouts and labels. A backend can be used by many frontends.
+- **Servers** of a backend — a raw **IP**, a **host** from the inventory, or a **label selector** that matches many hosts; weight, backup flag and admin state (ready / drain / maint), added and removed at runtime.
+- **Hosts** (inventory of machines), **Certificates** (uploaded or managed via ACME), **Domains & DNS** (records at external DNS providers).
+- The panel shows **health** per server and backend, **live and historical graphs** per frontend and backend (open connections, connections/s, requests/s, bandwidth, sessions, queue, response time, HTTP status classes, errors), live logs and an activity/audit trail.
 - Every change is applied to HAProxy automatically, validated, versioned, and **without dropping traffic** (runtime API where possible, hitless reload otherwise).
 
 ### 1.2 Goals
-1. **Feature parity with the Hetzner LB console** (see §8) plus the extras in §8 and §20.
+1. **Cover the everyday HAProxy job without touching `haproxy.cfg`:** frontends, backends, servers, TLS, routing, health checks, certificates, DNS (§8), plus the extras in §20.
 2. **Minimal install:** `docker compose up -d` with two containers (official HAProxy + `loxy`). No external database, queue, Prometheus or Redis required.
 3. **Fast and light:** budgets in §1.4 are acceptance criteria.
-4. **Safe:** invalid config can never reach the live path; every applied state is a numbered revision that can be rolled back.
+4. **Safe:** invalid config can never reach the live path; every applied state is a numbered revision that can be diffed and rolled back.
 5. **API‑first:** the UI uses only the public REST API, so everything is scriptable.
 
 ### 1.3 Non‑goals (v1)
-Managing NGINX/Apache, Kubernetes ingress, a WAF rule engine, anycast/multi‑region traffic steering, billing/invoicing, UDP load balancing, **running an authoritative DNS server** (Loxy manages records at external DNS providers through their APIs, §8.16; it never answers DNS queries itself).
+Being a cloud load‑balancer *product* (no "create load balancer" objects, sizes/plans, rescaling, prices, billing or traffic quotas); managing NGINX/Apache; Kubernetes ingress; a WAF rule engine; anycast/multi‑region traffic steering; UDP load balancing; provider‑specific cloud integrations (inventory sync, floating‑IP APIs); **running an authoritative DNS server** (Loxy manages records at external DNS providers through their APIs, §8.9; it never answers DNS queries itself); exposing every HAProxy keyword (Loxy is opinionated; raw config import is a backlog item, §20).
 
 ### 1.4 Performance budgets (acceptance criteria)
 
 | Item | Budget |
 |---|---|
-| Controller resident memory, idle, 50 LBs / 200 services / 1 000 targets | ≤ 60 MB |
+| Controller resident memory, idle, 50 frontends / 200 backends / 1 000 servers | ≤ 60 MB |
 | Controller CPU, idle (1 s stats polling) | < 1 % of one core |
 | API read p95 (served from in‑memory snapshot) | < 10 ms |
-| Write that is applied via Runtime API (e.g. add target), request → active in HAProxy | < 200 ms |
-| Write that needs a reload (validate + swap + reload), 200 services | < 1.5 s |
-| UI initial load, all JS + CSS gzip | ≤ 150 KB (charts lazy‑loaded on the Graphs tab) |
+| Write that is applied via Runtime API (e.g. add server), request → active in HAProxy | < 200 ms |
+| Write that needs a reload (validate + swap + reload), 50 frontends / 200 backends | < 1.5 s |
+| UI initial load, all JS + CSS gzip | ≤ 150 KB (charts lazy‑loaded on the Graphs tabs) |
 | Live graph latency (counter change → pixel) | ≤ 2 s |
 | Failed client requests during 100 consecutive reloads under a 2 000 rps load test | **0** |
-| Failed client requests while adding/removing 50 targets under load | **0** |
+| Failed client requests while adding/removing 50 servers under load | **0** |
 
 ---
 
-## 2. Concept mapping (Hetzner → loxy → HAProxy)
+## 2. Concept mapping (Loxy → HAProxy)
 
-| Hetzner concept | loxy object | HAProxy construct |
+| Loxy object | Table(s) | HAProxy construct |
 |---|---|---|
-| Load Balancer (ID, name, IPv4, IPv6, network zone) | `load_balancers` row placed on a **node** (or HA node group) and owning IP addresses from the node's pool | All `frontend`/`backend` sections prefixed `lb<ID>_`, binding on the LB's IPs |
-| LB type (LB11/LB21/LB31…) | `plans` (operator‑editable): max connections, services, targets, certificates, monthly traffic, price | Frontend `maxconn`; optional LB‑wide connection cap via a shared stick table; quotas enforced in the API |
-| Service (protocol, listen → destination port) | `services` row | One `frontend lb<L>_s<S>_fe` + one `backend lb<L>_s<S>_be` (+ `frontend lb<L>_s<S>_rd` for the :80 redirect) |
-| Target: server / label selector / IP | `targets` row, resolved to concrete servers | `server` lines in **every** service backend of that LB; added/removed at runtime as dynamic servers |
-| Health check (protocol, port, interval, timeout, retries, domain, path, response, status codes, TLS) | columns on `services` | `option httpchk`, `http-check send/expect`, `check port inter rise fall`, `timeout check`, `check-ssl` |
-| Algorithm Round Robin / Least Connections | `load_balancers.algorithm` | `balance roundrobin` / `balance leastconn` — **always explicit** (§7.9) |
-| Sticky sessions (cookie name, lifetime) | service columns | `cookie <name> insert indirect nocache httponly [secure] maxlife <n>s` + `cookie <id>` per server |
-| Proxy protocol | service column | `send-proxy-v2` **and** `check-send-proxy` on server lines |
-| HTTP‑Redirect (301) | service column (https only) | Extra :80 frontend with `http-request redirect scheme https code 301` |
-| HTTP timeout | service column | `timeout client` / `timeout server` (idle timeouts) on that service |
-| Certificates (uploaded / managed Let's Encrypt) | `certificates` (project‑level, reusable) | PEM files + one `crt-list` per service; hot‑swapped through the Runtime API |
-| Public interface on/off | `load_balancers.public_enabled` | Bind (or not) on the LB's public IPs |
-| Private network attach | `networks`, `lb_networks` | Bind on the node's private IP; targets reached via their private IP |
-| Labels | JSON column on LBs, servers, certificates | Used by label‑selector targets and list filters only |
-| Delete protection (lock icon) | `load_balancers.delete_protected` | API refuses DELETE |
-| Metrics (open connections, connections/s, requests/s, bandwidth in/out) | metrics collector + rollup tables | Deltas of `show stat` counters |
-| Location / network zone | node metadata | — |
+| Frontend (name, mode, binds, TLS, options) | `frontends`, `frontend_binds`, `frontend_certificates` | `frontend fe_<id> from loxy_http|loxy_tcp` with one `bind` per address:port (IPv6 as `ipv6@addr:port`, `*` → `:port` / `ipv6@:::port`) |
+| HTTP→HTTPS redirect (tls only) | `frontends.http_redirect` | Extra `frontend fe_<id>_rd` on the same addresses:80 with the ACME HTTP‑01 rule and `http-request redirect scheme https code 301` |
+| TLS termination + certificates | `frontends.tls`, `frontend_certificates` | `bind … ssl crt-list fe<id>.lst alpn h2,http/1.1` (`crt-base` + relative entries, ADR 0004); certs hot‑swapped through the Runtime API |
+| Default backend | `frontends.default_backend_id` | `default_backend be_<id>` |
+| Routing rule (hosts, path prefix → backend; http only) | `routes` (ordered by `position`) | `use_backend be_<id> if { req.hdr(host),field(1,:),lower -m str|-m end … } { path_beg … }` in route order |
+| Maintenance switch | `frontends.maintenance` | `opt@maint.map` keyed by frontend id: http → `http-request return status 503`, tcp → `tcp-request connection reject` |
+| Enabled switch | `frontends.enabled` | Frontend not rendered when disabled |
+| Backend (mode, algorithm, port, options) | `backends` | `backend be_<id> from loxy_http|loxy_tcp`, `balance` **always explicit** (§7.9) |
+| Health check (protocol, port, interval, timeout, retries, domain, path, response, status codes, TLS verify) | columns on `backends` | `option httpchk`, `http-check send/expect`, `check port inter rise fall`, `timeout check`, `check-ssl` |
+| Sticky sessions (cookie name, lifetime) | backend columns | `cookie <name> insert indirect nocache httponly [secure] maxlife <n>s` + `cookie t<T>[x<H>]` per server |
+| PROXY protocol | backend column | `send-proxy`/`send-proxy-v2` **and** `check-send-proxy` on server lines |
+| Server: IP / host / label selector | `backend_servers`, resolved into `server_slots` | `server t<T>` (IP) or `server t<T>x<H>` (host / selector match) with `id <slot id>`; added/removed at runtime as dynamic servers |
+| Host (inventory) | `hosts` | Address source for host/selector servers only |
+| Labels | JSON column on frontends, backends, hosts, certificates | Selectors, list filters and alert‑rule filters only; never rendered |
+| Node addresses | `node_addresses` | Not rendered; bind‑address suggestions and DNS required records for `*` binds |
+| Metrics | collector + rollup tables (scope frontend / backend) | Deltas of `show stat` counters |
+| System | — | `sys_panel` (+ `sys_panel_be`), `sys_stats`, `sys_acme_fe<id>` (ACME HTTP‑01 :80 listener for a TLS frontend without redirect) |
 
-The Hetzner public API exposes exactly these four metric types (`open_connections`, `connections_per_second`, `requests_per_second`, `bandwidth` with `in`/`out` series); mirror them in the loxy API so existing tooling habits transfer.
+The metric names of the API (`open_connections`, `connections_per_second`, `requests_per_second`, `bandwidth` with `in`/`out` series, plus backend `sessions`, `queue`, `response_time_ms`, `http_*xx`, `errors`) are stable contract (§10.5).
 
 ---
 
@@ -104,11 +105,11 @@ The Hetzner public API exposes exactly these four metric types (`open_connection
                                 ▼                                           ▼
                  HAProxy 3.4 official image, master‑worker, network_mode: host
                                 │
-          Clients ⇄ LB IP:port ⇄ HAProxy ⇄ Targets (public or private IPs)
+          Clients ⇄ bind IP:port ⇄ HAProxy (frontends → backends) ⇄ Servers
 ```
 
 ### 3.2 Process modes (one binary)
-`loxy all-in-one` (default; panel + local node agent in one process), `loxy panel` (central control plane, Phase 3), `loxy agent` (runs next to HAProxy on each LB node, Phase 3), plus admin sub‑commands (`loxy admin reset-password`, `loxy backup`, `loxy restore`, `loxy migrate`, `loxy render --dry-run`, `loxy version`).
+`loxy all-in-one` (default; panel + local node agent in one process), `loxy panel` (central control plane, Phase 3), `loxy agent` (runs next to HAProxy on each HAProxy node, Phase 3), plus admin sub‑commands (`loxy admin reset-password`, `loxy backup`, `loxy restore`, `loxy migrate`, `loxy render --dry-run`, `loxy version`).
 
 Phase 1 ships only `all-in-one`, **but** the code MUST talk to the node through a `NodeTransport` interface (in‑process implementation now, network implementation in Phase 3) so multi‑node needs no refactor.
 
@@ -129,7 +130,7 @@ type NodeTransport interface {
 4. It **always** renders the full config tree for the new version into a new revision directory and validates it with `haproxy -c` (§7.2, §7.7).
 5. If the plan contains any `reload` op → atomically swap `live` → master CLI `reload`. Otherwise → swap `live` (no reload) and execute the runtime ops. If a runtime op fails → fall back to a reload of the same revision.
 6. Store a `config_revisions` row (result, duration, HAProxy output), set `applied_version`, emit events.
-7. On any failure the previous good revision stays (or is put back) as `live`, the LB shows an `apply_error` banner with the HAProxy output, and a notification fires.
+7. On any failure the previous good revision stays (or is put back) as `live`, the affected frontends/backends and System show an `apply_error` banner with the HAProxy output, and a notification fires.
 
 **Invariant:** the live config tree on disk always fully describes the state HAProxy is running, so a cold restart of the HAProxy container reproduces exactly what runtime operations created. Runtime API calls are an optimisation to avoid reloads, never the only record of a change.
 
@@ -145,8 +146,8 @@ type NodeTransport interface {
 | Controller language | Go (current stable release) | Low memory, single static binary, first‑class ACME library |
 | HTTP server | stdlib `net/http` (method+path patterns) with small middleware; handler interfaces generated by `oapi-codegen` from `api/openapi.yaml` (OpenAPI 3.0.3) | Contract‑first, typed, no framework weight |
 | Database | SQLite in WAL mode via `modernc.org/sqlite` (pure Go, no CGO); typed queries with `sqlc`; migrations embedded and run at start | Zero ops, microsecond reads |
-| ACME | `github.com/go-acme/lego/v5` used as a library | HTTP‑01 and DNS‑01 (many DNS providers incl. Hetzner), custom challenge providers, renewal info (ARI) |
-| DNS providers | `github.com/libdns/libdns` interfaces + provider modules (`libdns/hetzner`, `libdns/cloudflare` first) | One small, uniform record API (`GetRecords`/`AppendRecords`/`SetRecords`/`DeleteRecords`, `ListZones`) for many providers; the same credentials drive ACME DNS‑01 through a lego `challenge.Provider` adapter (§8.16) |
+| ACME | `github.com/go-acme/lego/v5` used as a library | HTTP‑01 and DNS‑01, custom challenge providers, renewal info (ARI) |
+| DNS providers | `github.com/libdns/libdns` interfaces + provider modules (the first ones are listed in §21 Q4; ADR 0003) | One small, uniform record API (`GetRecords`/`AppendRecords`/`SetRecords`/`DeleteRecords`, `ListZones`) for many providers; the same credentials drive ACME DNS‑01 through a lego `challenge.Provider` adapter (§8.9) |
 | Crypto | `golang.org/x/crypto/argon2` (passwords), AES‑256‑GCM (secrets at rest), TOTP lib for optional 2FA | |
 | Logging | `log/slog` JSON to stdout | |
 | Frontend | Svelte 5 + SvelteKit with `adapter-static` (SPA mode, `ssr = false`), TypeScript, Vite | Smallest runtime of the mainstream frameworks |
@@ -186,7 +187,7 @@ loxy/
 │   │   ├── migrations/              # 0001_init.sql, ...
 │   │   ├── queries/                 # sqlc input
 │   │   └── db/                      # sqlc output (generated, committed)
-│   ├── state/                       # immutable NodeState snapshots, label-selector resolution
+│   ├── state/                       # immutable NodeState snapshots, label-selector resolution, server slots
 │   ├── reconcile/                   # diff, op classification, apply plan, retries
 │   ├── haproxy/
 │   │   ├── render/                  # text/template renderer + templates/*.tmpl + golden tests
@@ -197,27 +198,26 @@ loxy/
 │   ├── metrics/                     # collector, delta + reset logic, ring buffers, rollups, queries
 │   ├── health/                      # per-check status, aggregation, transitions → events
 │   ├── certs/                       # PEM parsing/validation, storage, lego integration, renew scheduler
-│   ├── dns/                         # libdns provider registry, lego DNS-01 adapter, domain verifier, record sync (§8.16)
+│   ├── dns/                         # libdns provider registry, lego DNS-01 adapter, domain verifier, record sync (§8.9)
 │   ├── api/                         # handler implementations, middleware (auth, CSRF, rate-limit, request-id)
 │   ├── auth/                        # sessions, argon2id, API tokens, RBAC, TOTP
 │   ├── events/                      # in-process pub/sub + SSE hub
 │   ├── audit/
 │   ├── notify/                      # webhook, email (SMTP), Telegram, Slack
-│   ├── logrecv/                     # UDP syslog receiver + per-LB ring buffers (live logs)
+│   ├── logrecv/                     # UDP syslog receiver + per-frontend ring buffers (live logs)
 │   ├── agent/                       # node-side applier + NodeTransport (in-process now, network in Phase 3)
 │   ├── cluster/                     # panel-side node registry, enrollment, transport server (Phase 3)
-│   ├── integrations/hetzner/        # Robot + Cloud API clients: inventory sync, failover IP switch (Phase 3)
 │   └── webui/                       # go:embed of web/build (precompressed .br/.gz)
 ├── web/                             # SvelteKit SPA (§13)
 │   ├── src/lib/api/                 # generated types + thin client
 │   ├── src/lib/components/          # StatBar, StatCard, Donut, Chart, Tabs, Table, Modal, Dropdown, Toast, LabelChips, PortField, ...
 │   ├── src/lib/stores/              # session, sse, snapshot cache
 │   ├── src/lib/styles/tokens.css
-│   └── src/routes/                  # /login, /, /load-balancers/[id]/{overview,graphs,targets,services,networking,rescale,delete}, /certificates, /servers, /networks, /nodes, /activity, /settings/*
+│   └── src/routes/                  # /login, /dashboard, /frontends/[id]/{overview,routing,graphs,logs,config}, /backends/[id]/{servers,settings,graphs}, /hosts, /certificates, /domains/{,providers,zones}, /activity, /system, /settings/*
 ├── deploy/
 │   ├── docker/Dockerfile
 │   ├── compose/compose.yml          # production all-in-one
-│   ├── compose/compose.dev.yml      # dev: haproxy + whoami targets + pebble ACME + loxy
+│   ├── compose/compose.dev.yml      # dev: haproxy + whoami servers + pebble ACME + loxy
 │   ├── compose/compose.agent.yml    # Phase 3: node agent only
 │   ├── haproxy/bootstrap.cfg        # minimal config written on first start
 │   ├── keepalived/                  # Phase 3 templates + notify scripts
@@ -237,7 +237,7 @@ loxy/
 
 ## 6. Data model (SQLite)
 
-Conventions: `INTEGER PRIMARY KEY` ids (shown in UI as `#1996290`), timestamps as unix milliseconds, JSON stored as `TEXT CHECK(json_valid(col))`, `ON DELETE` rules explicit, `PRAGMA foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`. All resources belong to a `project` (one default project in v1; keeps the door open for multi‑tenant use).
+Conventions: `INTEGER PRIMARY KEY` ids (shown in UI as `#42`), timestamps as unix milliseconds, JSON stored as `TEXT CHECK(json_valid(col))`, `ON DELETE` rules explicit, `PRAGMA foreign_keys=ON`, `journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000`. All resources belong to a `project` (one default project in v1; keeps the door open for multi‑tenant use).
 
 | Table | Key columns |
 |---|---|
@@ -246,30 +246,27 @@ Conventions: `INTEGER PRIMARY KEY` ids (shown in UI as `#1996290`), timestamps a
 | `project_members` | project_id, user_id, role |
 | `sessions` | id_hash, user_id, created_at, expires_at, ip, user_agent |
 | `api_tokens` | id, project_id, name, prefix, secret_hash, role, expires_at, last_used_at |
-| `nodes` | id, name, mode (`local|remote`), status, haproxy_version, loxy_version, features JSON (`QUIC`, `PROMEX`, …), location_city, location_country, network_zone, lat, lon, last_seen_at, desired_version, applied_version |
-| `node_groups` | id, name, kind (`single|ha_pair`), vip_mode (`none|hetzner_failover_ip|hcloud_floating_ip|vrrp`) — Phase 3 |
-| `ip_addresses` | id, node_id / node_group_id, address, family (4/6), kind (`primary|additional|failover|private`), network_id, assigned_lb_id (nullable, unique when set), rdns |
-| `networks` | id, project_id, name, cidr |
-| `node_networks` | node_id, network_id, interface, address |
-| `plans` | id, name (e.g. `lb11`), max_connections, max_services, max_targets, max_certificates, traffic_quota_bytes, price_monthly_cents, currency, sort, active |
-| `load_balancers` | id, project_id, name (unique per project), plan_id, node_id / node_group_id, algorithm (`roundrobin|leastconn|source|random`), public_enabled, ipv4_id, ipv6_id, delete_protected, maintenance, labels JSON, status (`active|applying|apply_error`), last_error, created_at, updated_at |
-| `lb_networks` | lb_id, network_id, private_ip_id |
-| `services` | id, lb_id, protocol (`tcp|http|https`), listen_port, destination_port, http_redirect, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol (`none|v1|v2`), http_timeout_s, hc_protocol (`tcp|http|https`), hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes JSON, hc_tls_verify, options JSON (extras, §20), created_at — UNIQUE(lb_id, listen_port) |
-| `service_certificates` | service_id, certificate_id, position |
-| `servers` (inventory) | id, project_id, name, public_ipv4, public_ipv6, private_ipv4, labels JSON, source (`manual|hetzner_robot|hetzner_cloud`), external_id, notes |
-| `targets` | id, lb_id, type (`server|label_selector|ip`), server_id, label_selector, ip, use_private_ip, weight (1–256, default 100), backup, admin_state (`ready|drain|maint`), created_at |
-| `server_slots` | id (stable HAProxy server `id`), lb_id, target_id, server_id NULL, address — one row per *resolved* backend server, so ids survive reloads |
-| `certificates` | id, project_id, name, type (`uploaded|managed`), domains JSON, key_type (`ecdsa256|rsa2048|rsa4096`), challenge (`http01|dns01`), dns_provider_id (→ `dns_providers`, replaces inline credentials), cert_pem, chain_pem, key_pem_enc, fingerprint_sha256, not_before, not_after, status (`pending|issued|renewing|failed`), last_error, renew_after, labels JSON |
-| `dns_providers` | id, project_id, name, kind (`hetzner|cloudflare|…`, registry key), credentials_enc (AES‑256‑GCM JSON), status (`ok|error|unknown`), last_error, last_checked_at, created_at |
-| `domains` | id, project_id, fqdn (unique per project, RFC 1123, lowercase, `*.` allowed only with a DNS provider), lb_id (nullable, `ON DELETE SET NULL`), service_id (nullable), dns_provider_id (nullable), zone (detected apex, e.g. `example.com`), auto_records (bool, default false), ttl (default 300), status (`unknown|ok|wrong_ip|missing|error`), observed JSON (last A/AAAA answers), checked_at, certificate_id (nullable), managed_record_ids JSON, created_at, updated_at |
+| `nodes` | id, name, mode (`local|remote`), status, haproxy_version, loxy_version, features JSON (`QUIC`, `PROMEX`, …), last_seen_at, desired_version, applied_version |
+| `node_addresses` | id, node_id, address, family (4/6), label — the node's own addresses: bind‑address suggestions and DNS required records for frontends that bind `*` |
+| `node_groups` | id, name, kind (`single|ha_pair`), vip_mode (`none|vrrp`), virtual_ips JSON — Phase 3 |
+| `frontends` | id, project_id, name (unique per project), description, node_id / node_group_id, mode (`http|tcp`), tls, http_redirect, default_backend_id (nullable, `ON DELETE RESTRICT`), timeout_client_s, maxconn (0 = unlimited), forwarded_headers, enabled, maintenance, labels JSON, status (`active|applying|apply_error`), last_error, options JSON (extras, §20), created_at, updated_at, version |
+| `frontend_binds` | frontend_id, address (IP or `*`), port — UNIQUE(frontend_id, address, port); cross‑frontend collisions are checked in the API (§8.3) |
+| `frontend_certificates` | frontend_id, certificate_id, position |
+| `routes` | id, frontend_id, position, hosts JSON (exact or `*.example.com`), path_prefix, backend_id (`ON DELETE RESTRICT`) |
+| `backends` | id, project_id, name (unique per project), description, mode (`http|tcp`), algorithm (`roundrobin|leastconn|source|random`), port, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol (`none|v1|v2`), timeout_server_s, hc_protocol (`tcp|http|https`), hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes JSON, hc_tls_verify, labels JSON, options JSON, created_at, updated_at, version |
+| `backend_servers` | id, backend_id, type (`ip|host|label_selector`), ip, host_id, label_selector, port (nullable override), use_private_ip, weight (1–256, default 100), backup, admin_state (`ready|drain|maint`), removing, created_at |
+| `server_slots` | id (stable HAProxy server `id`), backend_id, backend_server_id, host_id NULL, address, port — one row per *resolved* server, so ids survive reloads |
+| `hosts` (inventory) | id, project_id, name, ipv4, ipv6, private_ipv4, labels JSON, notes |
+| `certificates` | id, project_id, name, type (`uploaded|managed`), domains JSON, key_type (`ecdsa256|rsa2048|rsa4096`), challenge (`http01|dns01`), dns_provider_id (→ `dns_providers`), cert_pem, chain_pem, key_pem_enc, fingerprint_sha256, not_before, not_after, status (`pending|issued|renewing|failed`), last_error, renew_after, labels JSON |
 | `acme_accounts` | id, directory_url, email, key_pem_enc, registration JSON, eab_kid, eab_hmac_enc |
+| `dns_providers` | id, project_id, name, kind (registry key, e.g. `cloudflare`), credentials_enc (AES‑256‑GCM JSON), status (`ok|error|unknown`), last_error, last_checked_at, created_at |
+| `domains` | id, project_id, fqdn (unique per project, RFC 1123, lowercase, `*.` allowed only with a DNS provider), frontend_id (nullable, `ON DELETE SET NULL`), dns_provider_id (nullable), zone (detected apex, e.g. `example.com`), auto_records (bool, default false), ttl (default 300), status (`unknown|ok|wrong_ip|missing|error`), observed JSON (last A/AAAA answers), checked_at, certificate_id (nullable), managed_record_ids JSON, created_at, updated_at |
 | `config_revisions` | id, node_id, revision (monotonic), desired_version, sha256, kind (`runtime|reload|rollback|bootstrap`), result (`ok|failed`), duration_ms, haproxy_output, created_by, created_at, pinned |
-| `metrics_1m`, `metrics_5m`, `metrics_1h` | lb_id, service_id (0 = whole LB), ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors — PK(lb_id, service_id, ts) |
-| `traffic_monthly` | lb_id, month (`YYYY-MM`), bytes_in, bytes_out |
-| `events` | id, ts, project_id, lb_id, kind, severity, message, data JSON |
+| `metrics_1m`, `metrics_5m`, `metrics_1h` | scope (`frontend|backend`), scope_id, ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, sessions_avg, queue_max, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors — PK(scope, scope_id, ts) |
+| `events` | id, ts, project_id, frontend_id NULL, backend_id NULL, kind, severity, message, data JSON |
 | `audit_log` | id, ts, actor_user_id, actor_token_id, ip, action, resource_type, resource_id, before JSON, after JSON |
 | `notification_channels` | id, kind (`webhook|email|telegram|slack`), config_enc, enabled |
-| `alert_rules` | id, event_kinds JSON, lb_filter (label selector), channel_id, min_severity, cooldown_s |
+| `alert_rules` | id, event_kinds JSON, label_filter (label selector matched against frontend/backend labels), channel_id, min_severity, cooldown_s |
 | `settings` | key, value JSON |
 
 Indexes on every foreign key, on `events(ts)`, `audit_log(ts)`, metrics PKs. Keep the whole desired state (minus metrics/events/audit) in an in‑memory snapshot rebuilt on change; API reads hit the snapshot, not SQLite.
@@ -279,7 +276,7 @@ Indexes on every foreign key, on `events(ts)`, `audit_log(ts)`, metrics PKs. Kee
 ## 7. HAProxy integration (the core)
 
 ### 7.1 Process model, sockets, container
-- HAProxy runs in its **own container** from the **official image**, `network_mode: host` (services add listeners at runtime, which Docker port publishing cannot follow, and host networking avoids the userland proxy/NAT hop).
+- HAProxy runs in its **own container** from the **official image**, `network_mode: host` (frontends add listeners on arbitrary addresses and ports, which Docker port publishing cannot follow, and host networking avoids the userland proxy/NAT hop).
 - Start command (override the image entrypoint so the flags are explicit):
   `haproxy -W -db -S /run/haproxy/master.sock,mode,660,gid,1500 -f /usr/local/etc/haproxy/live/haproxy.cfg`
   - `-W` master‑worker; `-db` foreground; `-S` master CLI socket. **VERIFY** the `-S` bind‑option syntax and resulting socket permissions.
@@ -305,9 +302,9 @@ Indexes on every foreign key, on `events(ts)`, `audit_log(ts)`, metrics PKs. Kee
         ├── haproxy.cfg               # rendered with Root=/usr/local/etc/haproxy/live
         ├── haproxy.check.cfg         # same content rendered with Root=<this dir>, used only for `haproxy -c`
         ├── certs/<cert_id>.pem       # leaf + chain + key, mode 0640
-        ├── certs/_placeholder_<svc>.pem   # self-signed, used until a managed cert is issued
-        ├── crt-lists/s<service_id>.lst
-        ├── maps/maint.map            # loaded with opt@, updated at runtime too
+        ├── certs/_placeholder.pem    # self-signed, served until a managed cert is issued
+        ├── crt-lists/fe<frontend_id>.lst   # entries relative to crt-base (ADR 0004)
+        ├── maps/maint.map            # loaded with opt@, keyed by frontend id, updated at runtime too
         ├── maps/panel_allow.lst
         └── errors/503.http, maint.http
 /var/lib/haproxy/server-state         # dump of `show servers state`, written before each reload
@@ -318,32 +315,33 @@ Indexes on every foreign key, on `events(ts)`, `audit_log(ts)`, metrics PKs. Kee
 - **Atomic swap:** create `live.tmp` → `revs/N`, then `rename(live.tmp, live)`, then fsync the directory.
 - Unchanged files are **hard‑linked** from the previous revision (cheap, fast).
 - Garbage collection keeps the last 20 revisions plus any `pinned` (rollback) ones.
-- Runtime‑only changes (target add, cert renewal) still create a new revision so disk always equals memory.
+- Runtime‑only changes (server add, cert renewal) still create a new revision so disk always equals memory.
 
 ### 7.3 Naming and stable ids
-- Frontend `lb{L}_s{S}_fe`; redirect frontend `lb{L}_s{S}_rd`; backend `lb{L}_s{S}_be`; per‑LB connection table `lb{L}_cap`; system sections `sys_panel`, `sys_panel_be`, `sys_stats`, `sys_acme`.
-- Frontend and backend names MUST differ (HAProxy 3.3+ rejects a frontend and backend sharing a name).
-- Server names: `t{T}` for an IP target, `t{T}x{SRV}` for a server or label‑selector expansion. Server `id` = `server_slots.id` (stable), so `load-server-state-from-file` re‑applies weight/admin/health state after reloads.
-- Names in HAProxy use ids only; display names and labels never appear in the config.
+- Frontend `fe_{F}`; redirect frontend `fe_{F}_rd`; backend `be_{B}`; system sections `sys_panel`, `sys_panel_be`, `sys_stats`, `sys_acme_fe{F}`.
+- Frontend and backend names MUST differ (HAProxy 3.3+ rejects a frontend and backend sharing a name) — guaranteed by the `fe_`/`be_` prefixes.
+- Server names: `t{T}` for an IP server, `t{T}x{H}` for a host or label‑selector expansion (`T` = `backend_servers.id`, `H` = `hosts.id`). Server `id` = `server_slots.id` (stable), so `load-server-state-from-file` re‑applies weight/admin/health state after reloads.
+- Because a server belongs to exactly one backend, a runtime op is one command per resolved server — it never multiplies across frontends.
+- Names in HAProxy use ids only; display names, descriptions and labels never appear in the config.
 
 ### 7.4 Rendered config (reference output)
 
-Templates live in `internal/haproxy/render/templates/`. Output MUST be deterministic (sorted by id) so revisions diff cleanly. Reference rendering for one LB with an HTTPS service (redirect on) and a TCP service:
+Templates live in `internal/haproxy/render/templates/`. Output MUST be deterministic (sorted by id; routes by position) so revisions diff cleanly. Reference rendering for a TLS http frontend with redirect and host/path routing to two backends, plus a tcp frontend/backend pair (deviations recorded in ADR 0004 are already applied):
 
 ```haproxy
 # Generated by loxy. DO NOT EDIT. node=1 revision=123 desired_version=456
 global
-    master-worker
     user haproxy
     group haproxy
     stats socket /run/haproxy/admin.sock mode 660 gid 1500 level admin expose-fd listeners
     stats timeout 30s
     stats calculate-max-counters off          # 3.4: loxy computes maxima itself
     log 127.0.0.1:5514 len 8192 format rfc5424 local0 info
-    maxconn 200000
+    maxconn 200000                            # LOXY_HAPROXY_MAXCONN
     hard-stop-after 15m                       # bounds old workers holding long connections
     mworker-max-reloads 50
     server-state-file /var/lib/haproxy/server-state
+    crt-base /usr/local/etc/haproxy/live/certs
     ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
     ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305
     ssl-default-bind-ciphersuites TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256
@@ -395,30 +393,27 @@ frontend sys_stats from loxy_http
     stats uri /stats
     stats refresh 5s
 
-# ---------- LB 7 (plan lb11) ----------
-backend lb7_cap
-    stick-table type integer size 1 expire 24h store conn_cur
-
-frontend lb7_s31_fe from loxy_http
-    bind 162.55.154.22:443 ssl crt-list /usr/local/etc/haproxy/live/crt-lists/s31.lst alpn h2,http/1.1
-    bind ipv6@2a01:4f8:1c1f:696b::1:443 ssl crt-list /usr/local/etc/haproxy/live/crt-lists/s31.lst alpn h2,http/1.1
-    maxconn 10000
-    tcp-request connection track-sc0 int(1) table lb7_cap
-    tcp-request connection reject if { sc0_conn_cur gt 10000 }
+# ---------- frontend 3 "web" (http, tls, redirect on) ----------
+frontend fe_3 from loxy_http
+    bind 0.0.0.0:443 ssl crt-list /usr/local/etc/haproxy/live/crt-lists/fe3.lst alpn h2,http/1.1
+    bind ipv6@:::443 ssl crt-list /usr/local/etc/haproxy/live/crt-lists/fe3.lst alpn h2,http/1.1
+    maxconn 10000                             # omitted when maxconn = 0
     timeout client 50s
     option forwardfor
     http-request set-header X-Forwarded-Proto https
     http-request set-header X-Forwarded-Port %[dst_port]
-    http-request return status 503 content-type text/html file /usr/local/etc/haproxy/live/errors/maint.http if { str(7),map(opt@/usr/local/etc/haproxy/live/maps/maint.map) -m found }
-    default_backend lb7_s31_be
+    http-request return status 503 content-type text/html file /usr/local/etc/haproxy/live/errors/maint.http if { str(3),map(opt@/usr/local/etc/haproxy/live/maps/maint.map) -m found }
+    use_backend be_5 if { req.hdr(host),field(1,:),lower -m str app.example.com } { path_beg /api }
+    use_backend be_6 if { req.hdr(host),field(1,:),lower -m end .static.example.com }
+    default_backend be_4
 
-frontend lb7_s31_rd from loxy_http
-    bind 162.55.154.22:80
-    bind ipv6@2a01:4f8:1c1f:696b::1:80
+frontend fe_3_rd from loxy_http
+    bind 0.0.0.0:80
+    bind ipv6@:::80
     http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/),map(virt@acme_http01)]" if { path_beg /.well-known/acme-challenge/ } { path,field(-1,/),map(virt@acme_http01) -m found }
     http-request redirect scheme https code 301
 
-backend lb7_s31_be from loxy_http
+backend be_4 from loxy_http
     balance roundrobin
     timeout server 50s
     option httpchk
@@ -426,52 +421,75 @@ backend lb7_s31_be from loxy_http
     http-check expect status 200-399
     http-check expect string 'OK'               # VERIFY AND-semantics, see §7.5
     timeout check 13s
-    server t101 85.10.206.38:9000 id 101 check inter 15s rise 3 fall 3
-    server t102 85.10.206.221:9000 id 102 check inter 15s rise 3 fall 3
+    server t101 10.0.0.11:9000 id 101 check inter 15s rise 3 fall 3
+    server t102x7 10.0.0.12:9000 id 102 check inter 15s rise 3 fall 3
+    server t102x8 10.0.0.13:9000 id 103 check inter 15s rise 3 fall 3 backup
 
-frontend lb7_s32_fe from loxy_tcp
-    bind 162.55.154.22:8443
-    maxconn 10000
-    tcp-request connection track-sc0 int(1) table lb7_cap
-    tcp-request connection reject if { sc0_conn_cur gt 10000 }
-    default_backend lb7_s32_be
-
-backend lb7_s32_be from loxy_tcp
+backend be_5 from loxy_http
     balance leastconn
-    server t101 85.10.206.38:443 id 1101 check inter 15s rise 3 fall 3 send-proxy-v2 check-send-proxy
+    server t110 10.0.0.21:8080 id 110 check inter 15s rise 3 fall 3
+
+backend be_6 from loxy_http
+    balance roundrobin
+    server t111 10.0.0.31:80 id 111 check inter 15s rise 3 fall 3
+
+# ---------- frontend 9 "postgres" (tcp) ----------
+frontend fe_9 from loxy_tcp
+    bind 10.0.0.5:5432
+    maxconn 2000
+    tcp-request connection reject if { str(9),map(opt@/usr/local/etc/haproxy/live/maps/maint.map) -m found }
+    default_backend be_12
+
+backend be_12 from loxy_tcp
+    balance leastconn
+    server t120 10.0.0.41:5432 id 120 check inter 15s rise 3 fall 3 send-proxy-v2 check-send-proxy
 ```
 
 Notes:
-- The LB‑wide cap (`lb{L}_cap` + `track-sc0`) enforces the plan's connection limit across *all* services of the LB, like a Hetzner LB type. It is a setting (`plans.enforce_lb_cap`, default on). **VERIFY** that concurrent connections across two frontends share the counter.
-- IPv6 binds use the `ipv6@addr:port` prefix form (unambiguous).
-- The ACME and redirect rules are rendered in **every** :80 frontend of an LB that has a managed HTTP‑01 certificate. If an LB has a managed certificate but no :80 listener, render a `sys_acme` frontend on that LB's IPs:80 that answers challenges and returns 404 otherwise.
-- `maint.map` is an `opt@` map: present on disk in the revision **and** updated at runtime with `add map`/`del map`, so maintenance mode is instant and survives reloads. `virt@acme_http01` is a virtual (memory‑only) map because challenge tokens are ephemeral; the reconciler re‑pushes pending tokens after every reload.
+- No `master-worker` keyword (deprecated since 3.3; `-W` on the command line is enough). `crt-base` + relative crt‑list entries make each revision validate against its own files (ADR 0004).
+- Bind address `*` renders as `0.0.0.0:<port>` + `ipv6@:::<port>`; explicit IPv6 addresses use the `ipv6@addr:port` prefix form (unambiguous).
+- Route conditions: each host becomes one `-m str` (exact) or `-m end` (`*.example.com` → `.example.com`) pattern on the lower‑cased Host without port; multiple hosts in a route are OR‑ed (one ACL with several patterns); `path_prefix` adds `{ path_beg <prefix> }` (AND). A route with only a path prefix matches any host. Routes are evaluated in `position` order; first match wins, then `default_backend`. A frontend without a default backend answers unmatched requests with 503.
+- The ACME HTTP‑01 rule is rendered in every `fe_<id>_rd` frontend. If a TLS frontend has a managed HTTP‑01 certificate but no redirect, render `sys_acme_fe<id>` on that frontend's addresses:80 that answers challenges and returns 404 otherwise (port collisions with other frontends are rejected by the API, §8.3).
+- `maint.map` is an `opt@` map keyed by frontend id: present on disk in the revision **and** updated at runtime with `add map`/`del map`, so maintenance mode is instant and survives reloads. HTTP frontends return the maintenance page with 503; TCP frontends reject the connection. `virt@acme_http01` is a virtual (memory‑only) map because challenge tokens are ephemeral; the reconciler re‑pushes pending tokens after every reload.
+- There is no global/per‑object connection cap other than the frontend `maxconn` (0 = not rendered, the global `maxconn` applies).
 
 ### 7.5 Field → directive mapping
 
-**Service level**
+**Frontend fields**
 
-| Field | HTTP / HTTPS | TCP |
+| Field | http | tcp |
 |---|---|---|
-| protocol `http` | `mode http`, plain bind | — |
-| protocol `https` | `bind … ssl crt-list s<S>.lst alpn h2,http/1.1`; backend talks plain HTTP to targets (TLS termination) | — |
-| protocol `tcp` | — | `mode tcp`; no header injection; use for TLS passthrough |
-| listen_port / destination_port | bind port / server port | same |
-| http_redirect (https only) | extra frontend on :80 with `http-request redirect scheme https code 301` | not allowed |
-| sticky (cookie name, lifetime) | `cookie <name> insert indirect nocache httponly maxlife <n>s` (+ `secure` for https), each server `cookie t<id>` | not allowed |
-| proxy_protocol v1/v2 | `send-proxy` / `send-proxy-v2` **and** `check-send-proxy` on every server line (otherwise targets that require PROXY reject the health check) | same |
-| http_timeout_s | `timeout client` on the frontend, `timeout server` on the backend | same |
-| forwarded headers | `option forwardfor`, `X-Forwarded-Proto`, `X-Forwarded-Port` = listen port (Hetzner behaviour) | none |
-| algorithm (LB level) | `balance roundrobin` / `leastconn` (extras: `source`, `random`) — rendered **explicitly** | same |
+| mode | `mode http` (via `from loxy_http`) | `mode tcp` (via `from loxy_tcp`); no header injection; use for TLS passthrough |
+| binds [{address, port}] | one `bind` per entry; `*` → all IPv4 + IPv6 | same |
+| tls + certificates | `bind … ssl crt-list fe<F>.lst alpn h2,http/1.1`; backends get plain HTTP (TLS termination) | not allowed |
+| http_redirect (tls only) | extra `fe_<F>_rd` on the same addresses:80 with ACME rule + `http-request redirect scheme https code 301` | not allowed |
+| default_backend_id | `default_backend be_<B>` | same |
+| routes | `use_backend be_<B> if …` in position order (§7.4) | not allowed |
+| timeout_client_s | `timeout client <n>s` | same |
+| maxconn | `maxconn <n>` (omitted when 0) | same |
+| forwarded_headers | `option forwardfor`, `X-Forwarded-Proto` (`https` when tls, else `http`), `X-Forwarded-Port` = `%[dst_port]` | not allowed |
+| enabled | frontend (and its `_rd` / `sys_acme_fe`) not rendered when false | same |
+| maintenance | `http-request return status 503 … maint.http` if id in `maint.map` | `tcp-request connection reject` if id in `maint.map` |
 
-**Health check**
+**Backend fields**
+
+| Field | http | tcp |
+|---|---|---|
+| algorithm | `balance roundrobin|leastconn|source|random` — rendered **explicitly** | same |
+| port | default server port (a server's `port` overrides it) | same |
+| sticky (cookie name, lifetime) | `cookie <name> insert indirect nocache httponly maxlife <n>s` (+ `secure` when every frontend using the backend has tls), each server `cookie <server name>` | not allowed |
+| proxy_protocol v1/v2 | `send-proxy` / `send-proxy-v2` **and** `check-send-proxy` on every server line (otherwise servers that require PROXY reject the health check) | same |
+| timeout_server_s | `timeout server <n>s` | same |
+| server weight / backup / admin_state | `weight <n>`, `backup`; admin state applied at runtime and kept by server‑state (ADR 0004) | same |
+
+**Health check (backend)**
 
 | Field | Rendering |
 |---|---|
 | hc_protocol `tcp` | `check` only (L4 connect) |
 | hc_protocol `http` | `option httpchk` + `http-check send meth GET uri <path>` (+ `ver HTTP/1.1 hdr Host <domain>` when domain set; without a domain HAProxy sends HTTP/1.0 without Host) |
 | hc_protocol `https` | as `http` plus `check-ssl verify none` on servers; if `hc_tls_verify` → `check-ssl verify required ca-file @system-ca check-sni <domain>` (**VERIFY** `@system-ca` support in the image) |
-| hc_port | `check port <p>` (omit when equal to destination port) |
+| hc_port | `check port <p>` (omit when equal to the server port) |
 | hc_interval_s | `inter <n>s` |
 | hc_timeout_s | `timeout check <n>s` in the backend (must be < interval) |
 | hc_retries | `fall <n> rise <n>` (unhealthy after n failures, healthy again after n successes) |
@@ -480,39 +498,37 @@ Notes:
 
 Status‑code conversion (pure function, table‑tested): each item matches `^[1-5][0-9?]{2}$`; `2??` → `200-299`, `20?` → `200-209`, `204` → `204`; merge adjacent ranges (`2??,3??` → `200-399`); de‑duplicate; sort.
 
-**VERIFY (important):** that two consecutive `http-check expect` rules after one `send` are both evaluated against the same response (status AND body). Test: target returns 200 without the string → must be DOWN; returns 500 with the string → must be DOWN; 200 with string → UP. If HAProxy evaluates only one, fall back to a raw `option tcp-check` sequence for that service (send an HTTP/1.1 request, `tcp-check expect rstring ^HTTP/1\.[01] (2|3)[0-9][0-9]`, then `tcp-check expect string <s>`), and document it in `docs/haproxy-notes.md`.
+**VERIFY (important):** that two consecutive `http-check expect` rules after one `send` are both evaluated against the same response (status AND body). Test: server returns 200 without the string → must be DOWN; returns 500 with the string → must be DOWN; 200 with string → UP. If HAProxy evaluates only one, fall back to a raw `option tcp-check` sequence for that backend (send an HTTP/1.1 request, `tcp-check expect rstring ^HTTP/1\.[01] (2|3)[0-9][0-9]`, then `tcp-check expect string <s>`), and document it in `docs/haproxy-notes.md`.
 
 ### 7.6 Change classification (runtime vs reload)
 
 | Change | Path | Commands / notes |
 |---|---|---|
-| Add target (any type) when algorithm ∈ {roundrobin, leastconn, random} | runtime | `add server lb7_s31_be/t105 1.2.3.4:9000 id 105 check inter 15s rise 3 fall 3 [cookie t105] [send-proxy-v2 check-send-proxy]` → `enable server …` → `enable health …` (dynamic servers start in maintenance with checks off; `default-server` settings are **not** inherited, so render every keyword explicitly; the `enabled` keyword is rejected) |
-| Remove target | runtime | `set server <b>/<s> state drain` → wait for `scur=0` or drain timeout (default 30 s) → `set server … state maint` → `wait 5s srv-removable <b>/<s>; del server <b>/<s>` |
+| Add server (any type) when algorithm ∈ {roundrobin, leastconn, random} | runtime | `add server be_4/t105 1.2.3.4:9000 id 105 check inter 15s rise 3 fall 3 [weight n] [backup] [cookie t105] [send-proxy-v2 check-send-proxy]` → `enable server …` → `enable health …` (dynamic servers start in maintenance with checks off; `default-server` settings are **not** inherited, so render every keyword explicitly; the `enabled` keyword is rejected) |
+| Remove server | runtime | `set server <b>/<s> state drain` → wait for `scur=0` or drain timeout (default 30 s) → `set server … state maint` → `wait 5s srv-removable <b>/<s>; del server <b>/<s>` |
 | Weight change | runtime | `set server <b>/<s> weight <n>` |
 | Drain / maintenance / ready | runtime | `set server <b>/<s> state drain|maint|ready` |
-| Label‑selector match set changes (server labels edited) | runtime | treated as add/remove |
-| Algorithm `source` (hash) backends | **reload** for target changes | dynamic servers only work with roundrobin, leastconn, first, random |
-| Algorithm change | reload | |
-| Add / edit / delete service | reload | new listeners need a new worker |
-| Health‑check parameter change | reload | |
-| Certificate renewed (same name) | runtime | `set ssl cert <path> <<\n<pem>\n` → `commit ssl cert <path>` |
-| Certificate attached to a service | runtime | `new ssl cert <path>` → `set ssl cert …` → `commit ssl cert …` → `add ssl crt-list <lst> <<\n<path> [alpn h2,http/1.1] <sni…>\n` |
-| Certificate detached | runtime | `del ssl crt-list <lst> <path>`; `del ssl cert <path>` when unused (**VERIFY** command availability) |
+| Label‑selector match set changes (host labels or addresses edited) | runtime | treated as add/remove |
+| Server changes in `source` (hash) backends | **reload** | dynamic servers only work with roundrobin, leastconn, first, random |
+| Frontend maintenance on/off | runtime | `add map /usr/local/etc/haproxy/live/maps/maint.map <frontend_id> 1` / `del map … <frontend_id>` (+ file in revision). The `opt@` prefix is not part of a map's name, so runtime commands use the plain path; `virt@` *is* part of the name |
+| Certificate renewed / replaced (same file) | runtime | `set ssl cert <path> <<\n<pem>\n` → `commit ssl cert <path>` |
 | ACME HTTP‑01 token | runtime | `add map virt@acme_http01 <token> <keyauth>` / `del map …` |
-| Maintenance mode on/off | runtime | `add map /usr/local/etc/haproxy/live/maps/maint.map <lbid> 1` / `del map … <lbid>` (+ file in revision). The `opt@` prefix is not part of a map's name, so runtime commands use the plain path; `virt@` *is* part of the name |
+| Add / edit / delete / enable / disable frontend | reload | new or changed listeners need a new worker |
+| Binds, TLS, redirect, routes, default backend, timeouts, maxconn, forwarded headers | reload | |
+| Certificate attached to / detached from a frontend | reload | any crt‑list change is reload‑class (ADR 0004); MAY later use `add/del ssl crt-list` |
+| Add / edit / delete backend (algorithm, health check, sticky, proxy protocol, timeouts, port) | reload | |
 | Panel allowlist | reload (rare) | MAY use `add acl` at runtime |
-| Public interface toggle, network attach, IP change, rescale | reload | |
 
 Every runtime op also produces the new on‑disk revision. If any runtime command fails, the reconciler falls back to a reload of that revision.
 
-HAProxy 3.4 also allows creating, publishing and deleting whole **backends** at runtime (`add backend … from <defaults>`, `publish backend`, `unpublish backend`, `del backend`). v1 doesn't need it (services add listeners, which still require a reload); use it in Phase 4 for host/path routing rules (§20).
+HAProxy 3.4 also allows creating, publishing and deleting whole **backends** at runtime (`add backend … from <defaults>`, `publish backend`, `unpublish backend`, `del backend`). v1 doesn't need it (backends become reachable only through a frontend change, which is a reload anyway); MAY be used later to make "add backend + route" reload‑free once `use_backend` rules can also change at runtime.
 
 ### 7.7 Reload procedure
 1. `show servers state` → write `/var/lib/haproxy/server-state` atomically.
 2. `haproxy -c -f revs/N/haproxy.check.cfg` (inside the loxy container, same HAProxy binary). Non‑zero exit → abort, keep current `live`, record the output.
 3. Swap `live` → `revs/N`.
 4. Master CLI `reload`; read until EOF; require `Success=1`.
-5. On `Success=0`: swap `live` back to the previous revision (so a future cold start is safe), record the startup log, mark the LB(s) `apply_error`, notify. Old workers keep serving the previous config.
+5. On `Success=0`: swap `live` back to the previous revision (so a future cold start is safe), record the startup log, mark the affected frontends/backends `apply_error`, notify. Old workers keep serving the previous config.
 6. Post‑checks: `show proc` lists a new worker; `show stat` contains every expected frontend/backend; otherwise treat as failed.
 7. Re‑push ephemeral runtime state (pending ACME tokens in `virt@acme_http01`).
 8. Rate limits: coalesce via the reconciler debounce; at most one reload per second per node; a reload storm queues.
@@ -536,163 +552,131 @@ On first start loxy writes `revs/000001/` from `deploy/haproxy/bootstrap.cfg` (g
 
 ## 8. Feature specification (screens, behaviour, validation, acceptance)
 
-Global navigation: **Load Balancers · Domains · Certificates · Servers · Networks · Nodes · Activity · Settings** (Domains has sub‑pages *Domains*, *DNS providers*, *Zones*). Top bar: project switcher (hidden while only one project exists), user menu, live connection indicator (SSE state).
+Global navigation: **Dashboard · Frontends · Backends · Hosts · Certificates · Domains · Activity · System · Settings** (Domains has sub‑pages *Domains*, *DNS providers*, *Zones*). Top bar: project switcher (hidden while only one project exists), global apply status (applying / last error with "Retry", `POST /apply/retry`), user menu, live connection indicator (SSE state).
 
-All destructive actions use a confirm modal; delete of an LB requires typing its name. Every mutation returns an **action** object (§12.4) whose progress is shown as a toast and in Activity.
+All destructive actions use a confirm modal; deleting a frontend or backend requires typing its name. Every mutation returns an **action** object (§12.4) whose progress is shown as a toast and in Activity. An apply error shows a banner on the affected frontend/backend and on System with the HAProxy output and "Retry" / "Roll back to last good revision".
 
-### 8.1 Load Balancers list
-- Table/cards: status dot, name, `#id`, IPv4, IPv6, plan, location (flag + city), services count, targets healthy/total, live open connections sparkline (last 5 min), labels.
-- Filters: text search, label selector (`env=prod,team!=ops`), status. Sort by name/created/connections.
-- "Create Load Balancer" button → wizard (§8.2).
-- Acceptance: 100 LBs render in < 100 ms after data arrives; sparklines update via one SSE stream, not per‑row polling.
+### 8.1 Dashboard (`/dashboard`)
+- Stat row (live via SSE): frontends (enabled / total, in maintenance), backends by health (healthy / degraded / unhealthy / unknown), servers (healthy / total, draining, in maintenance), certificates expiring < 21 d, current open connections and requests/s across all frontends, bandwidth in/out.
+- **Needs attention** list: unhealthy/degraded backends with the first failing checks ("10.0.0.12:9000 · Layer7 wrong status 503"), frontends with apply errors, expiring or failed certificates, domains not resolving correctly.
+- Traffic sparkline per top‑5 frontend (last 5 min), last 10 events, node status (HAProxy version, uptime, last reload result).
+- Acceptance: renders from `GET /overview` + one SSE stream in < 100 ms after data arrives; no per‑card polling.
 
-### 8.2 Create wizard (single page with sections, like Hetzner)
-1. **Location** – choose node / HA group (shows city, country, network zone, free IPs).
-2. **Type** – plan cards with limits and price.
-3. **Network** – public IPv4/IPv6 (auto‑assign free address from the node's pool or pick), optional private network + IP.
-4. **Algorithm** – Round Robin (default) / Least Connections.
-5. **Services** – optional; add from templates (§8.7).
-6. **Targets** – optional; same pickers as §8.6.
-7. **Name & labels**.
-- Creates everything in one transaction → one reload.
-- Acceptance: create with one HTTP service + 2 IP targets → reachable, both targets healthy, within 3 s of submit on a dev box.
+### 8.2 Frontends list (`/frontends`)
+- Table: status dot (apply status + maintenance + disabled), name, `#id`, mode badge (`HTTP`, `HTTPS` when tls, `TCP`), binds (`*:443`, `10.0.0.5:5432`, "+2"), default backend, routes count, backend health aggregate, live open connections sparkline (last 5 min), req/s, labels.
+- Filters: text search, label selector (`env=prod,team!=ops`), mode, status. Sort by name/created/connections.
+- **Create frontend** button → form (§8.3). Row ⋯ menu: Edit · Maintenance on/off · Enable/Disable · Duplicate · Delete.
+- Empty state explains the model in one line ("A frontend listens on addresses and ports and sends traffic to backends.") with "Create frontend" and "Create backend" actions.
+- Acceptance: 100 frontends render in < 100 ms after data arrives; sparklines update via one SSE stream, not per‑row polling.
 
-### 8.3 LB header (all tabs)
-- Plan badge (`LB11`), editable name (inline, underline‑on‑hover), status triangle, `#id`, IPv4, IPv6 (copy on click), network zone.
-- **Lock icon** toggles delete protection (confirm when disabling).
-- **Actions** menu: Rename · Edit labels · Enable/disable delete protection · Maintenance mode on/off · Download HAProxy config (read‑only, only this LB's sections) · Export JSON · Clone · Copy ID.
-- Apply‑error banner with the HAProxy output and "Retry" / "Roll back to last good revision" buttons.
-- Tabs: **Overview · Graphs · Targets · Services · Networking · Rescale · Delete** (+ **Logs** when live logs are enabled, §20).
-
-### 8.4 Overview tab
-**Usage bar** (live via SSE):
-
-| Card | Value |
-|---|---|
-| Targets | resolved targets / plan.max_targets |
-| Services | services / plan.max_services |
-| Certificates | distinct certificates used by this LB's services / plan.max_certificates |
-| Connections | current open connections / plan.max_connections (show limit when 0 usage, like Hetzner) |
-| Traffic out | month‑to‑date bytes out / plan quota, human units (TB) |
-| Price | plan price per month (hidden if plan has no price) |
-
-**Labels** row: chips + "Add labels" (key/value editor, §14.4 rules).
-
-**Health status** card: donut of healthy checks / total checks (check = service × resolved target); badge `Healthy | Degraded | Unhealthy | Unknown`; message ("All services are healthy." or the first 3 failing checks with reason, e.g. "85.10.206.38 → :443 · Layer7 wrong status 503").
-
-**Location** card: city, country (flag), network zone; small static SVG map with a pin from node lat/lon (lazy‑loaded asset, ≤ 30 KB, no tile servers).
-
-**Options** card: algorithm dropdown (applies immediately after confirm), public network Enabled/Disabled (links to Networking), "Change settings" → modal with LB‑level settings (algorithm, drain timeout, maintenance page text).
-
-### 8.5 Graphs tab
-- Range selector: **Live** (rolling 5 min, 1 s points, auto‑updating), 30 min, 1 h, 6 h, 24 h, 7 d, 30 d.
-- Charts (same order as Hetzner): **Open connections**, **Connections per second**, **HTTP requests per second** (hidden if the LB has no HTTP/HTTPS services), **Bandwidth** (in = red, out = yellow; units auto‑scale B/s → GB/s).
-- Extra "Details" section (collapsed by default): average response time (ms), HTTP responses per second by class (2xx/3xx/4xx/5xx), errors/s (connection errors, response errors, denied), queued requests. Filter dropdown: All services / one service / one target.
-- Behaviour: uPlot with synced cursors across charts; tooltip with exact values and timestamp in the browser's timezone; Live mode pauses while hovering; no false spikes or dips across reloads (§10.3).
-- Acceptance: switching ranges renders in < 150 ms for 30 d; Live mode updates every second with ≤ 2 s lag; CPU in the browser < 5 % on a laptop.
-
-### 8.6 Targets tab
-- **Add targets** dropdown:
-  - **Server** — multi‑select from inventory with search and label filter; "Use private IP" toggle (only when the LB is attached to a network).
-  - **Label selector** — input with syntax `key=value`, `key!=value`, `key in (a,b)`, `key` (exists), comma = AND; live preview "matches N servers".
-  - **IP** — one or many (paste, one per line); IPv4/IPv6; rejects loopback, link‑local, multicast and the LB's own IPs.
-- **Grouped / List** toggle. Grouped: each label selector is a group (tag icon, "N Servers", aggregate health, ⋯); server targets grouped as "Servers"; IP targets grouped as "IP targets". List: flat table.
-- Row columns: Name (or "—" for IPs), Public IP, Private IP (if used), **Status** = healthy services / total services for this target (green `1/1`, amber partial, red `0/n`, grey unknown), Weight, ⋯ menu: Drain · Maintenance · Enable · Set weight · Show in graphs · Remove.
-- Removal is graceful (drain → maint → delete, §7.6) and shows progress.
-- Quota enforcement: adding beyond `max_targets` (counting resolved servers) returns `422 quota_exceeded`.
-- Empty state: "No targets added yet." (per group as in Hetzner).
-- Acceptance: adding 25 IP targets to an LB with 5 services results in 125 runtime `add server` ops, **no reload**, all active in < 1 s, zero failed requests under load.
-
-### 8.7 Services tab
-- Intro text, **Add service** dropdown: **New Service**; Templates: **HTTP** (http 80→80), **TLS Termination** (https 443→80, redirect on, certificate required), **TLS Passthrough** (tcp 443→443).
-- Service card header: protocol + `:listen → :dest`, shield icon when certificates attached, health summary line (`Interval 15 s | Timeout 10 s | Retries 3 | Domain - | Path / | Response - | Status codes 2??, 3??`), ⋯ menu: Edit · Duplicate · Delete.
-- Card body: per‑target status table (Name, Public IP, Status badge with tooltip `L7OK/200 in 3 ms` or failure reason).
-- **Edit form** (inline card like Hetzner): Protocol select; Source port; Destination port; HTTP‑Redirect (301) checkbox (https only); Certificates chips + "Add certificates" picker (existing certs or create managed/upload inline); summary block of Health check / HTTP timeout / Sticky sessions / Proxy protocol with a pencil → **Advanced settings** modal:
-  - Health check: protocol (tcp/http/https), destination port, interval (s), timeout (s), retries, domain, path, response, status codes, TLS verify (https checks).
-  - HTTP timeout (s).
-  - Sticky sessions: checkbox + cookie name + lifetime (s).
-  - Proxy protocol: checkbox + version, with a red warning: enabling it for targets that don't accept PROXY makes the whole service unreachable.
-- Defaults: hc interval 15 s, timeout 10 s, retries 3, path `/`, status codes `2??, 3??`; HTTP timeout 60 s; sticky cookie `LBSTICKY`, lifetime 300 s; health‑check port = destination port.
+### 8.3 Frontend create / edit form
+Single page with sections; the same form edits an existing frontend (PUT with `If-Match`).
+1. **Name, description, labels.**
+2. **Mode & TLS** — mode `http | tcp` (segmented control); for http a **TLS termination** toggle; when on: **certificates** picker (chips; existing certificates or create a managed certificate inline from the hostnames of the routes, or upload) and **HTTP → HTTPS redirect (301)** checkbox (default on).
+3. **Binds** editor — rows of address + port; the address field is a combobox with `*` (all addresses) and the node addresses (§8.10) as suggestions, any IPv4/IPv6 literal allowed; add/remove rows; templates for the port: 80, 443, custom. Inline collision warnings while typing.
+4. **Default backend** — select (filtered to backends of the same mode) or "Create backend…" (opens the backend form in a modal, returns its id).
+5. **Routing rules** (http only) — table of rules, drag handle to reorder (order = evaluation order, first match wins): hosts (chip input, exact or `*.example.com`), path prefix (`/api`), backend select; "Add rule". A preview line under each rule reads like the rendered condition ("Host is app.example.com and path starts with /api → api‑backend").
+6. **Options** — client timeout (s, default 60), max connections (0 = unlimited), forwarded headers (http, default on), enabled (default on).
+- Footer: "Show config preview" (renders the would‑be `fe_<id>` sections via `loxy render --dry-run` logic, read‑only `CodeView`), Cancel, Save. Creation of a frontend with a new default backend happens in one transaction → one reload.
 - Validation (server side, mirrored client side):
-  - `listen_port` 1–65535, unique per LB, and not colliding with another LB on the same IP, with the redirect's :80, or with reserved system ports (panel port, 8405 on loopback, 5514).
-  - `https` requires ≥ 1 certificate (a pending managed cert is allowed; a placeholder self‑signed cert is served until issuance).
-  - `http_redirect` only for https and only when :80 is free on the LB.
-  - Sticky only for http/https.
-  - `hc_timeout < hc_interval`; interval 3–3600; timeout 1–3600; retries 1–10.
-  - http/https checks require a path; tcp ignores HTTP fields (returned as null).
-  - Quotas: services ≤ `max_services`, distinct certificates ≤ `max_certificates`.
-- Acceptance: creating the TLS Termination template with a managed cert on a domain pointing to the LB yields a valid Let's Encrypt (Pebble in CI) certificate and a 301 from :80 within 60 s, with only one reload.
+  - ≥ 1 bind; port 1–65535; address `*` or a valid IP literal (`net/netip`); no duplicate binds within the frontend.
+  - **Port collisions across frontends:** a bind collides with another frontend's bind on the same port when the addresses are equal or either is `*`; the check includes every frontend's redirect listener (:80 on its addresses when `http_redirect`), every `sys_acme_fe` :80 listener, and reserved system ports (panel port, `127.0.0.1:8405`, `127.0.0.1:5514`, `127.0.0.1:9090`). Disabled frontends still reserve their ports (so enabling never fails on a collision).
+  - `tls` requires mode http and ≥ 1 certificate (a pending managed cert is allowed; a placeholder self‑signed cert is served until issuance).
+  - `http_redirect` only with tls, and only when :80 is free on all of the frontend's addresses.
+  - Routes require mode http; every route needs ≥ 1 host or a path prefix; hosts are RFC 1123 (`*.` prefix allowed), lowercase, ≤ 20 per route; path prefix matches the path rule of §14.4; ≤ 200 routes per frontend.
+  - The default backend and every route's backend must exist and have the **same mode** as the frontend.
+  - `timeout_client_s` 1–3600; `maxconn` 0–1 000 000.
+- Acceptance: creating an http frontend on `*:8080` with a default backend of 2 IP servers → reachable, both servers healthy, within 3 s of submit on a dev box; a TLS frontend with a managed cert on a domain pointing to the node yields a valid certificate (Pebble in CI) and a 301 from :80 within 60 s, with only one reload.
 
-### 8.8 Networking tab
-- **Public network** card: IPv4 and IPv6 with copy buttons, reverse DNS (editable when a Hetzner integration is configured, Phase 3), toggle **Enable/Disable public interface** (confirm; requires at least one private network attached).
-- **Private networks** card: attached networks (name, CIDR, private IP, node interface); **Attach to network** (choose a network the node is connected to; auto or chosen IP); **Detach** (blocked while targets use private IPs through it).
-- **Additional IPs** (extra): assign more addresses from the node pool; services bind on all LB IPs.
-- All changes are reload‑class.
+### 8.4 Frontend detail (`/frontends/[id]/…`)
+**Header (all tabs):** editable name (inline), status, `#id`, mode badge, binds (copy on click), maintenance toggle (confirm), ⋯ menu: Edit · Enable/Disable · Duplicate · Export JSON · Copy ID · Delete.
 
-### 8.9 Rescale tab
-- Plan cards with limits and price; current plan highlighted.
-- A plan is disabled with a reason when current usage exceeds its limits ("You use 7 services; LB11 allows 5").
-- Applying changes quotas, `maxconn` and the LB cap → one reload; traffic counters unaffected.
+Tabs: **Overview · Routing · Graphs · Logs · Config**.
+- **Overview:** stat cards (open connections, conn/s, req/s, bandwidth in/out, live); **Health** card: donut of healthy servers / total across the backends this frontend uses, badge `Healthy | Degraded | Unhealthy | Unknown`, first 3 failing checks with reason; **Binds** card; **TLS** card (certificates with expiry, redirect on/off); **Labels** row (chips + editor, §14.4 rules); **Domains** attached to this frontend with their DNS status (§8.9).
+- **Routing:** read view of the default backend and the ordered rules, each with the target backend's health; "Edit routing" opens the routing section of §8.3. Backends link to §8.6.
+- **Graphs:** range selector **Live** (rolling 5 min, 1 s points, auto‑updating), 30 min, 1 h, 6 h, 24 h, 7 d, 30 d. Charts: **Open connections**, **Connections per second**, **HTTP requests per second** (http only), **Bandwidth** (in/out; units auto‑scale B/s → GB/s); "Details" (collapsed): HTTP responses per second by class (2xx/3xx/4xx/5xx), denied/errored requests. uPlot with synced cursors; tooltip with exact values and timestamp in the browser's timezone; Live pauses while hovering; no false spikes or dips across reloads (§10.3). Acceptance: switching ranges renders in < 150 ms for 30 d; Live updates every second with ≤ 2 s lag; browser CPU < 5 % on a laptop.
+- **Logs:** live log stream of this frontend (sampled, off by default, §20): pause, filter text, status class filter; columns time, client, method + path (http) / bytes, backend/server, status, timings.
+- **Config:** read‑only rendered sections of this frontend (`fe_<id>`, `fe_<id>_rd`, `sys_acme_fe<id>`, and the backends it uses) from `GET /frontends/{id}/config`, with "Copy" and "Download".
+- Delete: confirm by typing the name; removes the frontend sections (reload), detaches its domains (`frontend_id` set NULL) and certificates (certificates are kept), keeps metrics for 7 days then purges, audit entry. Backends are untouched.
 
-### 8.10 Delete tab
-- Text like Hetzner: deleting removes services and target assignments; targets and certificates are untouched.
-- Button disabled while delete protection is on (inline link "Disable protection").
-- Confirm modal: type the LB name. Effect: remove its sections (reload), release IPs, delete rows, keep metrics for 7 days then purge, audit entry.
+### 8.5 Backends list (`/backends`)
+- Table: health badge, name, `#id`, mode, algorithm, servers healthy/total (with draining/maint counts), used by (frontend names), sessions, queue, avg response time, labels.
+- Filters: text, label selector, mode, health. **Create backend** → form (name, description, mode, algorithm, default port, health check, then add servers right away).
+- Acceptance: 200 backends with 1 000 servers render in < 150 ms after data arrives.
 
-### 8.11 Certificates page (project level)
-- List: name, type (Uploaded/Managed), domains, status (Pending/Issued/Renewing/Failed), expires in (amber < 21 d, red < 7 d), used by N services, labels.
+### 8.6 Backend detail (`/backends/[id]/…`)
+Header: name, `#id`, mode, algorithm, health badge, "Used by" chips linking to frontends, ⋯ menu: Duplicate · Export JSON · Copy ID · Delete.
+
+Tabs: **Servers · Settings · Graphs**.
+- **Servers:**
+  - **Add servers** dropdown: **IP** — one or many (paste, one per line, optional `:port`); IPv4/IPv6; rejects loopback (unless `LOXY_DEV=true`), link‑local, multicast, unspecified. **Host** — multi‑select from the inventory with search and label filter; "Use private IP" toggle. **Label selector** — input with syntax `key=value`, `key!=value`, `key in (a,b)`, `key` (exists), comma = AND; live preview "matches N hosts" (`GET /label_selector/preview`). Each with optional port override, weight (default 100) and backup flag.
+  - **Grouped / List** toggle. Grouped: each label selector is a group (tag icon, "N hosts", aggregate health, ⋯); host servers grouped as "Hosts"; IP servers as "IP servers". List: flat table of resolved servers.
+  - Row columns: name (host name or "—"), address:port, **status** (healthy / unhealthy / draining / maintenance / unknown, with check detail tooltip `L7OK/200 in 3 ms` or failure reason), weight, backup, sessions, ⋯ menu: Drain · Maintenance · Ready · Set weight · Show in graphs · Remove.
+  - Removal is graceful (drain → maint → delete, §7.6) and shows progress (`removing`).
+  - Empty state: "No servers yet." with the three add options.
+  - Acceptance: adding 25 IP servers results in 25 runtime `add server` ops, **no reload**, all active in < 1 s, zero failed requests under load.
+- **Settings:** algorithm (Round Robin default, Least Connections, Source, Random; note that Source makes server changes reload‑class), default port; **health check**: protocol (tcp/http/https), port, interval (s), timeout (s), retries, domain, path, response, status codes, TLS verify (https checks); **sticky sessions**: checkbox + cookie name + lifetime (s); **PROXY protocol**: none/v1/v2 with a red warning that enabling it for servers that don't accept PROXY makes the backend unreachable; server timeout (s); labels.
+  - Defaults: algorithm roundrobin; hc tcp for tcp backends and http for http backends, interval 15 s, timeout 10 s, retries 3, path `/`, status codes `2??, 3??`; server timeout 60 s; sticky cookie `LOXYSTICKY`, lifetime 300 s; health‑check port = server port.
+  - Validation: port 1–65535; `hc_timeout < hc_interval`; interval 3–3600; timeout 1–3600; retries 1–10; http/https checks require a path and are allowed on tcp backends too; HTTP fields are returned as null for tcp checks; sticky only for http mode; changing `mode` is refused while the backend is used by a frontend of the other mode.
+- **Graphs:** same range selector as §8.4; charts **Sessions** (current), **Queue**, **Average response time (ms)**, **HTTP responses per second by class** (http), **Errors per second** (connection, response, retries/redispatches); filter: whole backend / one server.
+- Delete: refused with `409 conflict` while the backend is a default backend or a route target of any frontend (message lists them); otherwise confirm by typing the name → reload, server slots released, metrics kept 7 days.
+
+### 8.7 Hosts (inventory, `/hosts`)
+- CRUD of hosts: name, IPv4, IPv6, private IPv4, labels, notes. Bulk import from CSV (`name,ipv4,ipv6,private_ipv4,labels`).
+- Shows where each host is used (backends, directly or via a label selector) and its current health there.
+- Editing a host's labels or addresses updates every label‑selector / host server at runtime (§7.6). Deleting a host that is referenced directly by a server is refused; selector matches simply drop out (graceful removal).
+
+### 8.8 Certificates (`/certificates`)
+- List: name, type (Uploaded/Managed), domains, status (Pending/Issued/Renewing/Failed), expires in (amber < 21 d, red < 7 d), used by N frontends, labels.
 - **Upload**: paste or file for certificate, chain, private key. Validate: key matches cert, not expired, chain completes to a root in the system bundle (warn only), reorder chain if needed. Key stored encrypted at rest.
-- **Create managed**: domains (≤ 100), challenge HTTP‑01 (default; domains must resolve to an LB that will serve the challenge) or DNS‑01 (pick a connected DNS provider from §8.16 — credentials are not entered again; required for wildcards), key type ECDSA P‑256 (default) / RSA 2048/4096.
-- Detail drawer: SANs, issuer, serial, fingerprint, validity, last issuance log, renewal schedule. Actions: Renew now · Download chain (never the key unless owner role + re‑auth) · Delete (blocked while in use).
+- **Create managed**: domains (≤ 100), challenge HTTP‑01 (default; domains must resolve to a frontend that serves the challenge on :80 — its redirect frontend or `sys_acme_fe`) or DNS‑01 (pick a connected DNS provider from §8.9 — credentials are not entered again; required for wildcards), key type ECDSA P‑256 (default) / RSA 2048/4096.
+- Detail drawer: SANs, issuer, serial, fingerprint, validity, last issuance log, renewal schedule, frontends using it. Actions: Renew now · Download chain (never the key unless owner role + re‑auth) · Delete (blocked while attached to a frontend).
 
-### 8.12 Servers (inventory)
-- CRUD of servers: name, public IPv4/IPv6, private IPv4, labels, notes. Bulk import from CSV.
-- Shows where each server is used (LBs/services) and its current health across them.
-- Phase 3: sync from Hetzner Robot (dedicated) and Hetzner Cloud API (cloud servers, labels) — read‑only mirror with "source" badge.
+### 8.9 Domains & DNS (`/domains`)
 
-### 8.13 Networks and Nodes
-- Networks: name + CIDR; per node the interface and address.
-- Nodes (all‑in‑one shows the local node): status, HAProxy version and feature flags (`haproxy -vv`: QUIC, PROMEX, OpenSSL version), loxy version, uptime, reload count, CPU/memory, connections; editable location (city, country, network zone, lat/lon) and IP pool (public, additional, failover, private addresses available to LBs). Phase 3 adds enrollment and HA groups (§15).
-
-### 8.14 Activity
-- **Events** feed (health transitions, reload results, cert issued/failed/expiring, quota warnings, node offline) with filters by LB/kind/severity.
-- **Audit log** (who, what, when, before/after diff, IP, token) — read‑only, exportable CSV.
-- **Config revisions** per node: list, diff between any two, "Roll back to this revision" (re‑applies the *desired state* stored with it, not just the text), pin/unpin.
-
-### 8.15 Settings
-Users & roles · API tokens · Plans editor · ACME (account email, directory: Let's Encrypt production / staging / custom, EAB) · Notification channels & alert rules · Panel (domain, port, allowlist, session lifetime, 2FA enforcement) · System (hard‑stop‑after, drain timeout, reload min interval, metrics retention, live‑log sampling) · Backup (schedule, retention, optional S3‑compatible target).
-
-### 8.16 Domains & DNS
-
-Loxy helps operators point names at load balancers and keeps DNS in sync, **without running its own DNS server** (non‑goal, §1.3). All record changes go through the APIs of external DNS providers using the **libdns** ecosystem (`github.com/libdns/*`).
+Loxy helps operators point names at their frontends and keeps DNS in sync, **without running its own DNS server** (non‑goal, §1.3). All record changes go through the APIs of external DNS providers using the **libdns** ecosystem (`github.com/libdns/*`).
 
 **Domains page** (`/domains`)
-- List: FQDN, attached LB (and optional service), DNS provider (or "manual"), status badge (**Resolves correctly** / **Wrong IP** / **Missing** / **Unknown**), last checked, certificate (issued / pending / none), auto‑managed records on/off.
-- **Add domain**: FQDN (validated per §14.4), choose LB (required) and optionally one service of that LB, optional DNS provider (auto‑detected when a connected provider owns a matching zone), "Manage A/AAAA records automatically" checkbox (only with a provider; Phase 2).
-- Detail drawer: **Required records** table built from the LB's public IPs — `A <fqdn> → <ipv4>` and `AAAA <fqdn> → <ipv6>` (TTL 300) with copy buttons; **live verification**: Loxy resolves the name (A and AAAA, via the system resolver and, when a provider is attached, also by reading the provider's records) and shows per family: ✓ resolves correctly, ✗ wrong IP (shows the observed addresses), ✗ missing.
-- Verification runs on add, on "Check now", every 5 minutes for unverified domains and every hour for verified ones, and whenever the LB's IPs change. Status changes emit `domain.status.changed` events.
-- **Issue certificate** (one click) is enabled once the domain is verified: creates a managed certificate for the FQDN (HTTP‑01 if the name resolves to the LB, or DNS‑01 if a provider is attached — required for wildcards) and attaches it to the chosen https service, if any.
+- List: FQDN, attached frontend, DNS provider (or "manual"), status badge (**Resolves correctly** / **Wrong IP** / **Missing** / **Unknown**), last checked, certificate (issued / pending / none), auto‑managed records on/off.
+- **Add domain**: FQDN (validated per §14.4), choose a frontend (required), optional DNS provider (auto‑detected when a connected provider owns a matching zone), "Manage A/AAAA records automatically" checkbox (only with a provider; Phase 2).
+- **Required records** are derived from the frontend's binds: each explicit bind address gives `A <fqdn> → <ipv4>` / `AAAA <fqdn> → <ipv6>`; when the frontend binds `*`, the node's addresses (§8.10, public ones only — loopback/private are skipped unless they are the only ones) are used instead. TTL 300, with copy buttons.
+- Detail drawer: required records table; **live verification**: Loxy resolves the name (A and AAAA, via the system resolver and, when a provider is attached, also by reading the provider's records) and shows per family: ✓ resolves correctly, ✗ wrong IP (shows the observed addresses), ✗ missing.
+- Verification runs on add, on "Check now", every 5 minutes for unverified domains and every hour for verified ones, and whenever the frontend's binds or the node addresses change. Status changes emit `domain.status.changed` events.
+- **Issue certificate** (one click) is enabled once the domain is verified: creates a managed certificate for the FQDN (HTTP‑01 if the name resolves to the frontend and it has a :80 listener, or DNS‑01 if a provider is attached — required for wildcards) and attaches it to the frontend when it terminates TLS.
 
 **DNS providers** (`/domains/providers`)
-- Connect provider accounts: **Hetzner DNS** (`dns.hetzner.com` API token) and **Hetzner Console DNS** (Cloud API token, zones in the Hetzner Console), **Cloudflare** (scoped API token: `Zone:Read`, `DNS:Edit`). The registry is a map `kind → {fields schema, constructor}` so new libdns providers are added in one file.
+- Connect provider accounts through libdns provider modules (first: the providers listed in §21 Q4; each with its own token fields, e.g. a scoped API token with zone‑read and DNS‑edit rights). The registry is a map `kind → {fields schema, constructor}` so new libdns providers are added in one file; `GET /dns_providers` also returns the available kinds and their fields.
 - Credentials are encrypted at rest with AES‑256‑GCM (`LOXY_SECRET_KEY`, §14.5), never returned by the API (only `"configured": true`), and tested on save with a `ListZones` call (status `ok|error`).
 - **ACME DNS‑01 reuses the same credentials**: `internal/dns` implements lego's `challenge.Provider` (`Present`/`CleanUp`) on top of the libdns `RecordAppender`/`RecordDeleter` interfaces, writing `_acme-challenge.<name> TXT <value>` (TTL 60) into the right zone and deleting exactly that record afterwards. Certificates reference a `dns_provider_id` instead of carrying their own credentials, so credentials live in one place.
 
 **Auto‑managed records** (Phase 2)
-- Opt‑in per domain. When on and a provider is connected, Loxy creates the A/AAAA records for the FQDN pointing at the LB's public IPs, **updates** them when the LB's IPs change (public interface toggle, IP reassignment, LB moved), and **removes** them when the domain is detached, deleted or the LB is deleted.
+- Opt‑in per domain. When on and a provider is connected, Loxy creates the A/AAAA records for the FQDN pointing at the required addresses, **updates** them when they change (frontend binds edited, node addresses edited, domain moved to another frontend), and **removes** them when the domain is detached or deleted or its frontend is deleted.
 - Loxy only touches records it created (their provider IDs are tracked in `domains.managed_record_ids`); pre‑existing records with the same name are reported as a conflict and never overwritten without explicit confirmation.
 - Sync runs through the reconciler's event stream (debounced) and is retried with backoff; failures surface as `domain.sync.failed` events.
 
 **Zone editor** (Phase 2, `/domains/zones`)
-- List zones from all connected providers; open a zone to list and edit records, similar to the Hetzner DNS console: types **A, AAAA, CNAME, TXT, MX, CAA, SRV, NS**; columns type, name (relative, `@` for apex), value, TTL; add / edit / delete with confirm.
+- List zones from all connected providers; open a zone to list and edit records: types **A, AAAA, CNAME, TXT, MX, CAA, SRV, NS**; columns type, name (relative, `@` for apex), value, TTL; add / edit / delete with confirm.
 - Server‑side validation per type: A/AAAA parsed with `net/netip`; CNAME/NS/MX targets are RFC 1123 hostnames; MX priority 0–65535; SRV `priority weight port target`; CAA `flags tag "value"` with tag ∈ `issue|issuewild|iodef`; TXT ≤ 255 chars per string (longer values are split); TTL 60–86400; CNAME cannot coexist with other records of the same name. Records managed by Loxy are marked and edits to them warn.
 
 **API** (§12.2): `/domains`, `/domains/{id}/actions/{verify,issue_certificate}`, `/dns_providers`, `/dns_providers/{id}/zones`, `/dns_providers/{id}/zones/{zone}/records`.
 
 **Acceptance**
-- Adding a domain whose A record points to the LB shows "Resolves correctly" within one check; a wrong A record shows "Wrong IP" with the observed address.
-- With a Hetzner or Cloudflare provider connected, a managed DNS‑01 certificate for `*.example.com` is issued (Pebble + a libdns test double in CI) without entering credentials again.
-- With auto‑records on, changing the LB's IPv4 updates the A record within 10 s; deleting the domain removes exactly the records Loxy created.
+- Adding a domain whose A record points to the frontend's bind address shows "Resolves correctly" within one check; a wrong A record shows "Wrong IP" with the observed address; for a `*` frontend the node addresses are the expected values.
+- With a DNS provider connected, a managed DNS‑01 certificate for `*.example.com` is issued (Pebble + a libdns test double in CI) without entering credentials again.
+- With auto‑records on, changing the frontend's bind IPv4 updates the A record within 10 s; deleting the domain removes exactly the records Loxy created.
+
+### 8.10 System (`/system`)
+- **Node** card (all‑in‑one shows the local node): status, HAProxy version and feature flags (`haproxy -vv`: QUIC, PROMEX, OpenSSL version), loxy version, HAProxy uptime, reload count and last reload result/duration, current connections, CPU/memory of both containers; warning when the bundled `haproxy -v` differs from the running one.
+- **Node addresses**: list of the node's IPv4/IPv6 addresses with an optional label (`POST/DELETE /nodes/{id}/ips`); detected interface addresses are offered for one‑click adding. Used as bind‑address suggestions (§8.3) and as DNS required records for `*` binds (§8.9). Changing them never changes the HAProxy config by itself.
+- **Config revisions**: list (revision, kind runtime/reload/rollback/bootstrap, result, duration, author, time, pinned), diff between any two (`CodeView`), "Roll back to this revision" (break‑glass swap + reload of the on‑disk revision, see ADR 0004 §7; the next mutation re‑applies desired state, which the UI states), pin/unpin, HAProxy output of failed applies.
+- Phase 3 adds enrollment, multiple nodes and HA groups (§15).
+
+### 8.11 Activity (`/activity`)
+- **Events** feed (server/backend health transitions, apply/reload results, cert issued/failed/expiring, domain status changes, node offline) with filters by frontend/backend/kind/severity.
+- **Audit log** (who, what, when, before/after diff, IP, token) — read‑only, exportable CSV.
+
+### 8.12 Settings (`/settings/*`)
+Users & roles · API tokens · ACME (account email, directory: Let's Encrypt production / staging / custom, EAB) · Notification channels & alert rules (event kinds, label filter on frontend/backend labels, min severity, cooldown, "Send test") · Two‑factor authentication (own TOTP; enforcement per project) · Panel (domain, port, allowlist, session lifetime) · System (hard‑stop‑after, drain timeout, reload min interval, metrics retention, live‑log sampling) · Backup (schedule, retention, optional S3‑compatible target).
 
 ---
 
@@ -700,7 +684,7 @@ Loxy helps operators point names at load balancers and keeps DNS in sync, **with
 
 Source: `show stat` server rows (`status`, `check_status`, `check_code`, `check_duration`, `check_desc`/`last_chk`, `lastchg`).
 
-| HAProxy server `status` | loxy check status |
+| HAProxy server `status` | loxy server status |
 |---|---|
 | `UP` | healthy |
 | `UP n/m` (going down) | healthy (transitioning) |
@@ -711,35 +695,45 @@ Source: `show stat` server rows (`status`, `check_status`, `check_code`, `check_
 | `DRAIN` | draining |
 | `no check` | unknown |
 
-Aggregation: target status = healthy services / total services; service status = healthy targets / total; LB status = `Healthy` if all checks healthy, `Degraded` if some unhealthy but every service has ≥ 1 healthy target, `Unhealthy` if any service has 0 healthy targets, `Unknown` without targets. Transitions produce `target.down` / `target.up` / `service.down` events (with check reason) used by notifications; debounce flapping with the alert‑rule cooldown. Optionally enable `option log-health-checks` and parse health transitions from the UDP log stream for sub‑second detection.
+Aggregation: health is tracked **per resolved server** (one check each, since a server belongs to one backend). Backend status = `Healthy` if all active (non‑maintenance) servers are healthy, `Degraded` if some are unhealthy but ≥ 1 is healthy, `Unhealthy` if none is healthy, `Unknown` without servers or checks. A frontend's health summary aggregates the backends it uses (default + routes). Transitions produce `server.health.changed` / `backend.health.changed` events (with check reason) used by notifications; debounce flapping with the alert‑rule cooldown. Optionally enable `option log-health-checks` and parse health transitions from the UDP log stream for sub‑second detection.
 
 ---
 
 ## 10. Metrics pipeline
 
 ### 10.1 Collection
-Every 1 s per node: `show stat` (CSV; parse the header line to map columns by name, never by position) and `show info`. Frontend rows → LB/service metrics; server rows → per‑target metrics and health; backend rows → response times and queue. One `show stat` call returns everything; it is cheap even with thousands of servers.
+Every 1 s per node: `show stat` (CSV; parse the header line to map columns by name, never by position) and `show info`. Frontend rows (`fe_<id>`, plus `fe_<id>_rd` summed into its frontend) → frontend metrics; backend rows (`be_<id>`) → backend metrics; server rows → per‑server metrics and health. One `show stat` call returns everything; it is cheap even with thousands of servers.
 
-### 10.2 Derived series (per service, summed per LB)
+### 10.2 Derived series
+
+**Per frontend**
 
 | Series | Derivation |
 |---|---|
-| open_connections | Σ frontend `scur` |
+| open_connections | frontend `scur` |
 | connections_per_second | Δ frontend `conn_tot` / Δt (fallback `conn_rate`) |
-| requests_per_second | Δ frontend `req_tot` / Δt (HTTP frontends only) |
+| requests_per_second | Δ frontend `req_tot` / Δt (http frontends only) |
 | bandwidth_in / bandwidth_out | Δ frontend `bin` / Δt, Δ `bout` / Δt (bytes/s) |
 | http_1xx…5xx per second | Δ frontend `hrsp_*` / Δt |
+| denied / errors per second | Δ frontend `dreq` + `ereq` / Δt |
+
+**Per backend (and per server)**
+
+| Series | Derivation |
+|---|---|
+| sessions | backend/server `scur` |
+| queue | backend `qcur` (server `qcur`) |
 | response_time_ms | backend `rtime` (moving average HAProxy maintains), `ttime` |
-| errors per second | Δ backend `econ` + `eresp`, frontend `ereq`, `dreq` |
-| queue | backend `qcur` |
-| traffic_out_month | Σ Δ `bout`, persisted in `traffic_monthly` |
+| http_1xx…5xx per second | Δ backend `hrsp_*` / Δt |
+| errors per second | Δ backend `econ` + `eresp` / Δt; retries `wretr`, redispatches `wredis` |
+| bandwidth_in / bandwidth_out | Δ backend `bin` / `bout` / Δt |
 
 ### 10.3 Counter resets
 New workers start counters at zero. Detect a new worker via `show info` `Pid`/`Uptime_sec` change or any counter decreasing; for that sample use `delta = current` (not negative, not a spike). Connections still served by old workers during drain are not counted — accepted. HAProxy 3.3+ has an experimental `shm-stats-file` that can preserve counters across reloads; MAY be enabled behind a setting after a **VERIFY** test.
 
 ### 10.4 Storage and retention
-- In memory: ring buffer of 1 s points for the last 60 min per LB and per service (≈ 3 600 × ~12 series × 8 B ≈ 350 KB per service at worst; keep per‑target series only for the last 15 min).
-- SQLite rollups written in one transaction per minute: `metrics_1m` (keep 7 d), `metrics_5m` (35 d), `metrics_1h` (400 d). Each rollup stores avg and max where meaningful.
+- In memory: ring buffer of 1 s points for the last 60 min per frontend and per backend (≈ 3 600 × ~12 series × 8 B ≈ 350 KB per object at worst; keep per‑server series only for the last 15 min).
+- SQLite rollups written in one transaction per minute: `metrics_1m` (scope `frontend|backend`, scope_id), with 5 m / 1 h resolutions aggregated on read or written by a later rollup job (ADR 0001 §5). Each rollup stores avg and max where meaningful.
 - Range → resolution: Live/30 min → 1 s (downsample to ≤ 1 800 points), 1 h → 10 s (from memory), 6 h/24 h → 1 m, 7 d → 5 m, 30 d → 1 h.
 
 ### 10.5 API format
@@ -750,10 +744,10 @@ Columnar, uPlot‑native:
   "series": { "open_connections": [2210, 2215, ...], "connections_per_second": [41, 18, ...],
               "requests_per_second": [8820, 8790, ...], "bandwidth.in": [4.1e6, ...], "bandwidth.out": [4.3e6, ...] } }
 ```
-Live: `GET /api/v1/load_balancers/{id}/metrics/stream` (SSE) pushes one compact point per second.
+History: `GET /api/v1/frontends/{id}/metrics?type=…` and `GET /api/v1/backends/{id}/metrics?type=sessions,queue,response_time_ms,…`. Live: `GET /api/v1/frontends/{id}/metrics/stream` (SSE) pushes one compact point per second.
 
 ### 10.6 Optional exports
-- `sys_stats` frontend on `127.0.0.1:8405`: HAProxy's built‑in Prometheus exporter at `/metrics` (render only if `haproxy -vv` shows PROMEX) and the native stats page at `/stats`.
+- `sys_stats` frontend on `127.0.0.1:8405`: HAProxy's built‑in Prometheus exporter at `/metrics` (render only if `haproxy -vv` shows PROMEX) and the native stats page at `/stats`. Because names are `fe_<id>`/`be_<id>`, loxy's own `/metrics` exposes an info series mapping ids to display names and labels.
 - loxy's own `/metrics` (controller health: reload durations, apply errors, poll latency, ACME results).
 
 ---
@@ -761,14 +755,14 @@ Live: `GET /api/v1/load_balancers/{id}/metrics/stream` (SSE) pushes one compact 
 ## 11. Certificates and ACME
 
 ### 11.1 Storage
-Certificates are project‑level and reusable across services. Private keys are encrypted at rest (AES‑256‑GCM, key from `LOXY_SECRET_KEY`). The rendered revision necessarily contains plaintext PEMs (HAProxy reads them); the config volume is mode 0750, files 0640, group `loxy` (§16).
+Certificates are project‑level and reusable across frontends. Private keys are encrypted at rest (AES‑256‑GCM, key from `LOXY_SECRET_KEY`). The rendered revision necessarily contains plaintext PEMs (HAProxy reads them); the config volume is mode 0750, files 0640, group `loxy` (§16).
 
 ### 11.2 Managed certificates with lego
 - One ACME account per directory URL (`acme_accounts`), created lazily with the configured email (and EAB when required by the CA).
-- **HTTP‑01**: implement lego's `challenge.Provider` (`Present(ctx, domain, token, keyAuth)` / `CleanUp(...)`). `Present` pushes `add map virt@acme_http01 <token> <keyAuth>` to **every node** that hosts an LB serving that domain, waits for acknowledgement, then returns; `CleanUp` deletes the entry. HAProxy answers the challenge itself with the `http-request return … map(virt@acme_http01)` rule (§7.4) — no extra hop, no port juggling.
-- **DNS‑01**: a lego `challenge.Provider` implemented on top of the libdns provider of a connected DNS provider account (§8.16), so DNS credentials are stored once (encrypted) and shared by record management and ACME; required for wildcard domains.
+- **HTTP‑01**: implement lego's `challenge.Provider` (`Present(ctx, domain, token, keyAuth)` / `CleanUp(...)`). `Present` pushes `add map virt@acme_http01 <token> <keyAuth>` to **every node** that hosts a frontend serving that domain, waits for acknowledgement, then returns; `CleanUp` deletes the entry. HAProxy answers the challenge itself with the `http-request return … map(virt@acme_http01)` rule in `fe_<id>_rd` / `sys_acme_fe<id>` (§7.4) — no extra hop, no port juggling.
+- **DNS‑01**: a lego `challenge.Provider` implemented on top of the libdns provider of a connected DNS provider account (§8.9), so DNS credentials are stored once (encrypted) and shared by record management and ACME; required for wildcard domains.
 - Key type default ECDSA P‑256; RSA optional.
-- Issuance runs as an async action; failures record the lego error and retry with backoff (1 m, 5 m, 30 m, 2 h, then every 6 h) without blocking the service (placeholder cert keeps serving).
+- Issuance runs as an async action; failures record the lego error and retry with backoff (1 m, 5 m, 30 m, 2 h, then every 6 h) without blocking the frontend (placeholder cert keeps serving).
 - **Renewal** scheduler: honour ACME Renewal Information (ARI) when the CA offers it; otherwise renew at 2/3 of the lifetime (≈ 30 days before expiry for 90‑day certs). Jitter start times. On success: new revision with the new PEM + runtime `set ssl cert` / `commit ssl cert` (no reload).
 - Use Let's Encrypt **staging** automatically in dev and CI (Pebble in tests).
 - HAProxy's native ACME (`acme` section, 3.2+) MAY replace lego later once it's no longer experimental; keep the `CertIssuer` interface abstract so that's a swap, not a rewrite.
@@ -780,67 +774,75 @@ Same runtime hot‑swap path when replaced. Expiry warnings at 21/7/1 days.
 
 ## 12. REST API
 
+The contract is `api/openapi.yaml` (OpenAPI 3.0.3); this section summarises it. When they disagree, fix one of them in the same PR.
+
 ### 12.1 Conventions
-- Base path `/api/v1`, JSON, `snake_case`, resource shapes deliberately similar to the Hetzner Cloud API (`load_balancers`, `services`, `targets`, `certificates`, `actions`, `metrics`) so it feels familiar.
+- Base path `/api/v1`, JSON, `snake_case`, plural resource names (`frontends`, `backends`, `servers`, `hosts`, `certificates`, `domains`, `actions`, `metrics`).
 - Auth: session cookie (UI) or `Authorization: Bearer loxy_<prefix>_<secret>` (API tokens).
 - Pagination: `?page=&per_page=` (max 100) with `meta.pagination`. Filtering: `label_selector=`, `name=`. Sorting: `sort=name:asc`.
-- Optimistic concurrency: every mutable resource has `version`; PUT/PATCH require `If-Match`; mismatch → `409 conflict`.
-- Errors: `{ "error": { "code": "invalid_input", "message": "...", "details": { "fields": [{ "name": "listen_port", "messages": ["already in use"] }] } } }`. Codes: `invalid_input`, `quota_exceeded`, `conflict`, `protected`, `not_found`, `forbidden`, `unauthorized`, `rate_limited`, `apply_failed`.
+- Optimistic concurrency: every mutable resource has `version`; PUT/PATCH honour `If-Match` (ADR 0001 §6); mismatch → `409 conflict`.
+- Errors: `{ "error": { "code": "invalid_input", "message": "...", "details": { "fields": [{ "name": "binds[0].port", "messages": ["already used by frontend web (#3)"] }] } } }`. Codes: `invalid_input`, `conflict` (incl. in‑use deletes), `protected`, `not_found`, `forbidden`, `unauthorized`, `rate_limited`, `apply_failed`.
 - Idempotency: POSTs accept `Idempotency-Key`.
 
 ### 12.2 Endpoints
 
 | Method & path | Purpose |
 |---|---|
-| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/totp/*` | Session auth |
-| `GET/POST /load_balancers`, `GET/PATCH/DELETE /load_balancers/{id}` | LB CRUD (PATCH: name, labels, algorithm, delete_protected, maintenance) |
-| `GET/POST /load_balancers/{id}/services`, `GET/PUT/DELETE /load_balancers/{id}/services/{sid}` | Services |
-| `GET/POST /load_balancers/{id}/targets`, `PATCH/DELETE /load_balancers/{id}/targets/{tid}` | Targets (PATCH: weight, admin_state) |
-| `POST /load_balancers/{id}/actions/change_plan` | Rescale |
-| `POST /load_balancers/{id}/actions/{enable,disable}_public_interface` | Networking |
-| `POST /load_balancers/{id}/actions/{attach_to,detach_from}_network` | Networking |
-| `GET /load_balancers/{id}/status` | Health tree: services × targets with check details |
-| `GET /load_balancers/{id}/metrics?type=open_connections,requests_per_second,bandwidth&start=&end=&step=` | History (§10.5) |
-| `GET /load_balancers/{id}/metrics/stream` | SSE live points |
-| `GET /load_balancers/{id}/config` | Rendered HAProxy sections for this LB (read‑only) |
-| `GET /load_balancers/{id}/logs/stream` | SSE live logs (when enabled) |
+| `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/password`, `POST /auth/totp/{setup,enable,disable}` | Session auth, password change, 2FA |
+| `GET /overview` | Dashboard counts: frontends, backends, servers, certificates, node, traffic |
+| `GET/POST /frontends`, `GET/PUT/PATCH/DELETE /frontends/{id}` | Frontend CRUD (PUT: full object incl. binds, certificates, routes; PATCH: name, description, labels, enabled, maintenance) |
+| `GET /frontends/{id}/config` | Rendered HAProxy sections for this frontend and the backends it uses (read‑only) |
+| `GET /frontends/{id}/metrics?type=…&start=&end=&step=`, `GET /frontends/{id}/metrics/stream` | History (§10.5), SSE live points |
+| `GET /frontends/{id}/logs/stream` | SSE live logs (when enabled) |
+| `GET/POST /backends`, `GET/PUT/DELETE /backends/{id}` | Backend CRUD (DELETE → `409` while in use) |
+| `GET /backends/{id}/status` | Health: summary + resolved servers with check details |
+| `GET /backends/{id}/metrics?type=…` | Backend history |
+| `GET/POST /backends/{id}/servers`, `PATCH/DELETE /backends/{id}/servers/{sid}` | Servers (POST takes a list; PATCH: weight, admin_state, backup; DELETE is graceful) |
+| `GET/POST /hosts`, `PATCH/DELETE /hosts/{id}` | Inventory |
+| `GET /label_selector/preview?selector=` | Hosts matched by a selector |
 | `GET/POST /certificates`, `GET/PATCH/DELETE /certificates/{id}`, `POST /certificates/{id}/actions/renew` | Certificates |
-| `GET/POST /domains`, `GET/PATCH/DELETE /domains/{id}`, `POST /domains/{id}/actions/verify`, `POST /domains/{id}/actions/issue_certificate` | Domains (§8.16) |
-| `GET/POST /dns_providers`, `GET/PATCH/DELETE /dns_providers/{id}`, `GET /dns_providers/{id}/zones`, `GET/POST /dns_providers/{id}/zones/{zone}/records`, `PUT/DELETE /dns_providers/{id}/zones/{zone}/records/{rid}` | DNS providers and zone editor (§8.16; records Phase 2) |
-| `GET/POST /servers`, `GET/PATCH/DELETE /servers/{id}`, `POST /servers/import` | Inventory |
-| `GET/POST /networks`, … | Networks |
-| `GET /nodes`, `GET/PATCH /nodes/{id}`, `GET /nodes/{id}/revisions`, `GET /nodes/{id}/revisions/{rev}/diff?against=`, `POST /nodes/{id}/revisions/{rev}/actions/rollback` | Nodes & revisions |
-| `GET /plans`, admin CRUD | Plans |
+| `GET/POST /domains`, `GET/PATCH/DELETE /domains/{id}`, `POST /domains/{id}/actions/verify`, `POST /domains/{id}/actions/issue_certificate` | Domains (§8.9) |
+| `GET/POST /dns_providers`, `DELETE /dns_providers/{id}`, `GET /dns_providers/{id}/zones`, `GET/POST/DELETE /dns_providers/{id}/zones/{zone}/records` | DNS providers (incl. available kinds) and zone editor (§8.9; records Phase 2) |
+| `GET /nodes`, `PATCH /nodes/{id}`, `POST /nodes/{id}/ips`, `DELETE /nodes/{id}/ips/{ipid}` | Node info and node addresses |
+| `GET /nodes/{id}/revisions`, `GET /nodes/{id}/revisions/{rev}/diff?against=`, `POST /nodes/{id}/revisions/{rev}/actions/rollback` | Config revisions |
+| `POST /apply/retry` | Re‑run the reconciler after an apply error |
 | `GET /actions`, `GET /actions/{id}` | Async action status |
 | `GET /events` (SSE), `GET /events/history` | Event stream & history |
 | `GET /audit` | Audit log |
-| `GET/POST/DELETE /users`, `/api_tokens`, `/notification_channels`, `/alert_rules`, `GET/PATCH /settings` | Admin |
+| `GET/POST/DELETE /users`, `/api_tokens`, `/notification_channels` (+ `POST …/{id}/actions/test`), `/alert_rules`, `GET/PATCH /settings` | Admin |
 | `GET /healthz`, `GET /readyz`, `GET /metrics` | Ops (no auth on healthz; readyz checks DB + HAProxy socket) |
 
 ### 12.3 Example resources
 ```json
 {
-  "load_balancer": {
-    "id": 1996290, "name": "load-balancer-1", "version": 14,
-    "plan": { "name": "lb11", "max_connections": 10000, "max_services": 5, "max_targets": 25, "max_certificates": 10, "traffic_quota_bytes": 20000000000000 },
-    "location": { "city": "Nuremberg", "country": "DE", "network_zone": "eu-central" },
-    "public_net": { "enabled": true, "ipv4": "162.55.154.22", "ipv6": "2a01:4f8:1c1f:696b::1" },
-    "private_net": [ { "network_id": 3, "ip": "10.0.0.5" } ],
-    "algorithm": "roundrobin", "delete_protected": false, "maintenance": false,
-    "labels": { "env": "prod" }, "status": "active",
-    "usage": { "targets": 11, "services": 1, "certificates": 1, "open_connections": 2210, "traffic_out_month_bytes": 0 }
+  "frontend": {
+    "id": 3, "name": "web", "description": "public site", "version": 14,
+    "mode": "http", "tls": true, "http_redirect": true, "certificates": [12],
+    "binds": [ { "address": "*", "port": 443 } ],
+    "default_backend_id": 4,
+    "routes": [
+      { "id": 1, "hosts": ["app.example.com"], "path_prefix": "/api", "backend_id": 5 },
+      { "id": 2, "hosts": ["*.static.example.com"], "path_prefix": "", "backend_id": 6 }
+    ],
+    "timeout_client_s": 50, "maxconn": 10000, "forwarded_headers": true,
+    "enabled": true, "maintenance": false, "labels": { "env": "prod" },
+    "status": "active", "last_error": null, "created_at": 1760412300000,
+    "stats": { "open_connections": 2210, "requests_per_second": 8820, "bytes_out_per_second": 4.3e6 },
+    "health": { "status": "healthy", "healthy": 4, "total": 4, "messages": [] }
   }
 }
 ```
 ```json
 {
-  "service": {
-    "id": 31, "protocol": "https", "listen_port": 443, "destination_port": 9000,
-    "http": { "redirect_http": true, "timeout_s": 50, "certificates": [12],
-              "sticky_sessions": false, "cookie_name": "LBSTICKY", "cookie_lifetime_s": 300 },
-    "proxy_protocol": "none",
+  "backend": {
+    "id": 4, "name": "app", "version": 7, "mode": "http", "algorithm": "roundrobin", "port": 9000,
     "health_check": { "protocol": "http", "port": 9000, "interval_s": 15, "timeout_s": 13, "retries": 3,
-                      "http": { "domain": null, "path": "/", "response": "OK", "status_codes": ["2??", "3??"], "tls_verify": false } }
+                      "http": { "domain": "app.example.com", "path": "/health", "response": "OK", "status_codes": ["2??", "3??"], "tls_verify": false } },
+    "sticky_sessions": false, "cookie_name": "LOXYSTICKY", "cookie_lifetime_s": 300,
+    "proxy_protocol": "none", "timeout_server_s": 50, "labels": { "env": "prod" },
+    "used_by": [3], "servers_count": 3,
+    "health": { "status": "healthy", "healthy": 3, "total": 3, "messages": [] },
+    "stats": { "sessions": 180, "queue": 0, "response_time_ms": 12 }
   }
 }
 ```
@@ -849,7 +851,7 @@ Same runtime hot‑swap path when replaced. Expiry warnings at 21/7/1 days.
 Long or multi‑step operations return `202` with `{ "action": { "id", "command", "status": "running|success|error", "progress": 0-100, "resources": [...], "error": null, "started", "finished" } }`. The UI follows actions over the `/events` SSE stream (no polling).
 
 ### 12.5 SSE event kinds
-`lb.updated`, `lb.apply.started|succeeded|failed`, `target.health.changed`, `service.health.changed`, `certificate.updated`, `domain.status.changed`, `domain.sync.failed`, `action.updated`, `node.status.changed`, `metrics.tick` (only on metric streams). Reconnect with `Last-Event-ID`; server keeps a 2‑minute replay buffer.
+`frontend.updated`, `backend.updated`, `apply.started|succeeded|failed`, `server.health.changed`, `backend.health.changed`, `certificate.updated`, `domain.status.changed`, `domain.sync.failed`, `action.updated`, `node.status.changed`, `metrics.tick` (only on metric streams). Reconnect with `Last-Event-ID`; server keeps a 2‑minute replay buffer.
 
 ### 12.6 Codegen
 `make gen` runs `oapi-codegen` (Go server interfaces + models) and `openapi-typescript` (web types). CI fails if generated files are stale.
@@ -859,11 +861,11 @@ Long or multi‑step operations return `202` with `{ "action": { "id", "command"
 ## 13. Frontend implementation
 
 - SvelteKit SPA (`adapter-static`, fallback `index.html`, `ssr = false`), served by loxy from `go:embed` with precompressed `.br`/`.gz` assets, `Cache-Control: public, max-age=31536000, immutable` for hashed files and `no-cache` for `index.html`.
-- Routes mirror the tabs so every tab is linkable (`/load-balancers/1996290/services`).
+- Routes mirror the tabs so every tab is linkable (`/frontends/3/routing`, `/backends/4/servers`).
 - Data: one session‑scoped snapshot store fed by REST on navigation and kept fresh by the single `/events` SSE connection; mutations are optimistic where safe (labels, names) and action‑driven otherwise.
-- Charts: `Chart.svelte` wraps uPlot, dynamically imported only on the Graphs tab and the Overview sparkline (sparklines use a 1 KB SVG polyline component, not uPlot).
-- Components: `StatBar`, `StatCard`, `Donut`, `HealthBadge`, `Tabs`, `Table` (virtualised above 200 rows), `Modal`, `Dropdown`, `Toast`, `LabelChips`, `LabelSelectorInput`, `PortField`, `CertPicker`, `ServerPicker`, `CopyText`, `ConfirmTyped`, `CodeView` (read‑only config/diff viewer, no heavy editor).
-- Design tokens in `tokens.css`; dark theme default (matches the reference screenshots), light theme via `prefers-color-scheme` + toggle; accent colour configurable in Settings (default not Hetzner's brand red):
+- Charts: `Chart.svelte` wraps uPlot, dynamically imported only on the Graphs tabs (sparklines on the Dashboard and lists use a 1 KB SVG polyline component, not uPlot).
+- Components: `StatBar`, `StatCard`, `Donut`, `HealthBadge`, `Tabs`, `Table` (virtualised above 200 rows), `Modal`, `Dropdown`, `Toast`, `LabelChips`, `LabelSelectorInput`, `PortField`, `BindsEditor`, `RouteTable` (drag to reorder), `BackendSelect`, `CertPicker`, `HostPicker`, `CopyText`, `ConfirmTyped`, `CodeView` (read‑only config/diff viewer, no heavy editor).
+- Design tokens in `tokens.css`; dark theme default, light theme via `prefers-color-scheme` + toggle; accent colour configurable in Settings:
   ```css
   :root { --bg:#141414; --surface:#1f1f1f; --surface-2:#272727; --border:#343434;
           --text:#f1f1f1; --muted:#9b9b9b; --accent:#e5484d; --ok:#30a46c; --warn:#f5a524;
@@ -886,7 +888,7 @@ Long or multi‑step operations return `202` with `{ "action": { "id", "command"
 - Login rate limit: 5 attempts / 15 min per IP + per account, exponential backoff.
 
 ### 14.2 Authorization
-Roles: **owner** (everything incl. users, secrets), **admin** (all resources, settings except owner transfer), **operator** (LBs, services, targets, certs; no users/settings), **viewer** (read‑only). API tokens carry a role and optional expiry; shown once at creation; stored as SHA‑256 hash with a visible prefix.
+Roles: **owner** (everything incl. users, secrets), **admin** (all resources, settings except owner transfer), **operator** (frontends, backends, servers, hosts, certificates, domains; no users/settings), **viewer** (read‑only). API tokens carry a role and optional expiry; shown once at creation; stored as SHA‑256 hash with a visible prefix.
 
 ### 14.3 Web hardening
 CSRF: SameSite=Strict cookies **and** a required `X-LOXY-CSRF` header token on mutating requests. Headers: strict CSP (`default-src 'self'`), `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin`, `Frame-Options: DENY`, HSTS on the panel. Request body limit 1 MB (5 MB for cert upload).
@@ -899,12 +901,13 @@ User values end up inside `haproxy.cfg`. **Never** interpolate raw text. Validat
 | Resource display names | 1–64 chars, any printable; **never rendered** into config |
 | Label keys | `^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?[a-zA-Z0-9]([-a-zA-Z0-9_.]{0,61}[a-zA-Z0-9])?$` |
 | Label values | `^([a-zA-Z0-9]([-a-zA-Z0-9_.]{0,61}[a-zA-Z0-9])?)?$` |
-| Domains (health check Host, cert SANs) | RFC 1123 hostname, lowercase, ≤ 253; `*.` prefix only for DNS‑01 certificates |
-| Health check path | `^/[A-Za-z0-9._~!&()*+,;=:@%/?-]{0,254}$` (no spaces, quotes, `#`, `$`, `\`) |
+| Domains (health check Host, cert SANs, route hosts) | RFC 1123 hostname, lowercase, ≤ 253; `*.` prefix only for DNS‑01 certificates and route hosts |
+| Health check path, route path prefix | `^/[A-Za-z0-9._~!&()*+,;=:@%/?-]{0,254}$` (no spaces, quotes, `#`, `$`, `\`) |
 | Health check response string | printable ASCII except `'"\#$`, 1–128 chars |
 | Cookie name | `^[A-Za-z0-9_-]{1,64}$` |
 | Ports | integers 1–65535 |
-| IPs / CIDRs | parsed with `net/netip`; targets reject loopback, link‑local, multicast, unspecified |
+| Bind address | `*` or an IP literal parsed with `net/netip` (zone ids rejected) |
+| IPs / CIDRs | parsed with `net/netip`; servers reject loopback, link‑local, multicast, unspecified |
 | Status code items | `^[1-5][0-9?]{2}$`, ≤ 20 items |
 | Label selector | parsed by our own small parser into an AST; never passed to HAProxy |
 
@@ -926,20 +929,18 @@ loxy listens on `127.0.0.1:9090` only. Public access goes through the `sys_panel
 ## 15. Multi‑node and HA (Phase 3)
 
 ### 15.1 Panel ↔ agent
-- `loxy agent` runs next to HAProxy on each LB node (same compose as all‑in‑one minus the panel). It dials **out** to the panel over HTTPS WebSocket, so nodes need no inbound management port.
+- `loxy agent` runs next to HAProxy on each HAProxy node (same compose as all‑in‑one minus the panel). It dials **out** to the panel over HTTPS WebSocket, so nodes need no inbound management port.
 - Enrollment: panel creates a node and shows a one‑time join token; `loxy agent join --panel https://panel.example.com --token …` stores a long‑lived node credential and pins the panel's TLS certificate fingerprint.
+- Frontends are placed on a node or an HA group; backends are rendered on every node that has a frontend using them.
 - Messages: panel → agent `DesiredState{version, haproxy config inputs, certs, acme_tokens}`; agent → panel `Applied{version, result, output}`, `StatsBatch` (1 s samples, sent every 1 s), `HealthDelta`, `NodeInfo`.
 - The agent persists the last applied desired state locally and keeps running autonomously if the panel is down (HAProxy keeps serving; ACME HTTP‑01 tokens pushed before disconnect stay valid).
 
-### 15.2 HA pairs (active/passive)
-Hetzner dedicated servers use **failover IPs** that are routed to one server's main IP via the Robot web service (`POST https://robot-ws.your-server.de/failover/<failover-ip>` with `active_server_ip=<node main IP>`); routing switches are reported to take on the order of tens of seconds. Hetzner Cloud servers use **Floating IPs** via the Cloud API.
-- Both nodes of an HA group receive identical desired state; both bind the LB IPs (`net.ipv4.ip_nonlocal_bind=1` and `net.ipv6.ip_nonlocal_bind=1` on the host) and have the failover IPs configured on an interface.
-- Leader election and health: keepalived (VRRP in **unicast** mode between the nodes' private IPs; don't rely on multicast in hosted networks) with a `track_script` that checks HAProxy (`/healthz` of the agent + a TCP probe of a service port). `notify_master` calls loxy (`loxy ha promote`) which switches every failover/floating IP of the group to itself via the Hetzner API (credentials from the panel, scoped to the node group).
+### 15.2 HA pairs (active/passive, generic)
+- Both nodes of an HA group receive identical desired state for the group's frontends; both may bind the group's **virtual IPs** at all times (`net.ipv4.ip_nonlocal_bind=1` and `net.ipv6.ip_nonlocal_bind=1` on the host), so failover needs no reload.
+- Leader election and address movement: **keepalived** VRRP (in **unicast** mode between the nodes' private addresses by default; multicast optional) owns the virtual IP(s) and moves them to the backup node; a `track_script` checks HAProxy (`/healthz` of the agent + a TCP probe of a frontend port). `notify_*` scripts report state changes to loxy (`loxy ha notify <state>`), which records events. No provider API is called; environments that need provider‑specific address routing can hook their own script into `notify_master`.
+- Loxy renders the keepalived config from the HA group (virtual IPs, peer addresses, priorities, auth) into `deploy/keepalived/` templates; keepalived runs as its own container (`network_mode: host`, `NET_ADMIN`) — an ADR is required before adding it.
 - Stick tables (sticky/rate‑limit state) are synced with an HAProxy `peers` section between the two nodes.
-- UI: node group page shows active/passive, last failover, "Fail over now" button.
-
-### 15.3 Inventory sync (optional integration)
-Hetzner Robot API (dedicated servers) and Hetzner Cloud API (cloud servers incl. labels) → `servers` table, read‑only mirror, every 5 min or on demand.
+- UI: HA group page on System shows active/backup, virtual IPs, last failover, "Fail over now" button (lowers the local VRRP priority temporarily).
 
 ---
 
@@ -960,7 +961,7 @@ net.ipv4.tcp_tw_reuse = 1
 fs.file-max = 2097152
 fs.nr_open = 2097152
 ```
-(If `nf_conntrack` is loaded, raise `net.netfilter.nf_conntrack_max` accordingly or exclude LB ports from tracking.)
+(If `nf_conntrack` is loaded, raise `net.netfilter.nf_conntrack_max` accordingly or exclude frontend ports from tracking.)
 
 ### 16.2 Dockerfile (`deploy/docker/Dockerfile`)
 ```dockerfile
@@ -1062,7 +1063,7 @@ services:
 | `LOXY_LOG_LEVEL` | `info` | |
 
 ### 16.5 Installer (`deploy/install.sh`)
-1. Check root, Docker ≥ 24, Compose v2, free ports (8443 and the planned LB ports).
+1. Check root, Docker ≥ 24, Compose v2, free ports (8443, 80/443 if they will be used by frontends).
 2. Write `/etc/sysctl.d/99-loxy.conf`, `sysctl --system`.
 3. Create `/opt/loxy/{data/haproxy-conf,data/haproxy-state,data/loxy,run/haproxy}`; `chown -R 1500:1500`; `chmod 0750` on data dirs and `chmod 0770` on `run/haproxy` (the capability‑dropped HAProxy master creates its sockets there through group 1500).
 4. Write `compose.yml` and `.env` (generate `LOXY_SECRET_KEY`, chmod 0600).
@@ -1074,15 +1075,15 @@ services:
 - **Upgrade HAProxy:** bump `HAPROXY_VERSION` (and the matching loxy image tag) → `docker compose up -d`. Replacing the HAProxy container restarts it (brief interruption) — schedule it, or in an HA pair fail over first, upgrade passive, fail back.
 - **Backup:** `loxy backup` (SQLite online backup via `VACUUM INTO` + current live revision tarball), nightly by default, keep 14; optional upload to S3‑compatible storage. **Restore:** `loxy restore <file>` then the reconciler re‑applies.
 - **Break‑glass:** `docker compose exec loxy loxy admin reset-password`; `loxy render --dry-run` prints the config that would be applied; `loxy admin rollback --revision N`.
-- **Firewall:** allow LB service ports publicly; restrict 8443 to admin IPs; never expose 9090, 8405 or 5514.
+- **Firewall:** allow frontend bind ports publicly; restrict 8443 to admin IPs; never expose 9090, 8405 or 5514.
 
 ---
 
 ## 17. Development workflow
 
-- `make dev` → `docker compose -f deploy/compose/compose.dev.yml up` with: HAProxy (same image), three `traefik/whoami` targets on different ports (one can be toggled unhealthy via an env flag), **Pebble** (Let's Encrypt's ACME test server) + its challenge DNS, and loxy in dev mode with live reload; Vite dev server proxies `/api` to loxy.
+- `make dev` → `docker compose -f deploy/compose/compose.dev.yml up` with: HAProxy (same image), three `traefik/whoami` servers on different ports (one can be toggled unhealthy via an env flag), **Pebble** (Let's Encrypt's ACME test server) + its challenge DNS, and loxy in dev mode with live reload; Vite dev server proxies `/api` to loxy.
 - `make gen` (OpenAPI → Go + TS, sqlc), `make lint` (golangci‑lint, `svelte-check`, eslint, prettier), `make test`, `make test-integration`, `make e2e`, `make load`, `make build`, `make image`.
-- `make seed` creates a demo project: 2 LBs, services of each protocol, 6 targets, an uploaded cert, a managed cert against Pebble, and synthetic traffic (`oha` loop) so graphs have data.
+- `make seed` creates a demo project: an http, a TLS (redirect + routes) and a tcp frontend, 3 backends, 6 servers (IP, host and label selector), 3 hosts, an uploaded cert, a managed cert against Pebble, and synthetic traffic (`oha` loop) so graphs have data.
 - Conventional commits; CI on every PR: gen‑check, lint, unit, integration (real HAProxy via testcontainers), e2e (headless), bundle‑size check, image build.
 
 ---
@@ -1091,66 +1092,65 @@ services:
 
 | Layer | What |
 |---|---|
-| Unit | Validation rules; status‑code conversion; label‑selector parser; plan quota math; metric delta/reset logic; health aggregation; reconciler classification table (§7.6) |
-| Renderer golden tests | Fixture models → expected `haproxy.cfg` (byte‑exact); every golden passes `haproxy -c` in CI |
+| Unit | Validation rules (incl. cross‑frontend port collisions with `*`, redirect :80 and `sys_acme_fe` :80; frontend/backend mode match; in‑use backend delete refusal); status‑code conversion; label‑selector parser; route → ACL rendering; metric delta/reset logic; health aggregation; reconciler classification table (§7.6) |
+| Renderer golden tests | Fixture models → expected `haproxy.cfg` (byte‑exact): tls frontend with redirect and routes, tcp pair, `*` binds, maintenance, disabled frontend, `sys_acme_fe`; every golden passes `haproxy -c` in CI |
 | Fuzz | Random valid models → config passes `haproxy -c`, no injected lines (§14.4) |
-| Integration (testcontainers, real HAProxy 3.4) | Runtime client matchers for every command; reload success and failure paths (`Success=0` keeps old workers, symlink restored); server‑state survives reload; dynamic server add/remove/drain; cert hot‑swap; ACME HTTP‑01 + DNS‑01 against Pebble; metrics deltas across reloads; **all VERIFY items**: `-S` socket options, LB‑wide cap across frontends, double `http-check expect` semantics, `@system-ca`, `del ssl cert`, minimal capability set, `chroot auto`, prompt mode |
-| E2E (Playwright) | Login, create LB via wizard, add service from each template, add targets of all three types, toggle sticky/proxy protocol, rescale up/down (blocked case), maintenance mode, delete protection, delete LB, certificate upload/managed flow, graphs render, rollback |
-| Load / zero‑downtime | `oha` at 2 000 rps against an LB while (a) 100 reloads, (b) 50 target add/removes, (c) cert renewals — **0 non‑2xx/connection errors** allowed |
-| Resource | loxy RSS and CPU under the §1.4 dataset; UI bundle size budget |
+| Integration (real HAProxy 3.4) | Runtime client matchers for every command; reload success and failure paths (`Success=0` keeps old workers, symlink restored); server‑state survives reload; dynamic server add/remove/drain; host/path routing reaches the right backend; maintenance via map (http 503, tcp reject); cert hot‑swap; ACME HTTP‑01 + DNS‑01 against Pebble; metrics deltas across reloads; **all VERIFY items**: `-S` socket options, double `http-check expect` semantics, `@system-ca`, `del ssl cert`, minimal capability set, `chroot auto`, prompt mode, `shm-stats-file` (if enabled) |
+| E2E (Playwright) | Login, create backend + servers of all three types, create http / TLS (with redirect) / tcp frontends, add routing rules and reorder them, toggle sticky/proxy protocol, drain/maint/weight a server, maintenance mode, delete refused for an in‑use backend, delete frontend, certificate upload/managed flow, domain verification, graphs render, rollback |
+| Load / zero‑downtime | `oha` at 2 000 rps against a frontend while (a) 100 reloads, (b) 50 server add/removes, (c) cert renewals — **0 non‑2xx/connection errors** allowed |
+| Resource | loxy RSS and CPU under the §1.4 dataset (50 frontends / 200 backends / 1 000 servers); UI bundle size budget |
 
 ---
 
 ## 19. Roadmap and Definitions of Done
 
-**Phase 0 — Foundations**
+**Phase 0 — Foundations** *(done)*
 Repo skeleton, Makefile, CI, OpenAPI skeleton + codegen, SQLite + migrations, auth (owner login, sessions), runtime client + parsers, renderer + golden tests, revision FS + validator, bootstrap config, reload procedure.
 *DoD:* `docker compose up` on a clean VM brings up HAProxy with the panel reachable at :8443; `loxy render --dry-run` works; reload path integration tests pass.
 
-**Phase 1 — Hetzner parity on a single node (MVP)**
-LB CRUD + wizard, plans/rescale, labels, delete protection, maintenance mode, services (tcp/http/https, redirect, sticky, proxy protocol, HTTP timeout, full health checks), targets (IP, server inventory, label selector) with runtime apply, certificates (upload + managed HTTP‑01/DNS‑01), Overview, Graphs (live + history), Targets, Services, Networking (public toggle, private network bind), Rescale, Delete, Activity (events + audit), Users/roles, **Domains & DNS part 1** (§8.16): domains page with required records and live verification, DNS provider accounts (Hetzner, Cloudflare) with encrypted credentials, DNS‑01 via the libdns‑backed lego provider, one‑click certificate issuance.
+**Phase 1 — HAProxy management MVP on a single node**
+Frontends (http/tcp, binds incl. `*`, TLS termination, HTTP→HTTPS redirect, default backend, host/path routes, timeouts, maxconn, forwarded headers, enable, maintenance, labels); backends (algorithm, full health checks, sticky, PROXY protocol, timeouts, labels); servers (IP, host, label selector) with runtime apply, weight/backup/drain/maint and graceful removal; hosts inventory; certificates (upload + managed HTTP‑01/DNS‑01); **Domains & DNS part 1** (§8.9): domains attached to frontends with required records and live verification, DNS provider accounts with encrypted credentials, DNS‑01 via the libdns‑backed lego provider, one‑click certificate issuance; node addresses; Dashboard, frontend Overview/Routing/Graphs/Config, backend Servers/Settings/Graphs (live + history); Activity (events + audit); users/roles.
 *DoD:* every acceptance criterion in §8 for these screens passes in E2E; zero‑downtime load tests pass; §1.4 budgets met.
 
 **Phase 2 — Operations polish**
-Config revision diff/rollback UI, notifications (webhook, email, Telegram, Slack) and alert rules, API tokens, drain/weights UI, live logs (sampled), Prometheus endpoints, backups (+ S3), 2FA, `loxy` CLI client for the API, **Domains & DNS part 2** (§8.16): auto‑managed A/AAAA records and the zone editor.
-*DoD:* alert on target down arrives within 5 s; rollback restores previous behaviour verified by integration test; nightly backup + restore round‑trip test.
+Config revisions UI (list, diff, rollback, pin), notifications (webhook, email, Telegram, Slack) and alert rules with label filters, API tokens, live logs (sampled) on the frontend Logs tab, Prometheus endpoints, backups (+ S3), 2FA, `loxy` CLI client for the API, **Domains & DNS part 2** (§8.9): auto‑managed A/AAAA records and the zone editor.
+*DoD:* alert on server down arrives within 5 s; rollback restores previous behaviour verified by integration test; nightly backup + restore round‑trip test.
 
-**Phase 3 — Multi‑node and HA**
-`loxy panel` / `loxy agent`, enrollment, node pages, HA groups with keepalived + Hetzner failover IP / floating IP switching, `peers` sync, inventory sync from Hetzner APIs, rDNS editing.
-*DoD:* killing the active node moves traffic to the passive node automatically; the panel going down doesn't affect traffic; agent reconnects and reconciles.
+**Phase 3 — Multi‑node and generic HA**
+`loxy panel` / `loxy agent`, enrollment, node pages, HA groups with keepalived VRRP and a virtual IP (no provider API), `peers` sync of stick tables.
+*DoD:* killing the active node moves the virtual IP and traffic to the passive node automatically; the panel going down doesn't affect traffic; agent reconnects and reconciles.
 
 **Phase 4 — Advanced L7 (optional)**
-Host/path routing rules to target groups (using 3.4 dynamic backends), per‑service IP allow/deny lists, rate limiting per client IP, custom request/response headers, HSTS, response compression (3.4 `filter comp-res`), custom error pages, HTTP/3 (QUIC) when the image reports QUIC support, re‑encryption to targets (backend TLS), OIDC SSO.
+Rate limiting per client IP (stick tables), IP allow/deny lists per frontend (runtime ACLs), request/response header rules, HSTS, response compression (3.4 `filter comp-res`), custom error pages, HTTP/3 (QUIC) when the image reports QUIC support, backend TLS re‑encryption to servers, OIDC SSO for the panel.
 
 ---
 
-## 20. Backlog of useful extras (beyond Hetzner)
+## 20. Backlog of useful extras
 
-- **Maintenance mode** per LB with a custom page (instant, runtime map).
-- **Graceful drain** with configurable timeout, and **slow start** (`slowstart`) for targets returning to service.
-- **Weights** and **backup targets** (`backup` servers used only when all primaries are down).
-- **Live logs** tab: HAProxy logs to `127.0.0.1:5514` UDP → loxy ring buffer per LB, sampling (e.g. 1:10), off by default (Hetzner keeps no request logs; privacy and performance first).
+- **Config import** from an existing `haproxy.cfg`: parse frontends/backends/servers that map onto the Loxy model, show what can't be imported (kept out, listed), create the objects in one transaction, then let Loxy own the config.
+- **Maintenance page** per frontend with custom text (instant, runtime map).
+- **Graceful drain** with configurable timeout, and **slow start** (`slowstart`) for servers returning to service.
+- **Live logs**: HAProxy logs to `127.0.0.1:5514` UDP → loxy ring buffer per frontend, sampling (e.g. 1:10), off by default (privacy and performance first).
 - **Config preview & diff** before applying risky changes; "Download HAProxy config".
-- **Per‑target graphs** and response‑time / status‑code breakdowns.
-- **Traffic quota actions**: alert at 80/100 %; optional bandwidth cap using HAProxy's `bwlim-out` filter.
-- **Clone LB**, **Export/Import JSON**, Terraform provider later (API is Hetzner‑shaped, which makes this easy).
+- **Per‑server graphs** and response‑time / status‑code breakdowns.
+- **Bandwidth limits** per frontend using HAProxy's `bwlim-in`/`bwlim-out` filters.
+- **Duplicate frontend/backend**, **Export/Import JSON**, Terraform provider later (the API is resource‑shaped, which makes this easy).
 - **Webhooks** for every event kind.
-- **Rate limiting & IP lists** via stick tables and runtime ACLs.
+- **Rate limiting & IP lists** via stick tables and runtime ACLs (Phase 4).
 - **HTTP/3** advertisement (`alt-svc`) when QUIC is available.
-- **Own authoritative DNS server** — explicitly *not* planned (non‑goal); revisit only if operators need GeoDNS/health‑based DNS failover. Today Loxy manages records at external providers (§8.16).
+- **Runtime backends** (3.4 `add backend` / `publish backend`) to make some backend changes reload‑free.
+- **Own authoritative DNS server** — explicitly *not* planned (non‑goal); revisit only if operators need GeoDNS/health‑based DNS failover. Today Loxy manages records at external providers (§8.9).
 - **More DNS providers** via libdns (deSEC, Route 53, DigitalOcean, OVH, …) — one registry entry each.
-- **Health‑check templates** using the 3.4 `healthcheck` section (reusable checks shared by services).
+- **Health‑check templates** using the 3.4 `healthcheck` section (reusable checks shared by backends).
 
 ---
 
 ## 21. Open questions for the owner (ask before Phase 1 ends; defaults in brackets)
 
 1. Accent colour and logo [neutral red, simple wordmark "Loxy"]. (Name is decided: **Loxy**.)
-2. Will customers other than you log in (multi‑tenant projects, per‑project quotas)? [single owner + team, one project]
-3. Which IP model per LB on your dedicated servers: one additional/failover IP per LB, or shared node IP with distinct ports? [one IP per LB from the node's pool; shared IP allowed with a warning]
-4. Default plans and prices to seed [LB11 10 000 conns / 5 services / 25 targets / 10 certs / 20 TB; LB21 20 000 / 15 / 75 / 25; LB31 40 000 / 30 / 150 / 50 — limits mirror Hetzner's published types; prices empty].
-5. DNS provider for DNS‑01 and record management [Hetzner DNS and Cloudflare via libdns, §8.16].
-6. Is HA in scope for the first production rollout? [no — Phase 3]
+2. Will people other than you log in (multi‑tenant projects)? [single owner + team, one project]
+3. Is HA in scope for the first production rollout? [no — Phase 3, generic VRRP]
+4. DNS providers for DNS‑01 and record management [libdns providers: Hetzner DNS, Cloudflare first, §8.9].
 
 ---
 
@@ -1167,10 +1167,7 @@ Host/path routing rules to target groups (using 3.4 dynamic backends), per‑ser
 - HAProxy 3.3.0 release notes (default `random` balance, name rules) — https://www.mail-archive.com/haproxy@formilux.org/msg46300.html
 - Data Plane API 3.3 / 3.4 release notes — https://github.com/haproxytech/dataplaneapi/releases/tag/v3.3.0 · https://www.haproxy.com/documentation/haproxy-data-plane-api/release-notes/v3.4/
 - Official Docker image — https://hub.docker.com/_/haproxy
-- Hetzner Load Balancers overview & types — https://docs.hetzner.com/cloud/load-balancers/overview
-- Hetzner Load Balancers FAQ (protocols, headers, PROXY protocol, health checks) — https://docs.hetzner.com/networking/load-balancers/faq/
-- Hetzner Cloud API (load balancer metrics types) — https://docs.hetzner.cloud/
-- Hetzner Robot web service (failover IP routing) — https://robot.your-server.de/doc/webservice/en.html
+- keepalived (VRRP) — https://keepalived.readthedocs.io/
 - libdns (provider‑agnostic DNS record APIs for Go) — https://github.com/libdns/libdns
 - lego ACME library (custom challenge providers, DNS providers) — https://go-acme.github.io/lego/
 - Roxy‑WI (for contrast) — https://github.com/roxy-wi/roxy-wi

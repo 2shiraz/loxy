@@ -69,6 +69,6 @@ The reconciler then re-applies the restored state to HAProxy (validated with
 
 ## Firewall
 
-Allow LB service ports publicly. Restrict the panel port (8443) to admin IPs
+Allow the ports your frontends bind publicly. Restrict the panel port (8443) to admin IPs
 (`LOXY_PANEL_ALLOW` and/or host firewall). Never expose 9090 (internal API),
 8405 (stats/metrics) or 5514 (syslog receiver).

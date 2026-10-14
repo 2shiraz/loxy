@@ -6,7 +6,7 @@
 #   HAPROXY_VERSION  pinned HAProxy version (default: 3.4.6)
 #   LOXY_DIR         install dir (default: /opt/loxy)
 #   LOXY_PANEL_PORT  panel port (default: 8443)
-#   LOXY_CHECK_PORTS extra space-separated ports to check are free (e.g. "80 443")
+#   LOXY_CHECK_PORTS extra space-separated ports your frontends will bind, checked to be free (e.g. "80 443")
 set -euo pipefail
 
 REPO="2shiraz/loxy"

@@ -74,7 +74,7 @@ e2e:
 
 ## load: oha/k6 zero-downtime harness (placeholder until test/load exists)
 load:
-	@echo "load: would run 'oha -z 60s -q 2000 http://127.0.0.1:<lb-port>/' while reloading (test/load)"
+	@echo "load: would run 'oha -z 60s -q 2000 http://127.0.0.1:<frontend-port>/' while reloading (test/load)"
 	@echo "note: load harness not implemented yet (later phase); exiting 0"
 
 clean:
