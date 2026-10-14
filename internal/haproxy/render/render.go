@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/netip"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -41,12 +42,15 @@ type Input struct {
 	Frontends      []*state.Frontend
 	Backends       []*state.Backend
 	Cert           func(id int64) *state.Cert
-	// ACMEHTTP01 lists frontend ids that need HTTP-01 challenge answering on :80.
-	ACMEHTTP01     map[int64]bool
 	PanelPEM       string
 	PlaceholderPEM string
 	MaintPage      string
 	OmitServers    bool // skeleton mode used for change classification
+	// Domains are routed by Host on the shared sys_http (:80) / sys_https (:443) frontends.
+	Domains []DomainRoute
+	// SharedHTTP renders sys_http even without domains (managed HTTP-01 certificates are
+	// validated through it).
+	SharedHTTP bool
 	// IPv6 adds an `ipv6@:::port v6only` listener for "*" binds. HAProxy refuses to start
 	// when the host has no IPv6 support, so this follows a startup probe (LOXY_IPV6).
 	IPv6 bool
@@ -109,8 +113,6 @@ func defaultsIn(in *Input) {
 
 // Names (§7.3). Frontend and backend names always differ (HAProxy 3.3+ requirement).
 func FrontendName(id int64) string { return fmt.Sprintf("fe_%d", id) }
-func RedirectName(id int64) string { return fmt.Sprintf("fe_%d_rd", id) }
-func ACMEFrontend(id int64) string { return fmt.Sprintf("sys_acme_fe%d", id) }
 func BackendName(id int64) string  { return fmt.Sprintf("be_%d", id) }
 func ServerName(sv *state.Server, sl *state.Slot) string {
 	if sl.HostID == 0 {
@@ -207,19 +209,6 @@ func ServerArgs(be *state.Backend, sv *state.Server, sl *state.Slot) string {
 	return b.String()
 }
 
-// HasPort80 reports whether a frontend already listens on :80 itself (or via its redirect).
-func HasPort80(f *state.Frontend) bool {
-	if f.Mode == "http" && f.Tls != 0 && f.HttpRedirect != 0 {
-		return true
-	}
-	for _, b := range f.Binds {
-		if b.Port == 80 && f.Mode == "http" && f.Tls == 0 {
-			return true
-		}
-	}
-	return false
-}
-
 // Render produces the full tree.
 func Render(in Input) (*Output, error) {
 	defaultsIn(&in)
@@ -306,9 +295,16 @@ func Render(in Input) (*Output, error) {
 		}
 		c.Blocks = append(c.Blocks, blk)
 	}
+	if len(in.Domains) > 0 || in.SharedHTTP {
+		blk, err := renderDomains(&in, usedCerts, out)
+		if err != nil {
+			return nil, err
+		}
+		c.Blocks = append(c.Blocks, blk)
+	}
 	bes := append([]*state.Backend(nil), in.Backends...)
 	sort.Slice(bes, func(i, j int) bool { return bes[i].ID < bes[j].ID })
-	tlsOnly := tlsOnlyBackends(in.Frontends)
+	tlsOnly := tlsOnlyBackends(in.Frontends, in.Domains)
 	for _, b := range bes {
 		sec, err := renderBackend(&in, b, tlsOnly)
 		if err != nil {
@@ -338,6 +334,109 @@ func Render(in Input) (*Output, error) {
 	}
 	out.Files["haproxy.cfg"] = buf.Bytes()
 	return out, nil
+}
+
+// DomainRoute sends one hostname arriving on the shared :80/:443 to a backend.
+type DomainRoute struct {
+	Host      string // fqdn or *.suffix (validated again here)
+	BackendID int64
+	CertID    int64 // certificate served on :443 for this host (0 = none yet)
+	HTTPS     bool  // certificate issued and HTTPS wanted: :80 redirects to :443
+}
+
+// renderDomains builds sys_http (:80: ACME answers, https redirects, Host routing) and, when
+// any domain has a certificate, sys_https (:443). Unknown hosts get 404.
+func renderDomains(in *Input, usedCerts map[int64]bool, out *Output) (block, error) {
+	blk := block{Comment: "# ---------- domains (shared :80/:443) ----------"}
+	doms := append([]DomainRoute(nil), in.Domains...)
+	sort.Slice(doms, func(i, j int) bool { return doms[i].Host < doms[j].Host })
+	var all, redirect []string
+	byBackend := map[int64][]string{}
+	var backends []int64
+	var crt []string
+	for _, d := range doms {
+		h := strings.ToLower(strings.TrimSpace(d.Host))
+		if !model.ValidHostname(h, true) {
+			return blk, fmt.Errorf("invalid domain %q", d.Host)
+		}
+		all = append(all, h)
+		if _, ok := byBackend[d.BackendID]; !ok {
+			backends = append(backends, d.BackendID)
+		}
+		byBackend[d.BackendID] = append(byBackend[d.BackendID], h)
+		if d.CertID != 0 {
+			if c := in.Cert(d.CertID); c != nil && c.PEM() != "" {
+				if line := fmt.Sprintf("%d.pem [alpn h2,http/1.1]", d.CertID); !slices.Contains(crt, line) {
+					crt = append(crt, line)
+				}
+				usedCerts[d.CertID] = true
+				if d.HTTPS {
+					redirect = append(redirect, h)
+				}
+			}
+		}
+	}
+	routes := func(sec *section) error {
+		if len(all) > 0 {
+			cond, err := routeCond(state.Route{Hosts: all})
+			if err != nil {
+				return err
+			}
+			sec.Lines = append(sec.Lines, `http-request return status 404 content-type text/plain string "Unknown host" unless `+cond)
+		} else {
+			sec.Lines = append(sec.Lines, `http-request return status 404 content-type text/plain string "Unknown host"`)
+		}
+		// Exact hosts first so that a wildcard never shadows a more specific domain.
+		for _, wildcard := range []bool{false, true} {
+			for _, id := range backends {
+				var hs []string
+				for _, h := range byBackend[id] {
+					if strings.HasPrefix(h, "*.") == wildcard {
+						hs = append(hs, h)
+					}
+				}
+				if len(hs) == 0 {
+					continue
+				}
+				cond, err := routeCond(state.Route{Hosts: hs})
+				if err != nil {
+					return err
+				}
+				sec.Lines = append(sec.Lines, fmt.Sprintf("use_backend %s if %s", BackendName(id), cond))
+			}
+		}
+		return nil
+	}
+	h := section{Header: "frontend sys_http from loxy_http"}
+	for _, b := range bindAddrs(in, "*", 80) {
+		h.Lines = append(h.Lines, "bind "+b)
+	}
+	h.Lines = append(h.Lines, acmeLine)
+	if len(redirect) > 0 {
+		cond, err := routeCond(state.Route{Hosts: redirect})
+		if err != nil {
+			return blk, err
+		}
+		h.Lines = append(h.Lines, "http-request redirect scheme https code 301 if "+cond)
+	}
+	h.Lines = append(h.Lines, "option forwardfor", "http-request set-header X-Forwarded-Proto http")
+	if err := routes(&h); err != nil {
+		return blk, err
+	}
+	blk.Sections = append(blk.Sections, h)
+	if len(crt) > 0 {
+		out.Files["crt-lists/sys_https.lst"] = []byte(strings.Join(crt, "\n") + "\n")
+		t := section{Header: "frontend sys_https from loxy_http"}
+		for _, b := range bindAddrs(in, "*", 443) {
+			t.Lines = append(t.Lines, "bind "+b+" ssl crt-list "+path.Join(in.Root, "crt-lists", "sys_https.lst")+" alpn h2,http/1.1")
+		}
+		t.Lines = append(t.Lines, "option forwardfor", "http-request set-header X-Forwarded-Proto https")
+		if err := routes(&t); err != nil {
+			return blk, err
+		}
+		blk.Sections = append(blk.Sections, t)
+	}
+	return blk, nil
 }
 
 const acmeLine = `http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/),map(virt@acme_http01)]" if { path_beg /.well-known/acme-challenge/ } { path,field(-1,/),map(virt@acme_http01) -m found }`
@@ -424,16 +523,6 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 				"http-request set-header X-Forwarded-Proto "+proto,
 				"http-request set-header X-Forwarded-Port %[dst_port]")
 		}
-		if !tls {
-			for _, b := range f.Binds {
-				if b.Port == 80 {
-					fe.Lines = append(fe.Lines, acmeLine)
-					break
-				}
-			}
-		}
-		fe.Lines = append(fe.Lines, fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }",
-			path.Join(in.Root, "errors", "maint.http"), f.ID, maintMap))
 		for _, r := range f.Routes {
 			cond, err := routeCond(r)
 			if err != nil {
@@ -462,63 +551,13 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 			lst = append(lst, "_placeholder.pem [alpn h2,http/1.1]")
 		}
 		out.Files[fmt.Sprintf("crt-lists/fe%d.lst", f.ID)] = []byte(strings.Join(lst, "\n") + "\n")
-		if f.HttpRedirect != 0 {
-			rd := section{Header: fmt.Sprintf("frontend %s from loxy_http", RedirectName(f.ID))}
-			for _, a := range addrs(f) {
-				for _, b := range bindAddrs(in, a, 80) {
-					rd.Lines = append(rd.Lines, "bind "+b)
-				}
-			}
-			rd.Lines = append(rd.Lines, acmeLine, "http-request redirect scheme https code 301")
-			blk.Sections = append(blk.Sections, rd)
-		}
-	}
-	if in.ACMEHTTP01[f.ID] && !HasPort80(f) {
-		ac := section{Header: fmt.Sprintf("frontend %s from loxy_http", ACMEFrontend(f.ID))}
-		for _, a := range addrs(f) {
-			for _, b := range bindAddrs(in, a, 80) {
-				ac.Lines = append(ac.Lines, "bind "+b)
-			}
-		}
-		ac.Lines = append(ac.Lines, acmeLine, "http-request return status 404")
-		blk.Sections = append(blk.Sections, ac)
 	}
 	return blk, nil
 }
 
-// addrs returns the distinct bind addresses of a frontend (sorted).
-func addrs(f *state.Frontend) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, b := range f.Binds {
-		a := b.Address
-		if a == "" {
-			a = "*"
-		}
-		if !seen[a] {
-			seen[a] = true
-			out = append(out, a)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// Ports80 returns the "address:80" listeners a frontend occupies implicitly (redirect/ACME).
-func Ports80(f *state.Frontend, acme bool) []string {
-	if f.Enabled == 0 {
-		return nil
-	}
-	implicit := (f.Mode == "http" && f.Tls != 0 && f.HttpRedirect != 0) || (acme && !HasPort80(f))
-	if !implicit {
-		return nil
-	}
-	return addrs(f)
-}
-
 // tlsOnlyBackends returns the backends that are used, and only by enabled frontends that
 // terminate TLS: their sticky cookie can be marked secure (§7.5).
-func tlsOnlyBackends(fes []*state.Frontend) map[int64]bool {
+func tlsOnlyBackends(fes []*state.Frontend, domains []DomainRoute) map[int64]bool {
 	out := map[int64]bool{}
 	for _, f := range fes {
 		if f.Enabled == 0 {
@@ -531,6 +570,12 @@ func tlsOnlyBackends(fes []*state.Frontend) map[int64]bool {
 			}
 		}
 	}
+	// Plain-HTTP domain traffic (no issued certificate or HTTPS off) reaches the backend too.
+	for _, d := range domains {
+		if !d.HTTPS {
+			out[d.BackendID] = false
+		}
+	}
 	return out
 }
 
@@ -541,6 +586,13 @@ func renderBackend(in *Input, b *state.Backend, tlsOnly map[int64]bool) (section
 	}
 	be := section{Header: fmt.Sprintf("backend %s from %s", BackendName(b.ID), mode)}
 	be.Lines = append(be.Lines, "balance "+b.Algorithm)
+	if b.Mode == "http" {
+		// Maintenance lives in the backend so it covers every way in: the service port (fe_<id>)
+		// and domains (sys_http/sys_https). Same map key as the service id.
+		maintMap := MaintMapPath(in.Root)
+		be.Lines = append(be.Lines, fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }",
+			path.Join(in.Root, "errors", "maint.http"), b.ID, maintMap))
+	}
 	if b.TimeoutServerS != 60 {
 		be.Lines = append(be.Lines, fmt.Sprintf("timeout server %ds", b.TimeoutServerS))
 	}
@@ -602,7 +654,7 @@ func renderBackend(in *Input, b *state.Backend, tlsOnly map[int64]bool) (section
 
 // FrontendSections extracts the config of one frontend and the backends it uses (GET /config).
 func FrontendSections(cfgText string, f *state.Frontend) string {
-	names := map[string]bool{FrontendName(f.ID): true, RedirectName(f.ID): true, ACMEFrontend(f.ID): true}
+	names := map[string]bool{FrontendName(f.ID): true}
 	for _, id := range f.BackendIDs() {
 		names[BackendName(id)] = true
 	}

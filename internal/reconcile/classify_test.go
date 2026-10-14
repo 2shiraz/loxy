@@ -18,17 +18,17 @@ type srvSpec struct {
 }
 
 func mk(alg string, maint bool, port int64, servers ...srvSpec) *state.Snapshot {
-	be := &state.Backend{Backend: db.Backend{ID: 1, NodeID: 1, Mode: "http", Algorithm: alg, Port: port, ProxyProtocol: "none", TimeoutServerS: 60,
+	be := &state.Backend{BackendCfg: state.BackendCfg{ID: 1, NodeID: 1, Mode: "http", Algorithm: alg, Port: port, ProxyProtocol: "none", TimeoutServerS: 60,
 		HcProtocol: "tcp", HcIntervalS: 15, HcTimeoutS: 10, HcRetries: 3, HcPath: "/"}, StatusCodes: []string{"2??"}}
 	for _, s := range servers {
-		be.Servers = append(be.Servers, &state.Server{BackendServer: db.BackendServer{ID: s.id, BackendID: 1, Type: "ip", Ip: s.ip, Weight: s.weight, AdminState: s.state},
+		be.Servers = append(be.Servers, &state.Server{Target: db.Target{ID: s.id, BalancerID: 1, Type: "ip", Ip: s.ip, Weight: s.weight, AdminState: s.state},
 			Slots: []*state.Slot{{ID: s.id, ServerID: s.id, Address: s.ip}}})
 	}
 	m := int64(0)
 	if maint {
 		m = 1
 	}
-	fe := &state.Frontend{Frontend: db.Frontend{ID: 1, NodeID: 1, Mode: "http", TimeoutClientS: 60, ForwardedHeaders: 1, Enabled: 1, Maintenance: m,
+	fe := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 1, NodeID: 1, Mode: "http", TimeoutClientS: 60, ForwardedHeaders: 1, Enabled: 1, Maintenance: m,
 		DefaultBackendID: sql.NullInt64{Int64: 1, Valid: true}}, Binds: []state.Bind{{Address: "*", Port: 8080}}}
 	return state.TestSnapshot([]*state.Frontend{fe}, []*state.Backend{be})
 }

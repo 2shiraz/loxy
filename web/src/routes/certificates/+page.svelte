@@ -92,23 +92,23 @@
 {#if certs.error && !certs.data}<ErrorBox message={certs.error} onretry={certs.reload} />
 {:else if !certs.data}<Skeleton card rows={5} />
 {:else if !certs.data.length}
-  <div class="card"><EmptyState icon="cert" title="No certificates yet" text="TLS frontends need a certificate. Let Loxy issue and renew one from Let's Encrypt, or upload your own.">
+  <div class="card"><EmptyState icon="cert" title="No certificates yet" text="HTTPS ports need a certificate; domains get one automatically. Let Loxy issue and renew one from Let's Encrypt, or upload your own.">
     <button class="btn primary" onclick={() => (mOpen = true)}>Create managed certificate</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
-    <table class="tbl">
+    <table class="tbl cards certs">
       <thead><tr><th>Name</th><th>Type</th><th>Domains</th><th>Status</th><th>Expires in</th><th class="right">Used by</th><th>Labels</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each certs.data as c (c.id)}
           {@const ex = expiry(c)}
           <tr class="clickable" onclick={() => (sel = c)}>
-            <td><button class="linklike nm" onclick={(e) => { e.stopPropagation(); sel = c; }}>{c.name}</button></td>
-            <td class="small">{c.type === 'managed' ? 'Managed' : 'Uploaded'}</td>
-            <td class="mono small doms" title={c.domains.join(', ')}>{c.domains.slice(0, 2).join(', ')}{c.domains.length > 2 ? ` +${c.domains.length - 2}` : ''}</td>
-            <td><span title={c.last_error ?? ''}><HealthBadge status={c.status} /></span></td>
-            <td class="small {ex.cls}">{ex.text}</td>
-            <td class="right">{c.used_by.length} frontend{c.used_by.length === 1 ? '' : 's'}</td>
-            <td><LabelChips labels={c.labels} max={2} /></td>
+            <td class="lead"><button class="linklike nm" onclick={(e) => { e.stopPropagation(); sel = c; }}>{c.name}</button></td>
+            <td class="small" data-label="Type">{c.type === 'managed' ? 'Managed' : 'Uploaded'}</td>
+            <td class="mono small doms" data-label="Domains" title={c.domains.join(', ')}>{c.domains.slice(0, 2).join(', ')}{c.domains.length > 2 ? ` +${c.domains.length - 2}` : ''}</td>
+            <td data-label="Status"><span title={c.last_error ?? ''}><HealthBadge status={c.status} /></span></td>
+            <td class="small {ex.cls}" data-label="Expires in">{ex.text}</td>
+            <td class="right" data-label="Used by">{c.used_by.length} service{c.used_by.length === 1 ? '' : 's'}</td>
+            <td data-label="Labels" class:hide-sm={!Object.keys(c.labels ?? {}).length}><LabelChips labels={c.labels} max={2} /></td>
             <td class="actions" onclick={(e) => e.stopPropagation()}>
               <Menu label="Actions for {c.name}" items={[
                 { label: 'Details', onclick: () => (sel = c) },
@@ -189,7 +189,7 @@
     <div class="stack-lg">
       <div class="row-wrap"><HealthBadge status={c.status} /><span class="badge">{c.type === 'managed' ? 'Managed' : 'Uploaded'}</span><span class="spacer"></span>
         {#if c.type === 'managed'}<button class="btn sm" onclick={() => renew(c)}><Icon name="refresh" size={13} />Renew now</button>{/if}
-        <button class="btn sm danger" disabled={c.used_by.length > 0} title={c.used_by.length ? 'Detach it from all frontends first' : undefined} onclick={() => remove(c)}>Delete</button>
+        <button class="btn sm danger" disabled={c.used_by.length > 0} title={c.used_by.length ? 'Detach it from all services first' : undefined} onclick={() => remove(c)}>Delete</button>
       </div>
       <dl class="kv">
         <dt>Domains</dt><dd class="mono small">{c.domains.join(', ')}</dd>
@@ -200,7 +200,7 @@
         <dt>SHA-256</dt><dd class="xs">{#if c.fingerprint_sha256}<CopyText text={c.fingerprint_sha256} label="fingerprint" />{:else}—{/if}</dd>
         <dt>Key type</dt><dd>{c.key_type ?? '—'}</dd>
         {#if c.type === 'managed'}<dt>Challenge</dt><dd>{c.challenge === 'dns01' ? 'DNS-01' : 'HTTP-01'}</dd><dt>Renewal</dt><dd class="small">Automatic, 30 days before expiry</dd>{/if}
-        <dt>Used by</dt><dd>{c.used_by.length} frontend{c.used_by.length === 1 ? '' : 's'}</dd>
+        <dt>Used by</dt><dd>{c.used_by.length} service{c.used_by.length === 1 ? '' : 's'}</dd>
       </dl>
       {#if c.last_error}<section class="stack"><h3>Last issuance error</h3><CodeView text={c.last_error} maxHeight={240} label="Issuance log" /></section>{/if}
     </div>
@@ -213,4 +213,10 @@
   .doms { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
   .file { cursor: pointer; }
   legend { margin-bottom: 6px; padding: 0; }
+  @media (max-width: 699px) {
+    .certs :global(tr) { position: relative; }
+    .certs :global(td.actions) { position: absolute; top: 4px; right: 4px; padding: 0; }
+    .certs :global(td.lead) { padding-right: 52px; }
+    .doms { max-width: 60%; }
+  }
 </style>

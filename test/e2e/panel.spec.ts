@@ -6,6 +6,7 @@ const serverIP = process.env.LOXY_SERVER_IP ?? '10.0.0.10';
 const haHost = process.env.LOXY_HAPROXY_HOST ?? '127.0.0.1';
 const name = `e2e-${Date.now().toString(36)}`;
 const port = 18000 + Math.floor(Math.random() * 1000);
+const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 async function login(page: Page) {
   await page.goto('/login');
@@ -15,47 +16,45 @@ async function login(page: Page) {
   await expect(page).toHaveURL(/dashboard/);
 }
 
-test('backend + frontend: create, serve traffic, maintenance, delete', async ({ page, request }) => {
+async function actions(page: Page, item: string) {
+  await page.getByRole('button', { name: 'Actions', exact: true }).click();
+  await page.getByRole('menuitem', { name: item }).click();
+}
+
+test('project: create via wizard, serve traffic, maintenance, delete', async ({ page, request }) => {
   await login(page);
   const status = async () => (await request.get(`http://${haHost}:${port}/`).catch(() => null))?.status();
 
-  // Backend (§8.4) with one IP server (§8.6).
-  await page.goto('/backends/new');
-  await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Default server port').fill('9001');
-  await page.getByRole('button', { name: 'Create backend' }).click();
-  await expect(page).toHaveURL(/backends\/\d+/);
-  await page.getByRole('button', { name: 'Add servers' }).first().click();
+  // Wizard: name, one IP target answering on :9001, HTTP service on an explicit port.
+  await page.goto('/projects/new');
+  await page.getByLabel('Name', { exact: true }).fill(name);
   await page.getByLabel('Addresses, one per line').fill(serverIP);
-  await page.getByRole('dialog').getByRole('button', { name: 'Add server' }).click();
-  await expect(page.getByText(serverIP).first()).toBeVisible();
-  await expect(page.getByText('Healthy').first()).toBeVisible({ timeout: 30_000 });
+  await page.getByLabel('Public port', { exact: true }).fill(String(port));
+  await page.getByLabel('Server port', { exact: true }).fill('9001');
+  await page.getByRole('button', { name: 'Create project' }).click();
+  await expect(page).toHaveURL(/\/projects\/\d+\/overview$/);
+  const base = page.url().replace(/\/overview$/, '');
 
-  // Frontend (§8.2) on a free port, default backend = the new backend.
-  await page.goto('/frontends/new');
-  await page.getByLabel('Name').fill(name);
-  await page.getByLabel('Port').first().fill(String(port));
-  await page.getByLabel('Default backend').selectOption({ label: `${name} · :9001` });
-  await page.getByRole('button', { name: 'Create frontend' }).click();
-  await expect(page).toHaveURL(/frontends\/\d+/);
+  // Targets tab: the IP target turns healthy.
+  await page.goto(`${base}/targets`);
+  const row = page.getByRole('row', { name: new RegExp(`${esc(serverIP)}(?!\\d)`) }).first();
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('Healthy', { timeout: 30_000 });
   await expect.poll(status, { timeout: 10_000 }).toBe(200);
 
   // Maintenance → 503, then off again.
-  await page.getByRole('button', { name: 'Actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Turn maintenance on' }).click();
+  await actions(page, 'Turn maintenance on');
   await page.getByRole('dialog').getByRole('button', { name: 'Turn maintenance on' }).click();
   await expect.poll(status, { timeout: 5_000 }).toBe(503);
-  await page.getByRole('button', { name: 'Actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Turn maintenance off' }).click();
+  await actions(page, 'Turn maintenance off');
   await page.getByRole('dialog').getByRole('button', { name: 'Turn maintenance off' }).click();
   await expect.poll(status, { timeout: 5_000 }).toBe(200);
 
-  // Delete with typed confirmation; the backend is freed and can be deleted too.
-  await page.getByRole('button', { name: 'Actions', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'Delete…' }).click();
+  // Delete with typed confirmation; the port stops answering.
+  await actions(page, 'Delete…');
   await page.getByLabel(/Type .* to confirm/).fill(name);
-  await page.getByRole('dialog').getByRole('button', { name: 'Delete frontend' }).click();
-  await expect(page).toHaveURL(/\/frontends$/);
-  await expect(page.getByText(name)).toHaveCount(0);
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete project' }).click();
+  await expect(page).toHaveURL(/\/projects$/);
+  await expect(page.getByRole('link', { name, exact: true })).toHaveCount(0);
   await expect.poll(async () => (await request.get(`http://${haHost}:${port}/`).catch(() => null)) === null, { timeout: 10_000 }).toBe(true);
 });

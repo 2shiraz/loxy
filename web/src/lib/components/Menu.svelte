@@ -82,19 +82,21 @@
 <style>
   .menu-root { position: relative; display: inline-flex; }
   .menu {
-    position: fixed; z-index: 60; min-width: 188px; padding: 4px;
-    background: var(--surface-2); border-radius: 8px; box-shadow: var(--shadow-pop);
-    animation: m 140ms var(--ease-out); transform-origin: top right;
+    position: fixed; z-index: 60; min-width: 200px; padding: 5px;
+    background: var(--surface); border-radius: 10px; box-shadow: var(--shadow-pop);
+    animation: m 160ms var(--ease-out); transform-origin: top right;
   }
   .menu.left { transform-origin: top left; }
   .menu.up { transform: translateY(-100%); animation: none; }
   .menu button {
-    display: block; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-radius: 5px;
+    display: block; width: 100%; text-align: left; min-height: 34px; padding: 6px 10px; border: 0; border-radius: 6px;
     background: none; cursor: pointer; font-size: var(--fs-md); white-space: nowrap; color: var(--text);
   }
-  .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--surface-3); outline: none; }
+  .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--surface-2); outline: none; }
+  .menu button:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+  @media (max-width: 699px) { .menu button { min-height: 42px; font-size: var(--fs-lg); } }
   .menu button.danger { color: var(--err); }
   .menu button:disabled { color: var(--muted); cursor: not-allowed; }
-  .sep { height: 1px; background: var(--border-strong); margin: 4px 2px; }
+  .sep { height: 1px; background: var(--border); margin: 4px 2px; }
   @keyframes m { from { opacity: 0; transform: scale(0.97); } }
 </style>

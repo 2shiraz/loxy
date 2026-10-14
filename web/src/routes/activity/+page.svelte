@@ -3,7 +3,8 @@
   import { goto } from '$app/navigation';
   import { api, unwrap } from '$lib/api/client';
   import { resource } from '$lib/stores/resource.svelte';
-  import { dateTime, relTime } from '$lib/util/format';
+  import { EVENT_KINDS } from '$lib/stores/live.svelte';
+  import { dateTime, relTime, eventText } from '$lib/util/format';
   import Tabs from '$lib/components/Tabs.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
@@ -11,6 +12,9 @@
   import ErrorBox from '$lib/components/ErrorBox.svelte';
 
   const tab = $derived(page.url.searchParams.get('tab') ?? 'events');
+  const projectId = $derived(Number(page.url.searchParams.get('project_id')) || undefined);
+  const projects = resource(async () => (await unwrap(api.GET('/projects'))).projects, { keys: () => ['projects'] });
+  const projectName = (pid: number) => projects.data?.find((p) => p.id === pid)?.name ?? `Project #${pid}`;
   const tabs = [
     { id: 'events', label: 'Events', href: '/activity' },
     { id: 'audit', label: 'Audit log', href: '/activity?tab=audit' }
@@ -18,7 +22,7 @@
 
   let kindFilter = $state('');
   let sevFilter = $state('');
-  const events = resource(async () => (tab === 'events' ? (await unwrap(api.GET('/events/history', { params: { query: { limit: 200, kind: kindFilter || undefined } } }))).events : []), { deps: () => [tab, kindFilter], keys: () => ['events'] });
+  const events = resource(async () => (tab === 'events' ? (await unwrap(api.GET('/events/history', { params: { query: { limit: 200, kind: kindFilter || undefined, project_id: projectId } } }))).events : []), { deps: () => [tab, kindFilter, projectId], keys: () => ['events'] });
   const shownEvents = $derived((events.data ?? []).filter((e) => !sevFilter || e.severity === sevFilter));
   const audit = resource(async () => (tab === 'audit' ? (await unwrap(api.GET('/audit', { params: { query: { limit: 200 } } }))).audit : []), { deps: () => tab });
   function exportCsv() {
@@ -42,8 +46,11 @@
     <div class="row-wrap filt">
       <select class="select" style:width="220px" bind:value={kindFilter} aria-label="Filter by kind">
         <option value="">All kinds</option>
-        {#each ['config.updated', 'config.applied', 'config.rollback', 'apply.started', 'apply.succeeded', 'apply.failed', 'server.health.changed', 'certificate.updated', 'domain.status.changed', 'domain.sync.failed', 'notification.test'] as k (k)}<option>{k}</option>{/each}
+        {#each EVENT_KINDS as k (k)}<option>{k}</option>{/each}
       </select>
+      {#if projectId}
+        <span class="chip">{projectName(projectId)} <a href="/activity" aria-label="Show events of all projects" class="clr">×</a></span>
+      {/if}
       <select class="select" style:width="150px" bind:value={sevFilter} aria-label="Filter by severity">
         <option value="">All severities</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option>
       </select>
@@ -56,10 +63,9 @@
         {#each shownEvents as e (e.id)}
           <li>
             <span class="sev {e.severity}"><Icon name={sevIcon(e.severity)} size={13} label={e.severity} /></span>
-            <span class="msg">{e.message}</span>
+            <span class="msg" title={e.message}>{eventText(e.message)}</span>
             <span class="mono xs muted kind">{e.kind}</span>
-            {#if e.frontend_id}<a class="xs" href="/frontends/{e.frontend_id}">Frontend #{e.frontend_id}</a>{/if}
-            {#if e.backend_id}<a class="xs" href="/backends/{e.backend_id}">Backend #{e.backend_id}</a>{/if}
+            {#if e.project_id && !projectId}<a class="xs" href="/projects/{e.project_id}/overview">{projectName(e.project_id)}</a>{/if}
             <time class="xs muted" datetime={new Date(e.ts).toISOString()} title={dateTime(e.ts)}>{relTime(e.ts)}</time>
           </li>
         {/each}
@@ -97,4 +103,6 @@
   .sev.error { color: var(--err); }
   .kind { min-width: 160px; }
   time { min-width: 90px; text-align: right; }
+  .clr { text-decoration: none; margin-left: 4px; color: var(--muted); }
+  .clr:hover { color: var(--text); }
 </style>

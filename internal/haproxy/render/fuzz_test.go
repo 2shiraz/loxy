@@ -25,12 +25,12 @@ func FuzzUserValues(f *testing.F) {
 			return
 		}
 		mk := func(path, resp, domain, cookie, host, prefix string) Input {
-			be := &state.Backend{Backend: db.Backend{ID: 1, Mode: "http", Algorithm: "roundrobin", Port: 80, ProxyProtocol: "none", TimeoutServerS: 60,
+			be := &state.Backend{BackendCfg: state.BackendCfg{ID: 1, Mode: "http", Algorithm: "roundrobin", Port: 80, ProxyProtocol: "none", TimeoutServerS: 60,
 				StickyEnabled: 1, StickyCookieName: cookie, StickyCookieLifetimeS: 300, HcProtocol: "http", HcPort: 80, HcIntervalS: 15, HcTimeoutS: 10,
 				HcRetries: 3, HcPath: path, HcResponse: resp, HcDomain: domain}, StatusCodes: []string{code}}
-			be.Servers = []*state.Server{{BackendServer: db.BackendServer{ID: 1, Type: "ip", Ip: "10.0.0.1", Weight: 100, AdminState: "ready"},
+			be.Servers = []*state.Server{{Target: db.Target{ID: 1, Type: "ip", Ip: "10.0.0.1", Weight: 100, AdminState: "ready"},
 				Slots: []*state.Slot{{ID: 1, ServerID: 1, Address: "10.0.0.1"}}}}
-			fe := &state.Frontend{Frontend: db.Frontend{ID: 1, Mode: "http", TimeoutClientS: 60, ForwardedHeaders: 1, Enabled: 1,
+			fe := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 1, Mode: "http", TimeoutClientS: 60, ForwardedHeaders: 1, Enabled: 1,
 				DefaultBackendID: sql.NullInt64{Int64: 1, Valid: true}}, Binds: []state.Bind{{Address: "*", Port: 80}},
 				Routes: []state.Route{{Hosts: []string{host}, PathPrefix: prefix, BackendID: 1}}}
 			return Input{Root: "/l", Frontends: []*state.Frontend{fe}, Backends: []*state.Backend{be}}

@@ -11,10 +11,10 @@ import (
 	"github.com/2shiraz/loxy/internal/store/db"
 )
 
-// SeedDemo creates demo data (§17 `make seed`): hosts, an http backend pool fed by an IP
-// and a label selector, a tcp backend, an http + https frontend with a host route, a tcp
-// frontend and an uploaded certificate. serverIP is the address demo IP servers point to
-// (e.g. the dev whoami host).
+// SeedDemo creates demo data (§17 `make seed`): hosts, a "shop" project with an http service
+// on its own port, an https service with an uploaded certificate, IP and label-selector
+// targets and a demo domain, and a "db" tcp project. serverIP is the address demo IP targets
+// point to (e.g. the dev whoami host).
 func (a *App) SeedDemo(ctx context.Context, serverIP string) error {
 	now := time.Now().UnixMilli()
 	c, k, err := certs.SelfSigned("demo.loxy.test", []string{"demo.loxy.test"}, 90*24*time.Hour)
@@ -39,63 +39,54 @@ func (a *App) SeedDemo(ctx context.Context, serverIP string) error {
 		if err != nil {
 			return err
 		}
-		be := func(name, mode, alg string, port int64) (db.Backend, error) {
+		project := func(name, alg string) (db.Balancer, error) {
+			return q.CreateBalancer(ctx, db.CreateBalancerParams{Name: name, Algorithm: alg, Labels: `{"env":"demo"}`, CreatedAt: now, UpdatedAt: now})
+		}
+		service := func(b int64, proto string, listen, dest int64) (db.Service, error) {
 			hc := "http"
-			if mode == "tcp" {
+			if proto == "tcp" {
 				hc = "tcp"
 			}
-			return q.CreateBackend(ctx, db.CreateBackendParams{Name: name, Mode: mode, Algorithm: alg, Port: port, StickyCookieName: "LOXYSTICKY",
-				StickyCookieLifetimeS: 300, ProxyProtocol: "none", TimeoutServerS: 60, HcProtocol: hc, HcPort: port, HcIntervalS: 15, HcTimeoutS: 10,
-				HcRetries: 3, HcPath: "/", HcStatusCodes: `["2??","3??"]`, Labels: `{"env":"demo"}`, CreatedAt: now})
+			return q.CreateService(ctx, db.CreateServiceParams{BalancerID: b, Protocol: proto, ListenPort: listen, DestinationPort: dest, ProxyProtocol: "none",
+				TimeoutS: 60, StickyCookieName: "LOXYSTICKY", StickyCookieLifetimeS: 300, HcProtocol: hc, HcIntervalS: 15, HcTimeoutS: 10, HcRetries: 3,
+				HcPath: "/", HcStatusCodes: `["2??","3??"]`, CreatedAt: now})
 		}
-		srv := func(b int64, typ, ip, sel string) error {
-			_, err := q.CreateBackendServer(ctx, db.CreateBackendServerParams{BackendID: b, Type: typ, Ip: ip, LabelSelector: sel, Weight: 100, CreatedAt: now})
+		target := func(b int64, typ, ip, sel string) error {
+			_, err := q.CreateTarget(ctx, db.CreateTargetParams{BalancerID: b, Type: typ, Ip: ip, LabelSelector: sel, Weight: 100, CreatedAt: now})
 			return err
 		}
-		fe := func(name, mode string, tls int64, port int64, def int64) (db.Frontend, error) {
-			return q.CreateFrontend(ctx, db.CreateFrontendParams{Name: name, Mode: mode, Tls: tls, Binds: fmt.Sprintf(`[{"address":"*","port":%d}]`, port),
-				DefaultBackendID: sql.NullInt64{Int64: def, Valid: true}, TimeoutClientS: 60, Maxconn: 10000, ForwardedHeaders: b2i(mode == "http"),
-				Enabled: 1, Labels: `{"env":"demo"}`, CreatedAt: now, UpdatedAt: now})
-		}
-		web, err := be("demo-web", "http", "roundrobin", 9001)
+		shop, err := project("shop", "roundrobin")
 		if err != nil {
 			return err
 		}
-		if err := srv(web.ID, "ip", serverIP, ""); err != nil {
+		if _, err := service(shop.ID, "http", 20000, 9001); err != nil {
 			return err
 		}
-		if err := srv(web.ID, "label_selector", "", "role=web"); err != nil {
-			return err
-		}
-		apiBE, err := be("demo-api", "http", "leastconn", 9001)
+		tls, err := service(shop.ID, "https", 20001, 9001)
 		if err != nil {
 			return err
 		}
-		if err := srv(apiBE.ID, "ip", serverIP, ""); err != nil {
+		if err := q.AddServiceCertificate(ctx, db.AddServiceCertificateParams{ServiceID: tls.ID, CertificateID: cert.ID}); err != nil {
 			return err
 		}
-		tcp, err := be("demo-tcp", "tcp", "leastconn", 9002)
+		if err := target(shop.ID, "ip", serverIP, ""); err != nil {
+			return err
+		}
+		if err := target(shop.ID, "label_selector", "", "role=web"); err != nil {
+			return err
+		}
+		if _, err := q.CreateDomain(ctx, db.CreateDomainParams{Fqdn: "demo.loxy.test", BalancerID: sql.NullInt64{Int64: shop.ID, Valid: true}, Https: 0,
+			CreatedAt: now, UpdatedAt: now}); err != nil {
+			return err
+		}
+		dbp, err := project("db", "leastconn")
 		if err != nil {
 			return err
 		}
-		if err := srv(tcp.ID, "ip", serverIP, ""); err != nil {
+		if _, err := service(dbp.ID, "tcp", 20002, 9002); err != nil {
 			return err
 		}
-		h, err := fe("demo-http", "http", 0, 8080, web.ID)
-		if err != nil {
-			return err
-		}
-		if err := q.AddRoute(ctx, db.AddRouteParams{FrontendID: h.ID, Hosts: `["api.loxy.test"]`, BackendID: apiBE.ID}); err != nil {
-			return err
-		}
-		hs, err := fe("demo-https", "http", 1, 8444, web.ID)
-		if err != nil {
-			return err
-		}
-		if err := q.AddFrontendCertificate(ctx, db.AddFrontendCertificateParams{FrontendID: hs.ID, CertificateID: cert.ID}); err != nil {
-			return err
-		}
-		if _, err := fe("demo-tcp", "tcp", 0, 7443, tcp.ID); err != nil {
+		if err := target(dbp.ID, "ip", serverIP, ""); err != nil {
 			return err
 		}
 		if err := state.SyncSlots(ctx, q); err != nil {
@@ -104,11 +95,4 @@ func (a *App) SeedDemo(ctx context.Context, serverIP string) error {
 		_, err = q.BumpDesiredVersion(ctx, 1)
 		return err
 	})
-}
-
-func b2i(b bool) int64 {
-	if b {
-		return 1
-	}
-	return 0
 }

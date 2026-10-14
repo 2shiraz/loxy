@@ -17,8 +17,11 @@
   .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 100; display: flex; flex-direction: column; gap: 8px; width: min(380px, calc(100vw - 32px)); }
   .toast {
     display: flex; align-items: flex-start; gap: 10px; padding: 10px 8px 10px 12px;
-    background: var(--surface-2); border-radius: var(--radius); box-shadow: var(--shadow-pop);
-    font-size: var(--fs-md); animation: in 200ms var(--ease-out);
+    background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow-pop);
+    font-size: var(--fs-md); animation: in 220ms var(--ease-out);
+  }
+  @media (max-width: 699px) {
+    .toasts { left: 12px; right: 12px; width: auto; bottom: calc(var(--bottombar-h) + 12px + env(safe-area-inset-bottom)); }
   }
   .toast :global(.icon) { margin-top: 2px; }
   .toast.success :global(.icon:first-child) { color: var(--ok); }

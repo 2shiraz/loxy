@@ -1,6 +1,8 @@
 # ADR 0005 — From cloud-LB clone to HAProxy management panel
 
-Status: accepted · 2026-10-14
+> **Superseded by [ADR 0006](0006-projects.md)** (projects with targets, services and domains). Kept for history; frontends/backends are no longer user objects.
+
+Status: superseded · 2026-10-14
 
 ## Context
 Phase 0/1 modelled Loxy on a cloud load-balancer console: "load balancer"

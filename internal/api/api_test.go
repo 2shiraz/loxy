@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,7 +84,7 @@ func fields(b map[string]any) map[string]bool {
 
 func TestAuthAndCSRF(t *testing.T) {
 	c, _ := setup(t)
-	if st, _ := c.req("GET", "/frontends", nil); st != 401 {
+	if st, _ := c.req("GET", "/projects", nil); st != 401 {
 		t.Fatalf("unauthenticated: %d", st)
 	}
 	if st, _ := c.req("POST", "/auth/login", map[string]any{"email": "admin@loxy.local", "password": "wrong"}); st != 401 {
@@ -91,7 +93,7 @@ func TestAuthAndCSRF(t *testing.T) {
 	login(c)
 	csrf := c.csrf
 	c.csrf = ""
-	if st, _ := c.req("POST", "/backends", map[string]any{"name": "x", "mode": "http", "port": 80}); st != 403 {
+	if st, _ := c.req("POST", "/projects", map[string]any{"name": "x"}); st != 403 {
 		t.Fatalf("missing csrf: %d", st)
 	}
 	c.csrf = csrf
@@ -106,127 +108,139 @@ func TestAuthAndCSRF(t *testing.T) {
 	v := &tc{t: t, srv: c.srv, hc: &http.Client{Jar: jar}}
 	_, b := v.req("POST", "/auth/login", map[string]any{"email": "v@x.io", "password": "viewer-password-1"})
 	v.csrf = b["csrf_token"].(string)
-	if st, _ := v.req("POST", "/backends", map[string]any{"name": "x", "mode": "http", "port": 80}); st != 403 {
+	if st, _ := v.req("POST", "/projects", map[string]any{"name": "x"}); st != 403 {
 		t.Fatalf("viewer mutate: %d", st)
 	}
-	if st, _ := v.req("GET", "/frontends", nil); st != 200 {
+	if st, _ := v.req("GET", "/projects", nil); st != 200 {
 		t.Fatalf("viewer read: %d", st)
 	}
 }
 
-// mkBackend creates an http backend with the given IP servers and returns its id.
-func mkBackend(c *tc, name string, ips ...string) float64 {
+// mkProject creates a project (own auto port, http → destination 8080) with IP targets.
+func mkProject(c *tc, name string, ips ...string) (float64, map[string]any) {
 	c.t.Helper()
-	st, b := c.req("POST", "/backends", map[string]any{"name": name, "mode": "http", "port": 8080})
+	var targets []any
+	for _, ip := range ips {
+		targets = append(targets, map[string]any{"type": "ip", "ip": ip})
+	}
+	body := map[string]any{"name": name, "service": map[string]any{"protocol": "http", "destination_port": 8080}}
+	if len(targets) > 0 {
+		body["targets"] = targets
+	}
+	st, b := c.req("POST", "/projects", body)
 	if st != 201 {
-		c.t.Fatalf("backend %s: %d %v", name, st, b)
+		c.t.Fatalf("project %s: %d %v", name, st, b)
 	}
-	id := b["backend"].(map[string]any)["id"].(float64)
-	if len(ips) > 0 {
-		var srv []any
-		for _, ip := range ips {
-			srv = append(srv, map[string]any{"type": "ip", "ip": ip})
-		}
-		if st, b = c.req("POST", fmt.Sprintf("/backends/%v/servers", id), map[string]any{"servers": srv}); st != 201 {
-			c.t.Fatalf("servers: %d %v", st, b)
-		}
-	}
-	return id
+	p := b["project"].(map[string]any)
+	return p["id"].(float64), p
 }
 
-func TestFrontendBackendLifecycle(t *testing.T) {
+func TestProjectLifecycle(t *testing.T) {
 	c, a := setup(t)
 	login(c)
-	web := mkBackend(c, "web", "10.0.0.5", "10.0.0.6")
-	api := mkBackend(c, "api", "10.0.0.7")
-	// backend validation (§8.4): timeout ≥ interval, bad path, sticky on tcp
-	st, b := c.req("POST", "/backends", map[string]any{"name": "bad", "mode": "tcp", "port": 1, "sticky_sessions": true,
+	id, p := mkProject(c, "shop", "10.0.0.5", "10.0.0.6")
+	// a new project gets its own free port (20000+) and shows it as an endpoint
+	eps := p["endpoints"].([]any)
+	if len(eps) != 1 || !strings.Contains(eps[0].(map[string]any)["url"].(string), ":20000") {
+		t.Fatalf("endpoints %v", eps)
+	}
+	if cnt := p["counts"].(map[string]any); cnt["targets"].(float64) != 2 || cnt["services"].(float64) != 1 {
+		t.Fatalf("counts %v", cnt)
+	}
+	// the second project gets the next port
+	_, p2 := mkProject(c, "api")
+	if u := p2["endpoints"].([]any)[0].(map[string]any)["url"].(string); !strings.Contains(u, ":20001") {
+		t.Fatalf("second auto port: %s", u)
+	}
+	// duplicate name
+	if st, b := c.req("POST", "/projects", map[string]any{"name": "SHOP"}); st != 422 || !fields(b)["name"] {
+		t.Fatalf("duplicate name: %d %v", st, b)
+	}
+	// service validation (§8.5): reserved/taken ports, sticky on tcp, timeout ≥ interval, bad path, https without cert
+	svc := fmt.Sprintf("/projects/%v/services", id)
+	st, b := c.req("POST", svc, map[string]any{"protocol": "tcp", "listen_port": 20001, "destination_port": 1, "sticky_sessions": true,
 		"health_check": map[string]any{"protocol": "http", "interval_s": 5, "timeout_s": 5, "http": map[string]any{"path": "no-slash"}}})
 	f := fields(b)
-	for _, want := range []string{"sticky_sessions", "health_check.timeout_s", "health_check.http.path"} {
+	for _, want := range []string{"listen_port", "sticky_sessions", "health_check.timeout_s", "health_check.http.path"} {
 		if !f[want] {
 			t.Errorf("expected field error %s, got %v (%d)", want, f, st)
 		}
 	}
-	// servers: multicast rejected; label selectors resolve against the host inventory
-	if st, b = c.req("POST", fmt.Sprintf("/backends/%v/servers", web), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": "224.0.0.1"}}}); st != 422 {
-		t.Fatalf("multicast server: %d %v", st, b)
+	for _, port := range []int{80, 443, 8443} {
+		if st, b = c.req("POST", svc, map[string]any{"protocol": "http", "listen_port": port, "destination_port": 80}); st != 422 || !fields(b)["listen_port"] {
+			t.Fatalf("reserved port %d: %d %v", port, st, b)
+		}
+	}
+	if st, b = c.req("POST", svc, map[string]any{"protocol": "https", "destination_port": 8080}); st != 422 || !fields(b)["certificates"] {
+		t.Fatalf("https without cert: %d %v", st, b)
+	}
+	st, b = c.req("POST", svc, map[string]any{"protocol": "tcp", "listen_port": 15432, "destination_port": 5432})
+	if st != 201 {
+		t.Fatalf("tcp service: %d %v", st, b)
+	}
+	tcpID := b["service"].(map[string]any)["id"].(float64)
+	// targets: multicast rejected, ip:port accepted, label selectors resolve against hosts
+	tg := fmt.Sprintf("/projects/%v/targets", id)
+	if st, b = c.req("POST", tg, map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": "224.0.0.1"}}}); st != 422 {
+		t.Fatalf("multicast target: %d %v", st, b)
+	}
+	if st, b = c.req("POST", tg, map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": "10.0.0.7:9000"}}}); st != 201 ||
+		b["targets"].([]any)[0].(map[string]any)["port"].(float64) != 9000 {
+		t.Fatalf("ip:port target: %d %v", st, b)
 	}
 	if st, b = c.req("POST", "/hosts", map[string]any{"name": "h1", "ipv4": "10.2.0.1", "labels": map[string]string{"role": "web"}}); st != 201 {
 		t.Fatalf("host %d %v", st, b)
 	}
-	st, b = c.req("POST", fmt.Sprintf("/backends/%v/servers", web), map[string]any{"servers": []any{map[string]any{"type": "label_selector", "label_selector": "role=web"}}})
-	if st != 201 || len(b["servers"].([]any)[0].(map[string]any)["resolved"].([]any)) != 1 {
+	st, b = c.req("POST", tg, map[string]any{"targets": []any{map[string]any{"type": "label_selector", "label_selector": "role=web"}}})
+	if st != 201 || len(b["targets"].([]any)[0].(map[string]any)["resolved"].([]any)) != 1 {
 		t.Fatalf("selector: %d %v", st, b)
 	}
-	// frontend validation (§8.2): tls without cert, panel port, routes need a backend of the same mode
-	tcpBE := 0.0
-	if st, b = c.req("POST", "/backends", map[string]any{"name": "pg", "mode": "tcp", "port": 5432}); st == 201 {
-		tcpBE = b["backend"].(map[string]any)["id"].(float64)
+	// every resolved target carries one check per service
+	_, b = c.req("GET", tg, nil)
+	r0 := b["targets"].([]any)[0].(map[string]any)["resolved"].([]any)[0].(map[string]any)
+	if len(r0["checks"].([]any)) != 2 {
+		t.Fatalf("checks per service: %v", r0)
 	}
-	st, b = c.req("POST", "/frontends", map[string]any{"name": "x", "mode": "http", "tls": true, "binds": []any{map[string]any{"address": "*", "port": 8443}},
-		"default_backend_id": tcpBE})
-	f = fields(b)
-	for _, want := range []string{"certificates", "binds[0].port", "default_backend_id"} {
-		if !f[want] {
-			t.Errorf("expected field error %s, got %v (%d)", want, f, st)
-		}
+	// maintenance + rename
+	if st, b = c.req("PATCH", fmt.Sprintf("/projects/%v", id), map[string]any{"maintenance": true, "name": "shop-2"}); st != 200 ||
+		b["project"].(map[string]any)["maintenance"] != true || b["project"].(map[string]any)["name"] != "shop-2" {
+		t.Fatalf("patch: %d %v", st, b)
 	}
-	st, b = c.req("POST", "/frontends", map[string]any{"name": "edge", "mode": "http", "labels": map[string]string{"env": "prod"},
-		"binds": []any{map[string]any{"address": "*", "port": 80}}, "default_backend_id": web,
-		"routes": []any{map[string]any{"hosts": []string{"api.example.com"}, "path_prefix": "/v1", "backend_id": api}}})
-	if st != 201 {
-		t.Fatalf("create frontend %d %v", st, b)
-	}
-	fe := b["frontend"].(map[string]any)
-	id := fe["id"].(float64)
-	if len(fe["routes"].([]any)) != 1 {
-		t.Fatalf("routes %v", fe["routes"])
-	}
-	// a second frontend on the same port collides
-	if st, b = c.req("POST", "/frontends", map[string]any{"name": "dup", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 80}}, "default_backend_id": web}); st != 422 || !fields(b)["binds"] {
-		t.Fatalf("bind collision: %d %v", st, b)
-	}
-	// a backend in use cannot be deleted
-	if st, _ = c.req("DELETE", fmt.Sprintf("/backends/%v", api), nil); st != 409 {
-		t.Fatalf("delete in-use backend: %d", st)
-	}
-	// maintenance toggle
-	if st, b = c.req("PATCH", fmt.Sprintf("/frontends/%v", id), map[string]any{"maintenance": true}); st != 200 || b["frontend"].(map[string]any)["maintenance"] != true {
-		t.Fatalf("maintenance: %d %v", st, b)
-	}
-	// config endpoint renders this frontend's sections only
-	r, _ := c.hc.Get(c.srv.URL + fmt.Sprintf("/api/v1/frontends/%v/config", id))
+	// config shows the project's services only
+	r, _ := c.hc.Get(c.srv.URL + fmt.Sprintf("/api/v1/projects/%v/config", id))
 	cfgText, _ := io.ReadAll(r.Body)
 	r.Body.Close()
-	for _, want := range []string{fmt.Sprintf("frontend fe_%v", id), fmt.Sprintf("use_backend be_%v", api), fmt.Sprintf("default_backend be_%v", web)} {
+	for _, want := range []string{"frontend fe_1 ", "bind 0.0.0.0:20000", fmt.Sprintf("frontend fe_%v from loxy_tcp", tcpID), "backend be_1 "} {
 		if !bytes.Contains(cfgText, []byte(want)) {
 			t.Fatalf("config missing %q:\n%s", want, cfgText)
 		}
 	}
-	if bytes.Contains(cfgText, []byte("sys_panel")) {
-		t.Fatalf("config leaks system sections:\n%s", cfgText)
+	if bytes.Contains(cfgText, []byte("sys_panel")) || bytes.Contains(cfgText, []byte("fe_2 ")) {
+		t.Fatalf("config leaks other sections:\n%s", cfgText)
 	}
-	// backend status lists resolved servers (2 IPs + 1 host)
-	if st, b = c.req("GET", fmt.Sprintf("/backends/%v/status", web), nil); st != 200 || len(b["servers"].([]any)) != 3 {
-		t.Fatalf("status %d %v", st, b)
+	// metrics per project and per service
+	if st, b = c.req("GET", fmt.Sprintf("/projects/%v/metrics?type=requests_per_second", id), nil); st != 200 || b["series"] == nil {
+		t.Fatalf("metrics %d %v", st, b)
+	}
+	if st, _ = c.req("GET", fmt.Sprintf("/projects/%v/metrics?service_id=999", id), nil); st != 422 {
+		t.Fatalf("foreign service metrics: %d", st)
 	}
 	if st, b = c.req("GET", "/audit", nil); st != 200 || len(b["audit"].([]any)) < 5 {
 		t.Fatalf("audit %d %v", st, b)
 	}
-	if st, _ = c.req("DELETE", fmt.Sprintf("/frontends/%v", id), nil); st != 204 {
+	if st, _ = c.req("DELETE", fmt.Sprintf("/projects/%v/services/%v", id, tcpID), nil); st != 204 {
+		t.Fatalf("delete service: %d", st)
+	}
+	if st, _ = c.req("DELETE", fmt.Sprintf("/projects/%v", id), nil); st != 204 {
 		t.Fatalf("delete: %d", st)
 	}
-	if a.Snap.Get().Frontend(int64(id)) != nil {
+	if a.Snap.Get().Project(int64(id)) != nil || a.Snap.Get().Frontend(1) != nil {
 		t.Fatal("still in snapshot")
-	}
-	if st, _ = c.req("DELETE", fmt.Sprintf("/backends/%v", api), nil); st != 204 {
-		t.Fatalf("delete freed backend: %d", st)
 	}
 }
 
 func TestCertificatesAndDomains(t *testing.T) {
-	c, _ := setup(t)
+	c, a := setup(t)
 	login(c)
 	crt, key, _ := certs.SelfSigned("app.example.com", []string{"app.example.com"}, 48*time.Hour)
 	st, b := c.req("POST", "/certificates", map[string]any{"name": "app", "type": "uploaded", "certificate": crt, "private_key": key})
@@ -241,35 +255,68 @@ func TestCertificatesAndDomains(t *testing.T) {
 	if st, b = c.req("POST", "/certificates", map[string]any{"name": "w", "type": "managed", "domains": []string{"*.example.com"}, "challenge": "http01"}); st != 422 {
 		t.Fatalf("wildcard http01: %d %v", st, b)
 	}
-	be := mkBackend(c, "app", "10.0.0.5")
-	st, b = c.req("POST", "/frontends", map[string]any{"name": "tls", "mode": "http", "tls": true, "http_redirect": true, "certificates": []float64{certID},
-		"binds": []any{map[string]any{"address": "*", "port": 443}}, "default_backend_id": be})
-	if st != 201 {
-		t.Fatalf("tls frontend %d %v", st, b)
+	id, _ := mkProject(c, "web", "10.0.0.5")
+	st, b = c.req("POST", fmt.Sprintf("/projects/%v/services", id), map[string]any{"protocol": "https", "destination_port": 8080, "certificates": []float64{certID, certID}})
+	if st != 422 || !fields(b)["certificates"] {
+		t.Fatalf("duplicate certs: %d %v", st, b)
 	}
-	feID := b["frontend"].(map[string]any)["id"].(float64)
-	// the redirect occupies :80
-	if st, b = c.req("POST", "/frontends", map[string]any{"name": "plain", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 80}}, "default_backend_id": be}); st != 422 {
-		t.Fatalf(":80 collision: %d %v", st, b)
+	if st, b = c.req("POST", fmt.Sprintf("/projects/%v/services", id), map[string]any{"protocol": "https", "destination_port": 8080, "certificates": []float64{certID}}); st != 201 {
+		t.Fatalf("https service %d %v", st, b)
 	}
 	// cert in use cannot be deleted
 	if st, _ = c.req("DELETE", fmt.Sprintf("/certificates/%v", certID), nil); st != 409 {
 		t.Fatalf("delete in-use cert: %d", st)
 	}
-	// domains
-	st, b = c.req("POST", "/domains", map[string]any{"fqdn": "app.invalid", "frontend_id": feID})
+	// domains attach to a project; required records = the server's addresses
+	c.req("POST", "/nodes/1/ips", map[string]any{"address": "192.0.2.10"})
+	c.req("POST", "/nodes/1/ips", map[string]any{"address": "2001:db8::10"})
+	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "app.invalid"}); st != 422 || !fields(b)["project_id"] {
+		t.Fatalf("domain without project: %d %v", st, b)
+	}
+	st, b = c.req("POST", "/domains", map[string]any{"fqdn": "app.invalid", "project_id": id})
 	if st != 201 {
 		t.Fatalf("domain %d %v", st, b)
 	}
 	d := b["domain"].(map[string]any)
-	if d["status"] == "ok" {
-		t.Fatalf("unexpected ok: %v", d)
+	if d["status"] == "ok" || d["https"] != true || d["url"] != "http://app.invalid" || d["service_id"] == nil {
+		t.Fatalf("unexpected domain view: %v", d)
+	}
+	types := map[string]any{}
+	for _, r := range d["required_records"].([]any) {
+		types[r.(map[string]any)["type"].(string)] = r.(map[string]any)["value"]
+	}
+	if types["A"] != "192.0.2.10" || types["AAAA"] != "2001:db8::10" {
+		t.Fatalf("required records %v", types)
+	}
+	// not resolving → no automatic certificate, manual issue refused
+	if d["certificate_id"] != nil {
+		t.Fatalf("certificate issued for an unresolved domain: %v", d)
 	}
 	if st, b = c.req("POST", fmt.Sprintf("/domains/%v/actions/issue_certificate", d["id"]), nil); st != 422 {
 		t.Fatalf("issue before verified: %d %v", st, b)
 	}
-	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "*.example.com", "frontend_id": feID}); st != 422 {
+	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "*.example.com", "project_id": id}); st != 422 {
 		t.Fatalf("wildcard without provider: %d %v", st, b)
+	}
+	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "app.invalid", "project_id": id}); st != 422 || !fields(b)["fqdn"] {
+		t.Fatalf("duplicate domain: %d %v", st, b)
+	}
+	// the domain is routed on the shared :80 frontend to the project's first http service
+	out, err := a.Rec.RenderLive(context.Background())
+	if err != nil || !strings.Contains(out.Config(), "frontend sys_http") || !strings.Contains(out.Config(), "use_backend be_1 if { req.hdr(host),field(1,:),lower -m str app.invalid }") {
+		t.Fatalf("domain routing: %v\n%s", err, out.Config())
+	}
+	// the last http/https service cannot go while domains need it
+	_, b = c.req("GET", fmt.Sprintf("/projects/%v/services", id), nil)
+	for _, sv := range b["services"].([]any) {
+		sid := sv.(map[string]any)["id"].(float64)
+		st, _ := c.req("DELETE", fmt.Sprintf("/projects/%v/services/%v", id, sid), nil)
+		if sid == 1 && st != 204 {
+			t.Fatalf("delete first web service while another exists: %d", st)
+		}
+		if sid != 1 && st != 409 {
+			t.Fatalf("delete last web service with domains: %d", st)
+		}
 	}
 	if st, b = c.req("POST", "/dns_providers", map[string]any{"name": "x", "kind": "nope", "credentials": map[string]string{}}); st != 422 {
 		t.Fatalf("bad provider kind: %d %v", st, b)
@@ -302,20 +349,20 @@ func TestAPITokens(t *testing.T) {
 		resp.Body.Close()
 		return resp.StatusCode
 	}
-	if s := call("POST", "/backends", tok, map[string]any{"name": "via-token", "mode": "http", "port": 80}); s != 201 {
-		t.Fatalf("operator token create backend: %d", s)
+	if s := call("POST", "/projects", tok, map[string]any{"name": "via-token"}); s != 201 {
+		t.Fatalf("operator token create project: %d", s)
 	}
 	if s := call("POST", "/users", tok, map[string]any{"email": "a@b.c", "password": "xxxxxxxxxxxxxx", "role": "viewer"}); s != 403 {
 		t.Fatalf("operator token admin action: %d", s)
 	}
-	if s := call("GET", "/frontends", tok+"x", nil); s != 401 {
+	if s := call("GET", "/projects", tok+"x", nil); s != 401 {
 		t.Fatalf("bad token: %d", s)
 	}
 	id := b["api_token"].(map[string]any)["id"].(float64)
 	if st, _ := c.req("DELETE", fmt.Sprintf("/api_tokens/%v", id), nil); st != 204 {
 		t.Fatal("revoke")
 	}
-	if s := call("GET", "/frontends", tok, nil); s != 401 {
+	if s := call("GET", "/projects", tok, nil); s != 401 {
 		t.Fatalf("revoked token: %d", s)
 	}
 }
@@ -347,7 +394,7 @@ func TestTOTP(t *testing.T) {
 	_ = a
 }
 
-// Review findings #3, #4, #5, #8.
+// Review findings #3, #5, #8.
 func TestReviewRegressions(t *testing.T) {
 	c, _ := setup(t)
 	login(c)
@@ -355,28 +402,9 @@ func TestReviewRegressions(t *testing.T) {
 	if st, b := c.req("POST", "/nodes/1/ips", map[string]any{"address": "2001:db8::1%x\n    http-request deny"}); st != 422 {
 		t.Fatalf("zone accepted: %d %v", st, b)
 	}
-	// #4: a wildcard frontend on a dual-stack node needs both A and AAAA records.
-	c.req("POST", "/nodes/1/ips", map[string]any{"address": "192.0.2.10"})
-	c.req("POST", "/nodes/1/ips", map[string]any{"address": "2001:db8::10"})
-	be := mkBackend(c, "dual")
-	st, b := c.req("POST", "/frontends", map[string]any{"name": "dual", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 80}}, "default_backend_id": be})
-	if st != 201 {
-		t.Fatalf("dual-stack create: %d %v", st, b)
-	}
-	id := b["frontend"].(map[string]any)["id"].(float64)
-	st, b = c.req("POST", "/domains", map[string]any{"fqdn": "dual.invalid", "frontend_id": id})
-	if st != 201 {
-		t.Fatalf("domain %d %v", st, b)
-	}
-	types := map[string]any{}
-	for _, r := range b["domain"].(map[string]any)["required_records"].([]any) {
-		types[r.(map[string]any)["type"].(string)] = r.(map[string]any)["value"]
-	}
-	if types["A"] != "192.0.2.10" || types["AAAA"] != "2001:db8::10" {
-		t.Fatalf("required records %v", types)
-	}
+	id, _ := mkProject(c, "m")
 	// #3: absurd metric ranges are clamped instead of exhausting memory.
-	st, b = c.req("GET", fmt.Sprintf("/frontends/%v/metrics?start=1&end=9000000000000000000&type=open_connections,bogus", id), nil)
+	st, b := c.req("GET", fmt.Sprintf("/projects/%v/metrics?start=1&end=9000000000000000000&type=open_connections,bogus", id), nil)
 	if st != 200 || len(b["timestamps"].([]any)) > 2100 || len(b["series"].(map[string]any)) != 1 {
 		t.Fatalf("metrics clamp: %d points=%d series=%v", st, len(b["timestamps"].([]any)), b["series"] != nil)
 	}
@@ -401,51 +429,14 @@ func TestReviewRegressions(t *testing.T) {
 	}
 }
 
-// Review round 2: listener collisions via enable/domains, duplicate certs, health-check defaults.
-func TestFrontendBackendRegressions(t *testing.T) {
-	c, _ := setup(t)
+// live.tick carries per-project status, health and traffic for real-time pages.
+func TestLiveSnapshot(t *testing.T) {
+	c, a := setup(t)
 	login(c)
-	be := mkBackend(c, "pool")
-	// http backends default to http checks; an explicit check port equal to the backend port is kept.
-	st, b := c.req("POST", "/backends", map[string]any{"name": "hc", "mode": "http", "port": 80, "health_check": map[string]any{"port": 80}})
-	if st != 201 {
-		t.Fatalf("backend %d %v", st, b)
-	}
-	hc := b["backend"].(map[string]any)["health_check"].(map[string]any)
-	if hc["protocol"] != "http" || hc["port"] != float64(80) {
-		t.Fatalf("health check %v", hc)
-	}
-	if st, b = c.req("POST", "/backends", map[string]any{"name": "fast", "mode": "http", "port": 80, "health_check": map[string]any{"interval_s": 2, "timeout_s": 1}}); st != 422 || !fields(b)["health_check.interval_s"] {
-		t.Fatalf("interval < 3 accepted: %d %v", st, b)
-	}
-	// duplicate certificate ids are a field error, not a 500.
-	crt, key, _ := certs.SelfSigned("d.example.com", []string{"d.example.com"}, 48*time.Hour)
-	_, b = c.req("POST", "/certificates", map[string]any{"name": "d", "type": "uploaded", "certificate": crt, "private_key": key})
-	cid := b["certificate"].(map[string]any)["id"].(float64)
-	if st, b = c.req("POST", "/frontends", map[string]any{"name": "dup", "mode": "http", "tls": true, "certificates": []float64{cid, cid},
-		"binds": []any{map[string]any{"address": "*", "port": 443}}, "default_backend_id": be}); st != 422 || !fields(b)["certificates"] {
-		t.Fatalf("duplicate certs: %d %v", st, b)
-	}
-	// a disabled frontend on a taken port cannot be enabled.
-	mk := func(name string, port int, extra map[string]any) float64 {
-		body := map[string]any{"name": name, "mode": "http", "binds": []any{map[string]any{"address": "*", "port": port}}, "default_backend_id": be}
-		for k, v := range extra {
-			body[k] = v
-		}
-		st, b := c.req("POST", "/frontends", body)
-		if st != 201 {
-			t.Fatalf("frontend %s: %d %v", name, st, b)
-		}
-		return b["frontend"].(map[string]any)["id"].(float64)
-	}
-	mk("a", 80, nil)
-	off := mk("b", 80, map[string]any{"enabled": false})
-	if st, b = c.req("PATCH", fmt.Sprintf("/frontends/%v", off), map[string]any{"enabled": true}); st != 422 || !fields(b)["enabled"] {
-		t.Fatalf("enable onto taken port: %d %v", st, b)
-	}
-	// attaching a domain adds a :80 ACME listener, which collides with frontend a.
-	tcp := mk("c", 8081, nil)
-	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "c.invalid", "frontend_id": tcp}); st != 422 || !fields(b)["frontend_id"] {
-		t.Fatalf("domain ACME :80 collision: %d %v", st, b)
+	id, _ := mkProject(c, "live", "10.0.0.5")
+	snap := a.API.LiveSnapshotForTest()
+	ps := snap["projects"].([]map[string]any)
+	if len(ps) != 1 || ps[0]["id"].(int64) != int64(id) || ps[0]["health_sig"] == "" || snap["traffic"] == nil {
+		t.Fatalf("live snapshot %v", snap)
 	}
 }

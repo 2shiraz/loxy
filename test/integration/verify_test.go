@@ -38,17 +38,17 @@ frontend fake_200_str from loxy_http
 `
 
 func ipServer(id int64, ip string) *state.Server {
-	return &state.Server{BackendServer: db.BackendServer{ID: id, Type: "ip", Ip: ip, Weight: 100, AdminState: "ready"},
+	return &state.Server{Target: db.Target{ID: id, Type: "ip", Ip: ip, Weight: 100, AdminState: "ready"},
 		Slots: []*state.Slot{{ID: id, ServerID: id, Address: ip}}}
 }
 
 // backend returns a backend on `port` (tcp health checks, 1 s interval) with the given servers.
 func backend(id int64, mode string, port int64, servers ...*state.Server) *state.Backend {
-	b := &state.Backend{Backend: db.Backend{ID: id, Name: fmt.Sprintf("b%d", id), Mode: mode, Algorithm: "roundrobin", Port: port, ProxyProtocol: "none",
+	b := &state.Backend{BackendCfg: state.BackendCfg{ID: id, Name: fmt.Sprintf("b%d", id), Mode: mode, Algorithm: "roundrobin", Port: port, ProxyProtocol: "none",
 		TimeoutServerS: 60, HcProtocol: "tcp", HcPort: port, HcIntervalS: 1, HcTimeoutS: 1, HcRetries: 1, HcPath: "/",
 		StickyCookieName: "LOXYSTICKY", StickyCookieLifetimeS: 300}, StatusCodes: []string{"2??", "3??"}}
 	for _, sv := range servers {
-		sv.BackendID = id
+		sv.BalancerID = id
 		b.Servers = append(b.Servers, sv)
 	}
 	return b
@@ -56,7 +56,7 @@ func backend(id int64, mode string, port int64, servers ...*state.Server) *state
 
 // frontend returns an enabled frontend on *:port whose default backend is beID.
 func frontend(id int64, mode string, port int64, beID int64) *state.Frontend {
-	return &state.Frontend{Frontend: db.Frontend{ID: id, Name: fmt.Sprintf("f%d", id), Mode: mode, TimeoutClientS: 60, Maxconn: 1000, Enabled: 1,
+	return &state.Frontend{FrontendCfg: state.FrontendCfg{ID: id, Name: fmt.Sprintf("f%d", id), Mode: mode, TimeoutClientS: 60, Maxconn: 1000, Enabled: 1,
 		DefaultBackendID: sql.NullInt64{Int64: beID, Valid: beID != 0}}, Binds: []state.Bind{{Address: "*", Port: port}}}
 }
 
@@ -149,7 +149,7 @@ func TestDynamicServers(t *testing.T) {
 	e := startHAProxy(t, input([]*state.Frontend{frontend(1, "http", 8080, 1)}, b), fakes)
 	ctx := context.Background()
 	sv := ipServer(7, "127.0.0.3")
-	sv.BackendID = 1
+	sv.BalancerID = 1
 	be := render.BackendName(1)
 	name := render.ServerName(sv, sv.Slots[0])
 	for _, cmd := range []string{
@@ -191,8 +191,8 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 	plainBE := backend(2, "http", 19000, ipServer(2, "127.0.0.3"))
 	tlsFE := frontend(1, "http", 8443+1, 1)
 	tlsFE.Tls, tlsFE.CertIDs = 1, []int64{5}
-	in := input([]*state.Frontend{tlsFE, frontend(2, "http", 80, 2)}, tlsBE, plainBE)
-	in.ACMEHTTP01 = map[int64]bool{2: true}
+	in := input([]*state.Frontend{tlsFE, frontend(2, "http", 8080, 2)}, tlsBE, plainBE)
+	in.Domains = []render.DomainRoute{{Host: "shop.test", BackendID: 2}}
 	in.Cert = func(id int64) *state.Cert {
 		if id == 5 {
 			return cert
@@ -226,17 +226,29 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 			t.Fatalf("%s: %v", st.cmd, err)
 		}
 	}
-	// Maintenance map: opt@ prefix is not part of the name.
+	get := func(port int, host string) int {
+		t.Helper()
+		req, _ := http.NewRequest("GET", fmt.Sprintf("http://%s:%d/", e.ip, port), nil)
+		req.Host = host
+		r, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		return r.StatusCode
+	}
+	// Domains on the shared sys_http: known host is routed, unknown host gets 404.
+	waitFor(t, 10*time.Second, "domain routed", func() bool { return get(80, "shop.test") == 200 })
+	if c := get(80, "other.test"); c != 404 {
+		t.Fatalf("unknown host: %d", c)
+	}
+	// Maintenance map (opt@ prefix is not part of the name) applies to the service port
+	// (frontend rule) and to domain traffic (backend rule).
 	if err := e.rt.Run(ctx, "add map "+render.MaintMapPath(live)+" 2 1"); err != nil {
 		t.Fatal(err)
 	}
-	r, err := http.Get(fmt.Sprintf("http://%s:80/", e.ip))
-	if err != nil {
-		t.Fatal(err)
-	}
-	r.Body.Close()
-	if r.StatusCode != 503 {
-		t.Fatalf("maintenance not active: %d", r.StatusCode)
+	if a, b := get(8080, "x"), get(80, "shop.test"); a != 503 || b != 503 {
+		t.Fatalf("maintenance not active: port %d, domain %d", a, b)
 	}
 	if err := e.rt.Run(ctx, "del map "+render.MaintMapPath(live)+" 2"); err != nil {
 		t.Fatal(err)
@@ -245,7 +257,7 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 	if err := e.rt.Run(ctx, "add map virt@acme_http01 tok123 tok123.keyauth"); err != nil {
 		t.Fatal(err)
 	}
-	r, err = http.Get(fmt.Sprintf("http://%s:80/.well-known/acme-challenge/tok123", e.ip))
+	r, err := http.Get(fmt.Sprintf("http://%s:80/.well-known/acme-challenge/tok123", e.ip))
 	if err != nil {
 		t.Fatal(err)
 	}

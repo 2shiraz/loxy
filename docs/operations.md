@@ -23,6 +23,14 @@ docker compose pull loxy && docker compose up -d loxy
 HAProxy keeps serving; no traffic impact. DB migrations run at start after an
 automatic pre-migration backup in `data/loxy/backups/`.
 
+Upgrading from the frontend/backend version runs migration `0002_projects`
+(ADR 0006): frontend and backend definitions are dropped and the 1-minute
+metrics are cleared, so recreate them as projects (services + targets); domains
+are kept but detached — attach them to the new projects on the Domains page.
+Hosts, certificates, users, API tokens, DNS providers, events and settings are
+kept. Only a pre-release database with a `load_balancers` table is refused at
+start with an error; start from an empty data directory for that one.
+
 ## Upgrade HAProxy
 
 Bump `HAPROXY_VERSION` **and** `LOXY_VERSION` to a loxy image built for that
@@ -69,6 +77,7 @@ The reconciler then re-applies the restored state to HAProxy (validated with
 
 ## Firewall
 
-Allow the ports your frontends bind publicly. Restrict the panel port (8443) to admin IPs
+Open the project ports you use (the service listen ports, 20000+ by default),
+plus 80/443 when you use domains. Restrict the panel port (8443) to admin IPs
 (`LOXY_PANEL_ALLOW` and/or host firewall). Never expose 9090 (internal API),
 8405 (stats/metrics) or 5514 (syslog receiver).

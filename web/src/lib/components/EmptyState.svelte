@@ -5,16 +5,16 @@
 </script>
 
 <div class="empty">
-  <span class="ic"><Icon name={icon} size={18} /></span>
+  <span class="ic"><Icon name={icon} size={20} /></span>
   <h3>{title}</h3>
   {#if text}<p>{text}</p>{/if}
   {#if children}<div class="act">{@render children()}</div>{/if}
 </div>
 
 <style>
-  .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 40px 20px; }
-  .ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--surface-2); color: var(--muted); margin-bottom: 4px; }
-  h3 { font-size: var(--fs-md); }
-  p { color: var(--muted); max-width: 46ch; font-size: var(--fs-md); }
-  .act { margin-top: 8px; display: flex; gap: 8px; }
+  .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 36px 20px; }
+  .ic { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); margin-bottom: 6px; }
+  h3 { font-size: var(--fs-lg); }
+  p { color: var(--text-2); max-width: 48ch; font-size: var(--fs-md); }
+  .act { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 </style>

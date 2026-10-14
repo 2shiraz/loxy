@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -15,7 +17,6 @@ import (
 	"github.com/2shiraz/loxy/internal/dns"
 	"github.com/2shiraz/loxy/internal/events"
 	"github.com/2shiraz/loxy/internal/model"
-	"github.com/2shiraz/loxy/internal/reconcile"
 	"github.com/2shiraz/loxy/internal/state"
 	"github.com/2shiraz/loxy/internal/store/db"
 )
@@ -231,9 +232,12 @@ func (s *Server) domain(id int64) *state.Domain {
 	return nil
 }
 
-func (s *Server) ListDomains(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ListDomains(w http.ResponseWriter, r *http.Request, prm gen.ListDomainsParams) {
 	out := []map[string]any{}
 	for _, d := range s.Snap.Get().Domains {
+		if prm.ProjectId != nil && (!d.BalancerID.Valid || d.BalancerID.Int64 != *prm.ProjectId) {
+			continue
+		}
 		out = append(out, s.viewDomain(d))
 	}
 	writeJSON(w, 200, map[string]any{"domains": out})
@@ -257,10 +261,26 @@ func (s *Server) respondDomain(w http.ResponseWriter, status int, id int64) {
 	writeJSON(w, status, map[string]any{"domain": s.viewDomain(d)})
 }
 
-// domainRefs validates frontend / provider references; returns the detected zone.
-func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors) string {
-	if in.FrontendId != nil && *in.FrontendId != 0 && s.Snap.Get().Frontend(*in.FrontendId) == nil {
-		fe.Add("frontend_id", "unknown frontend")
+// domainRefs validates project / service / provider references; returns the detected zone.
+func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors, create bool) string {
+	snap := s.Snap.Get()
+	if s.Cfg.PanelPort == 80 || s.Cfg.PanelPort == 443 {
+		fe.Add("fqdn", fmt.Sprintf("the Loxy panel uses :%d, which domains need; move it with LOXY_PANEL_PORT", s.Cfg.PanelPort))
+	}
+	if in.ProjectId == nil || *in.ProjectId == 0 {
+		if create {
+			fe.Add("project_id", "required")
+		}
+	} else if p := snap.Project(*in.ProjectId); p == nil {
+		fe.Add("project_id", "unknown project")
+	} else if in.ServiceId != nil && *in.ServiceId != 0 {
+		if sv := p.Service(*in.ServiceId); sv == nil {
+			fe.Add("service_id", "not a service of this project")
+		} else if sv.Protocol == "tcp" {
+			fe.Add("service_id", "domains route HTTP traffic; choose an http or https service")
+		}
+	} else if p.WebService() == nil {
+		fe.Add("project_id", "the project needs an http or https service to receive domain traffic")
 	}
 	zone := ""
 	if in.DnsProviderId != nil && *in.DnsProviderId != 0 {
@@ -298,27 +318,28 @@ func (s *Server) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	if !model.ValidHostname(fqdn, hasProvider) || !strings.Contains(fqdn, ".") {
 		fe.Add("fqdn", "invalid hostname (wildcards need a DNS provider)")
 	}
+	for _, o := range s.Snap.Get().Domains {
+		if o.Fqdn == fqdn {
+			fe.Add("fqdn", "already added")
+		}
+	}
 	zone := ""
 	if fe.Empty() {
-		zone = s.domainRefs(r.Context(), fqdn, in, fe)
+		zone = s.domainRefs(r.Context(), fqdn, in, fe, true)
 	}
 	if !fe.Empty() {
 		fail(w, errInput(fe))
 		return
 	}
+	https := in.Https == nil || *in.Https
 	var row db.Domain
-	s.listenMu.Lock()
-	err := s.acmeCollision(in.FrontendId)
-	if err == nil {
-		err = s.mutate(r, "domain.create", "domain", func() int64 { return row.ID }, in, func(q *db.Queries) error {
-			var err error
-			row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, FrontendID: i64(in.FrontendId), DnsProviderID: i64(in.DnsProviderId),
-				Zone: zone, AutoRecords: b2i(in.AutoRecords != nil && *in.AutoRecords), CreatedAt: nowMs(), UpdatedAt: nowMs()})
-			return err
-		})
-	}
-	s.listenMu.Unlock()
-	if err != nil {
+	if err := s.mutate(r, "domain.create", "domain", func() int64 { return row.ID }, in, func(q *db.Queries) error {
+		var err error
+		row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, BalancerID: i64(in.ProjectId), ServiceID: i64(in.ServiceId),
+			Https: b2i(https), DnsProviderID: i64(in.DnsProviderId), Zone: zone, AutoRecords: b2i(in.AutoRecords != nil && *in.AutoRecords),
+			CreatedAt: nowMs(), UpdatedAt: nowMs()})
+		return err
+	}); err != nil {
 		fail(w, err)
 		return
 	}
@@ -338,9 +359,25 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		fail(w, err)
 		return
 	}
-	merged := gen.DomainInput{FrontendId: nullI64(d.FrontendID), DnsProviderId: nullI64(d.DnsProviderID), AutoRecords: ptr(d.AutoRecords != 0)}
-	if in.FrontendId != nil {
-		merged.FrontendId = in.FrontendId
+	merged := gen.DomainInput{ProjectId: nullI64(d.BalancerID), ServiceId: nullI64(d.ServiceID), Https: ptr(d.Https != 0),
+		DnsProviderId: nullI64(d.DnsProviderID), AutoRecords: ptr(d.AutoRecords != 0)}
+	if in.ProjectId != nil {
+		merged.ProjectId = in.ProjectId
+		if *in.ProjectId == 0 {
+			merged.ProjectId = nil // detach
+		}
+		if in.ServiceId == nil && (d.BalancerID.Int64 != *in.ProjectId) {
+			merged.ServiceId = nil // the old service belongs to the other project
+		}
+	}
+	if in.ServiceId != nil {
+		merged.ServiceId = in.ServiceId
+		if *in.ServiceId == 0 {
+			merged.ServiceId = nil
+		}
+	}
+	if in.Https != nil {
+		merged.Https = in.Https
 	}
 	if in.DnsProviderId != nil {
 		merged.DnsProviderId = in.DnsProviderId
@@ -349,27 +386,21 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		merged.AutoRecords = in.AutoRecords
 	}
 	fe := model.FieldErrors{}
-	zone := s.domainRefs(r.Context(), d.Fqdn, merged, fe)
+	zone := s.domainRefs(r.Context(), d.Fqdn, merged, fe, false)
 	if !fe.Empty() {
 		fail(w, errInput(fe))
 		return
 	}
-	s.listenMu.Lock()
-	err := s.acmeCollision(merged.FrontendId)
-	if err == nil {
-		err = s.mutate(r, "domain.update", "domain", func() int64 { return id }, in, func(q *db.Queries) error {
-			return q.UpdateDomain(r.Context(), db.UpdateDomainParams{FrontendID: i64(merged.FrontendId), DnsProviderID: i64(merged.DnsProviderId),
-				Zone: zone, AutoRecords: b2i(merged.AutoRecords != nil && *merged.AutoRecords), UpdatedAt: nowMs(), ID: id})
-		})
-	}
-	s.listenMu.Unlock()
-	if err != nil {
+	if err := s.mutate(r, "domain.update", "domain", func() int64 { return id }, in, func(q *db.Queries) error {
+		return q.UpdateDomain(r.Context(), db.UpdateDomainParams{BalancerID: i64(merged.ProjectId), ServiceID: i64(merged.ServiceId),
+			Https: b2i(merged.Https != nil && *merged.Https), DnsProviderID: i64(merged.DnsProviderId), Zone: zone,
+			AutoRecords: b2i(merged.AutoRecords != nil && *merged.AutoRecords), UpdatedAt: nowMs(), ID: id})
+	}); err != nil {
 		fail(w, err)
 		return
 	}
 	// d is the pre-update copy: it still lists the records Loxy created.
-	turningOff := d.AutoRecords != 0 && (merged.AutoRecords == nil || !*merged.AutoRecords)
-	if turningOff || (merged.FrontendId == nil || *merged.FrontendId == 0) {
+	if d.AutoRecords != 0 && (merged.AutoRecords == nil || !*merged.AutoRecords) {
 		s.removeManagedRecords(r.Context(), d)
 	}
 	s.SyncDomain(r.Context(), id)
@@ -402,7 +433,8 @@ func (s *Server) VerifyDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 	s.respondDomain(w, 200, id)
 }
 
-// VerifyDomainNow resolves the name and stores the verification status (§8.16).
+// VerifyDomainNow resolves the name, stores the verification status (§8.9) and, once the
+// domain resolves to the server (or has a DNS provider), issues its certificate automatically.
 func (s *Server) VerifyDomainNow(ctx context.Context, id int64) {
 	d := s.domain(id)
 	if d == nil {
@@ -410,23 +442,76 @@ func (s *Server) VerifyDomainNow(ctx context.Context, id int64) {
 	}
 	v4, v6 := s.domainAddresses(d)
 	res := dns.Verify(ctx, nil, d.Fqdn, v4, v6)
-	if !d.FrontendID.Valid {
-		res.Status, res.Detail = "unknown", "not attached to a frontend"
+	if !d.BalancerID.Valid {
+		res.Status, res.Detail = "unknown", "not attached to a project"
 	}
 	obs, _ := json.Marshal(map[string]any{"a": res.A, "aaaa": res.AAAA})
 	_ = s.Store.Q.SetDomainStatus(ctx, db.SetDomainStatusParams{Status: res.Status, StatusDetail: sql.NullString{String: res.Detail, Valid: res.Detail != ""},
 		Observed: string(obs), CheckedAt: sql.NullInt64{Int64: nowMs(), Valid: true}, ID: id})
 	if res.Status != d.Status {
-		feID := domainFE(d)
 		sev := "info"
 		if res.Status != "ok" {
 			sev = "warning"
 		}
-		s.Hub.Publish(events.Event{Kind: "domain.status.changed", FrontendID: feID, Severity: sev, Message: fmt.Sprintf("%s: %s %s", d.Fqdn, res.Status, res.Detail),
+		s.Hub.Publish(events.Event{Kind: "domain.status.changed", ProjectID: domainProject(d), Severity: sev, Message: fmt.Sprintf("%s: %s %s", d.Fqdn, res.Status, res.Detail),
 			Data: map[string]any{"domain_id": id, "status": res.Status}})
 	}
 	_, _ = s.Snap.Refresh(ctx, s.Store.Q, s.Box)
+	if d.Https != 0 && !d.CertificateID.Valid && d.BalancerID.Valid && (res.Status == "ok" || d.DnsProviderID.Valid) {
+		if err := s.autoIssue(ctx, d); err != nil {
+			slog.Warn("automatic certificate", "domain", d.Fqdn, "err", err)
+		}
+	}
 }
+
+// autoIssue creates and starts issuing the managed certificate of an HTTPS domain (system action).
+func (s *Server) autoIssue(ctx context.Context, d *state.Domain) error {
+	challenge := "http01"
+	var pid sql.NullInt64
+	if d.DnsProviderID.Valid {
+		challenge, pid = "dns01", d.DnsProviderID
+	}
+	s.issueMu.Lock() // one automatic issuance decision at a time (create, verify and the loop race)
+	defer s.issueMu.Unlock()
+	name := d.Fqdn
+	if r := []rune(name); len(r) > 64 {
+		name = string(r[:61]) + "..."
+	}
+	var certID int64
+	err := s.Store.Tx(ctx, func(q *db.Queries) error {
+		cur, err := q.GetDomain(ctx, d.ID)
+		if err != nil || cur.CertificateID.Valid || cur.Https == 0 || !cur.BalancerID.Valid {
+			return errSkip // gone, already has a certificate, or no longer wants one
+		}
+		c, err := q.CreateCertificate(ctx, db.CreateCertificateParams{Name: name, Type: "managed", Domains: jsonStr([]string{d.Fqdn}), KeyType: "ecdsa256",
+			Challenge: challenge, DnsProviderID: pid, Status: "pending", Labels: "{}", CreatedAt: nowMs()})
+		if err != nil {
+			return err
+		}
+		certID = c.ID
+		if err := q.SetDomainCertificate(ctx, db.SetDomainCertificateParams{CertificateID: sql.NullInt64{Int64: certID, Valid: true}, ID: d.ID}); err != nil {
+			return err
+		}
+		if _, err := q.BumpDesiredVersion(ctx, 1); err != nil {
+			return err
+		}
+		return q.CreateAudit(ctx, db.CreateAuditParams{Ts: nowMs(), Actor: "system", Action: "domain.issue_certificate",
+			ResourceType: "domain", ResourceID: sql.NullInt64{Int64: d.ID, Valid: true}, After: sql.NullString{String: jsonStr(map[string]any{"certificate_id": certID}), Valid: true}})
+	})
+	if errors.Is(err, errSkip) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	s.Changed(ctx)
+	if s.Issuer != nil {
+		s.Issuer.IssueAsync(certID)
+	}
+	return nil
+}
+
+var errSkip = errors.New("skip")
 
 func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, id gen.Id) {
 	d := s.domain(id)
@@ -434,12 +519,20 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 		fail(w, errNotFound("domain"))
 		return
 	}
+	if d.CertificateID.Valid {
+		// Re-issue the existing managed certificate (renew now).
+		if c := s.Snap.Get().Cert(d.CertificateID.Int64); c != nil && c.Type == "managed" {
+			s.Issuer.IssueAsync(c.ID)
+			s.respondCert(w, 202, c.ID)
+			return
+		}
+	}
 	challenge := "http01"
 	var provider *int64
 	if d.DnsProviderID.Valid {
 		challenge, provider = "dns01", ptr(d.DnsProviderID.Int64)
 	} else if d.Status != "ok" {
-		fail(w, errField("status", "the domain must resolve to the frontend first (or attach a DNS provider for DNS-01)"))
+		fail(w, errField("status", "the domain must resolve to this server first (or attach a DNS provider for DNS-01)"))
 		return
 	}
 	certID, err := s.createManaged(r, d.Fqdn, []string{d.Fqdn}, challenge, provider, "ecdsa256", map[string]string{})
@@ -448,14 +541,6 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	_ = s.Store.Q.SetDomainCertificate(r.Context(), db.SetDomainCertificateParams{CertificateID: sql.NullInt64{Int64: certID, Valid: true}, ID: id})
-	// Attach to the domain's frontend when it terminates TLS.
-	if d.FrontendID.Valid {
-		if f := s.Snap.Get().Frontend(d.FrontendID.Int64); f != nil && f.Tls != 0 {
-			_ = s.mutate(r, "frontend.attach_certificate", "frontend", func() int64 { return f.ID }, map[string]any{"certificate_id": certID}, func(q *db.Queries) error {
-				return q.AddFrontendCertificate(r.Context(), db.AddFrontendCertificateParams{FrontendID: f.ID, CertificateID: certID, Position: int64(len(f.CertIDs))})
-			})
-		}
-	}
 	s.Changed(r.Context())
 	s.Issuer.IssueAsync(certID)
 	s.respondCert(w, 202, certID)
@@ -465,10 +550,7 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 // Only records Loxy created are touched; pre-existing records are reported as a conflict.
 func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	d := s.domain(id)
-	if d == nil || d.AutoRecords == 0 || !d.DnsProviderID.Valid || !d.FrontendID.Valid || d.Zone == "" {
-		return
-	}
-	if s.Snap.Get().Frontend(d.FrontendID.Int64) == nil {
+	if d == nil || d.AutoRecords == 0 || !d.DnsProviderID.Valid || !d.BalancerID.Valid || d.Zone == "" {
 		return
 	}
 	p, err := s.DNSProvider(ctx, d.DnsProviderID.Int64)
@@ -492,7 +574,7 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	}
 	existing, err := dns.ListRecords(ctx, p, zone)
 	if err != nil {
-		s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+		s.Hub.Publish(events.Event{Kind: "domain.sync.failed", ProjectID: domainProject(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 		return
 	}
 	wantKeys := map[string]bool{}
@@ -511,7 +593,7 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 			continue
 		}
 		if !mset[k] {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning",
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", ProjectID: domainProject(d), Severity: "warning",
 				Message: fmt.Sprintf("%s: existing %s record %s was not created by Loxy; not overwriting", d.Fqdn, e.Type, e.Value)})
 			return
 		}
@@ -531,13 +613,13 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	}
 	if len(toDelete) > 0 {
 		if _, err := p.DeleteRecords(ctx, zone, toDelete); err != nil {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", ProjectID: domainProject(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 			return
 		}
 	}
 	if len(toAdd) > 0 {
 		if _, err := p.AppendRecords(ctx, zone, toAdd); err != nil {
-			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", FrontendID: domainFE(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
+			s.Hub.Publish(events.Event{Kind: "domain.sync.failed", ProjectID: domainProject(d), Severity: "warning", Message: d.Fqdn + ": " + err.Error()})
 			return
 		}
 	}
@@ -606,39 +688,19 @@ func (s *Server) RunDomainLoop(ctx context.Context) {
 	}
 }
 
-// domainAddresses returns the addresses the domain should resolve to (its frontend's).
+// domainAddresses returns the addresses the domain should resolve to: the server's
+// addresses once it is attached to a project.
 func (s *Server) domainAddresses(d *state.Domain) (v4, v6 []string) {
-	if !d.FrontendID.Valid {
+	if !d.BalancerID.Valid {
 		return nil, nil
 	}
-	f := s.Snap.Get().Frontend(d.FrontendID.Int64)
-	if f == nil {
-		return nil, nil
-	}
-	return s.frontendAddresses(f)
+	return s.nodeAddresses()
 }
 
-// domainFE is the frontend a domain's events belong to (nil when unattached).
-func domainFE(d *state.Domain) *int64 {
-	if !d.FrontendID.Valid {
+// domainProject is the project a domain's events belong to (nil when unattached).
+func domainProject(d *state.Domain) *int64 {
+	if !d.BalancerID.Valid {
 		return nil
 	}
-	return events.I64(d.FrontendID.Int64)
-}
-
-// acmeCollision checks, under listenMu, that attaching a domain to frontend feID (which then
-// answers HTTP-01 challenges on :80, §8.9) does not collide with another frontend's listeners.
-func (s *Server) acmeCollision(feID *int64) error {
-	if feID == nil || *feID == 0 {
-		return nil
-	}
-	snap := s.Snap.Get()
-	f := snap.Frontend(*feID)
-	if f == nil || reconcile.NeedsACME(snap, f.ID, f.CertIDs) {
-		return nil
-	}
-	if msg := listenerCollision(snap, f, true); msg != "" {
-		return errField("frontend_id", "HTTP-01 challenges need :80 on this frontend's addresses: "+msg)
-	}
-	return nil
+	return events.I64(d.BalancerID.Int64)
 }

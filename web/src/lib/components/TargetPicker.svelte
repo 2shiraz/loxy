@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
-   * Server picker for a backend (§8.6): hosts from the inventory, a label
+   * Target picker for a project (§8.6): hosts from the inventory, a label
    * selector with live preview, or a list of IPs with an optional port.
-   * Emits BackendServerInput[] for POST /backends/{id}/servers.
+   * Emits TargetInput[] for POST /projects/{id}/targets (or ProjectCreate.targets).
    */
-  import { api, unwrap, type Host, type BackendServerInput } from '$lib/api/client';
+  import { api, unwrap, type Host, type TargetInput } from '$lib/api/client';
   import { targetIpError, portError } from '$lib/util/validate';
   import LabelChips from './LabelChips.svelte';
 
@@ -13,12 +13,15 @@
     mode = $bindable('ip'),
     targets = $bindable([]),
     error = $bindable(''),
-    showModes = true
+    showModes = true,
+    simple = false
   }: {
     mode?: Mode;
-    targets?: BackendServerInput[];
+    targets?: TargetInput[];
     error?: string;
     showModes?: boolean;
+    /** Tuck port override, weight and backup into a disclosure. */
+    simple?: boolean;
   } = $props();
 
   let hosts = $state<Host[] | null>(null);
@@ -73,7 +76,7 @@
       const lines = ipText.split(/[\s,]+/).map((l) => l.trim()).filter(Boolean);
       let err = pErr || wErr;
       const seen = new Set<string>();
-      const out: BackendServerInput[] = [];
+      const out: TargetInput[] = [];
       for (const l of lines) {
         if (err) break;
         const a = parseAddr(l);
@@ -100,7 +103,7 @@
 
 <div class="tp">
   {#if showModes}
-    <div class="seg" role="radiogroup" aria-label="Server source">
+    <div class="seg" role="radiogroup" aria-label="Target source">
       <button type="button" role="radio" aria-checked={mode === 'ip'} class:on={mode === 'ip'} onclick={() => (mode = 'ip')}>IP addresses</button>
       <button type="button" role="radio" aria-checked={mode === 'host'} class:on={mode === 'host'} onclick={() => (mode = 'host')}>Hosts</button>
       <button type="button" role="radio" aria-checked={mode === 'label_selector'} class:on={mode === 'label_selector'} onclick={() => (mode = 'label_selector')}>Label selector</button>
@@ -116,7 +119,7 @@
   {:else if mode === 'host'}
     <div class="field">
       <label for="tp-sq">Hosts</label>
-      <input id="tp-sq" class="input" placeholder="Search by name, IP or label" bind:value={hostQ} />
+      <input id="tp-sq" class="input" placeholder="Search by name, IP or label…" bind:value={hostQ} />
     </div>
     <div class="list" role="group" aria-label="Hosts">
       {#if hosts === null || (hosts.length === 0 && !hostQ)}
@@ -151,30 +154,45 @@
   {#if mode !== 'ip'}
     <label class="check"><input type="checkbox" bind:checked={usePrivate} />Use the host's private IPv4</label>
   {/if}
+  {#snippet extras()}
   <div class="form-grid">
     <div class="field">
-      <label for="tp-port">Port <span class="muted">(optional)</span></label>
-      <input id="tp-port" class="input mono" type="number" min="1" max="65535" placeholder="backend default" bind:value={port} />
+      <label for="tp-port">Port override <span class="muted">(optional)</span></label>
+      <input id="tp-port" class="input mono" type="number" min="1" max="65535" placeholder="service port" bind:value={port} />
+      <span class="hint">Empty = each service's destination port.</span>
     </div>
     <div class="field">
       <label for="tp-w">Weight</label>
       <input id="tp-w" class="input mono" type="number" min="0" max="256" bind:value={weight} />
     </div>
-    <label class="check bk"><input type="checkbox" bind:checked={backup} />Backup server</label>
+    <label class="check bk"><input type="checkbox" bind:checked={backup} />Backup target</label>
   </div>
+  {/snippet}
+  {#if simple}
+    <details class="more">
+      <summary>Port override, weight and backup</summary>
+      <div class="more-body">{@render extras()}</div>
+    </details>
+  {:else}
+    {@render extras()}
+  {/if}
 </div>
 
 <style>
-  .tp { display: flex; flex-direction: column; gap: 12px; }
-  .seg { display: inline-flex; padding: 2px; background: var(--surface-2); border-radius: 8px; align-self: flex-start; }
-  .seg button { border: 0; background: none; padding: 5px 12px; border-radius: 6px; color: var(--muted); cursor: pointer; font-weight: 500; font-size: var(--fs-sm); }
-  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
-  .list { max-height: 240px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-  .srow { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .tp { display: flex; flex-direction: column; gap: 14px; }
+  .seg { display: inline-flex; padding: 3px; background: var(--surface-2); border-radius: 10px; align-self: flex-start; max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .seg button { border: 0; background: none; height: 32px; padding: 0 12px; border-radius: 7px; color: var(--muted); cursor: pointer; font-weight: 550; font-size: var(--fs-sm); white-space: nowrap; transition: color 120ms ease, background-color 120ms ease; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px var(--border); }
+  .list { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+  .srow { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 6px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .srow:last-child { border-bottom: 0; }
   .srow:hover { background: var(--surface-2); }
-  .srow input { accent-color: var(--accent); }
-  .nm { font-weight: 500; }
+  .srow input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .nm { font-weight: 550; }
   .pad { padding: 12px; }
-  .bk { align-self: end; height: 32px; }
+  .bk { align-self: end; height: var(--control-h); }
+  .more summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-2); font-weight: 550; width: fit-content; padding: 4px 0; }
+  .more summary:hover { color: var(--text); }
+  .more-body { padding-top: 12px; }
 </style>

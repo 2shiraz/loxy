@@ -56,13 +56,14 @@ type Slot struct {
 	Address  string
 }
 
-// Server is a configured backend server (IP, host or label selector) with its resolved slots.
+// Server is one target of a project as rendered into a service's backend, with its
+// resolved slots. The same targets are shared by all services of a project.
 type Server struct {
-	db.BackendServer
+	db.Target
 	Slots []*Slot
 }
 
-// Port returns the effective port of the server.
+// PortOr returns the target's port override or def (the service destination port).
 func (s *Server) PortOr(def int64) int64 {
 	if s.Port.Valid && s.Port.Int64 > 0 {
 		return s.Port.Int64
@@ -70,8 +71,33 @@ func (s *Server) PortOr(def int64) int64 {
 	return def
 }
 
+// BackendCfg is the HAProxy backend a service compiles to (`be_<service id>`).
+type BackendCfg struct {
+	ID                    int64
+	BalancerID            int64
+	NodeID                int64
+	Name                  string
+	Mode                  string
+	Algorithm             string
+	Port                  int64
+	StickyEnabled         int64
+	StickyCookieName      string
+	StickyCookieLifetimeS int64
+	ProxyProtocol         string
+	TimeoutServerS        int64
+	HcProtocol            string
+	HcPort                int64
+	HcIntervalS           int64
+	HcTimeoutS            int64
+	HcRetries             int64
+	HcDomain              string
+	HcPath                string
+	HcResponse            string
+	HcTlsVerify           int64
+}
+
 type Backend struct {
-	db.Backend
+	BackendCfg
 	Labels      map[string]string
 	StatusCodes []string
 	Servers     []*Server
@@ -109,8 +135,24 @@ type Route struct {
 	BackendID  int64
 }
 
+// FrontendCfg is the HAProxy frontend a service compiles to (`fe_<service id>`).
+type FrontendCfg struct {
+	ID               int64
+	BalancerID       int64
+	NodeID           int64
+	Name             string
+	Mode             string
+	Tls              int64
+	DefaultBackendID sql.NullInt64
+	TimeoutClientS   int64
+	Maxconn          int64
+	ForwardedHeaders int64
+	Enabled          int64
+	Maintenance      int64
+}
+
 type Frontend struct {
-	db.Frontend
+	FrontendCfg
 	Labels  map[string]string
 	Binds   []Bind
 	CertIDs []int64
@@ -134,6 +176,67 @@ func (f *Frontend) BackendIDs() []int64 {
 	return out
 }
 
+// Project is one load balancer (table balancers): targets, services and domains.
+type Project struct {
+	db.Balancer
+	Labels   map[string]string
+	Services []*Service
+	Targets  []*Server
+}
+
+// Service is a port a project listens on.
+type Service struct {
+	db.Service
+	StatusCodes []string
+	CertIDs     []int64
+}
+
+// Mode is the HAProxy mode of the service (https terminates TLS in http mode).
+func (s *Service) Mode() string {
+	if s.Protocol == "tcp" {
+		return "tcp"
+	}
+	return "http"
+}
+
+func (p *Project) Service(id int64) *Service {
+	for _, s := range p.Services {
+		if s.ID == id {
+			return s
+		}
+	}
+	return nil
+}
+
+func (p *Project) Target(id int64) *Server {
+	for _, t := range p.Targets {
+		if t.ID == id {
+			return t
+		}
+	}
+	return nil
+}
+
+// WebService is the service domains route to by default: the first http/https service.
+func (p *Project) WebService() *Service {
+	for _, s := range p.Services {
+		if s.Protocol != "tcp" {
+			return s
+		}
+	}
+	return nil
+}
+
+// Slots returns all resolved target addresses of the project, sorted by id.
+func (p *Project) Slots() []*Slot {
+	var out []*Slot
+	for _, t := range p.Targets {
+		out = append(out, t.Slots...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 type Domain struct {
 	db.Domain
 	Observed struct {
@@ -144,13 +247,19 @@ type Domain struct {
 
 type Snapshot struct {
 	Nodes        []*Node
-	Frontends    []*Frontend
-	Backends     []*Backend
+	Projects     []*Project
 	Hosts        []*Host
 	Certs        []*Cert
 	Domains      []*Domain
 	DNSProviders []db.DnsProvider
 
+	// Frontends and Backends are the compiled rendering view: one pair per service.
+	Frontends []*Frontend
+	Backends  []*Backend
+
+	projByID map[int64]*Project
+	domsByP  map[int64][]*Domain
+	svcProj  map[int64]*Project
 	feByID   map[int64]*Frontend
 	beByID   map[int64]*Backend
 	certByID map[int64]*Cert
@@ -158,11 +267,15 @@ type Snapshot struct {
 	nodeByID map[int64]*Node
 }
 
+func (s *Snapshot) Project(id int64) *Project   { return s.projByID[id] }
 func (s *Snapshot) Frontend(id int64) *Frontend { return s.feByID[id] }
 func (s *Snapshot) Backend(id int64) *Backend   { return s.beByID[id] }
 func (s *Snapshot) Cert(id int64) *Cert         { return s.certByID[id] }
 func (s *Snapshot) Host(id int64) *Host         { return s.hostByID[id] }
 func (s *Snapshot) Node(id int64) *Node         { return s.nodeByID[id] }
+
+// ServiceProject returns the project owning service id.
+func (s *Snapshot) ServiceProject(id int64) *Project { return s.svcProj[id] }
 
 // FrontendsOnNode / BackendsOnNode return the objects placed on a node, sorted by id.
 func (s *Snapshot) FrontendsOnNode(nodeID int64) []*Frontend {
@@ -185,18 +298,45 @@ func (s *Snapshot) BackendsOnNode(nodeID int64) []*Backend {
 	return out
 }
 
-// UsedBy returns ids of frontends that reference a backend.
-func (s *Snapshot) UsedBy(backendID int64) []int64 {
-	out := []int64{}
-	for _, f := range s.Frontends {
-		for _, id := range f.BackendIDs() {
-			if id == backendID {
-				out = append(out, f.ID)
-				break
+// DomainsOf returns the domains attached to a project.
+func (s *Snapshot) DomainsOf(projectID int64) []*Domain {
+	if s.domsByP == nil {
+		var out []*Domain
+		for _, d := range s.Domains {
+			if d.BalancerID.Valid && d.BalancerID.Int64 == projectID {
+				out = append(out, d)
 			}
 		}
+		return out
 	}
-	return out
+	return s.domsByP[projectID]
+}
+
+func (s *Snapshot) indexDomains() {
+	s.domsByP = map[int64][]*Domain{}
+	for _, d := range s.Domains {
+		if d.BalancerID.Valid {
+			s.domsByP[d.BalancerID.Int64] = append(s.domsByP[d.BalancerID.Int64], d)
+		}
+	}
+}
+
+// DomainService resolves the service a domain routes to: its explicit service, else the
+// project's first http/https service. nil when unattached or the project has none.
+func (s *Snapshot) DomainService(d *Domain) *Service {
+	if !d.BalancerID.Valid {
+		return nil
+	}
+	p := s.projByID[d.BalancerID.Int64]
+	if p == nil {
+		return nil
+	}
+	if d.ServiceID.Valid {
+		if sv := p.Service(d.ServiceID.Int64); sv != nil && sv.Protocol != "tcp" {
+			return sv
+		}
+	}
+	return p.WebService()
 }
 
 func labels(js string) map[string]string {
@@ -206,7 +346,8 @@ func labels(js string) map[string]string {
 }
 
 func newSnapshot() *Snapshot {
-	return &Snapshot{feByID: map[int64]*Frontend{}, beByID: map[int64]*Backend{}, certByID: map[int64]*Cert{}, hostByID: map[int64]*Host{}, nodeByID: map[int64]*Node{}}
+	return &Snapshot{projByID: map[int64]*Project{}, svcProj: map[int64]*Project{}, feByID: map[int64]*Frontend{}, beByID: map[int64]*Backend{},
+		certByID: map[int64]*Cert{}, hostByID: map[int64]*Host{}, nodeByID: map[int64]*Node{}}
 }
 
 // Load reads the whole desired state. box may be nil (keys then stay empty).
@@ -258,26 +399,48 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 	if s.DNSProviders, err = q.ListDNSProviders(ctx); err != nil {
 		return nil, err
 	}
-	bes, err := q.ListBackends(ctx)
+	bals, err := q.ListBalancers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, b := range bes {
-		x := &Backend{Backend: b, Labels: labels(b.Labels)}
-		_ = json.Unmarshal([]byte(b.HcStatusCodes), &x.StatusCodes)
-		s.Backends = append(s.Backends, x)
-		s.beByID[b.ID] = x
+	for _, b := range bals {
+		p := &Project{Balancer: b, Labels: labels(b.Labels)}
+		s.Projects = append(s.Projects, p)
+		s.projByID[b.ID] = p
 	}
-	srvs, err := q.ListBackendServers(ctx)
+	svcs, err := q.ListServices(ctx)
 	if err != nil {
 		return nil, err
 	}
-	srvByID := map[int64]*Server{}
-	for _, sv := range srvs {
-		x := &Server{BackendServer: sv}
-		srvByID[sv.ID] = x
-		if b := s.beByID[sv.BackendID]; b != nil {
-			b.Servers = append(b.Servers, x)
+	svcByID := map[int64]*Service{}
+	for _, sv := range svcs {
+		x := &Service{Service: sv}
+		_ = json.Unmarshal([]byte(sv.HcStatusCodes), &x.StatusCodes)
+		svcByID[sv.ID] = x
+		if p := s.projByID[sv.BalancerID]; p != nil {
+			p.Services = append(p.Services, x)
+			s.svcProj[sv.ID] = p
+		}
+	}
+	scs, err := q.ListServiceCertificates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, sc := range scs {
+		if sv := svcByID[sc.ServiceID]; sv != nil {
+			sv.CertIDs = append(sv.CertIDs, sc.CertificateID)
+		}
+	}
+	tgts, err := q.ListTargets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	tgtByID := map[int64]*Server{}
+	for _, t := range tgts {
+		x := &Server{Target: t}
+		tgtByID[t.ID] = x
+		if p := s.projByID[t.BalancerID]; p != nil {
+			p.Targets = append(p.Targets, x)
 		}
 	}
 	slots, err := q.ListSlots(ctx)
@@ -285,38 +448,8 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		return nil, err
 	}
 	for _, sl := range slots {
-		if sv := srvByID[sl.ServerID]; sv != nil {
-			sv.Slots = append(sv.Slots, &Slot{ID: sl.ID, ServerID: sl.ServerID, HostID: sl.HostID.Int64, Address: sl.Address})
-		}
-	}
-	fes, err := q.ListFrontends(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range fes {
-		x := &Frontend{Frontend: f, Labels: labels(f.Labels)}
-		_ = json.Unmarshal([]byte(f.Binds), &x.Binds)
-		s.Frontends = append(s.Frontends, x)
-		s.feByID[f.ID] = x
-	}
-	routes, err := q.ListRoutes(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range routes {
-		if f := s.feByID[r.FrontendID]; f != nil {
-			rt := Route{ID: r.ID, PathPrefix: r.PathPrefix, BackendID: r.BackendID}
-			_ = json.Unmarshal([]byte(r.Hosts), &rt.Hosts)
-			f.Routes = append(f.Routes, rt)
-		}
-	}
-	fcs, err := q.ListFrontendCertificates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, fc := range fcs {
-		if f := s.feByID[fc.FrontendID]; f != nil {
-			f.CertIDs = append(f.CertIDs, fc.CertificateID)
+		if t := tgtByID[sl.TargetID]; t != nil {
+			t.Slots = append(t.Slots, &Slot{ID: sl.ID, ServerID: sl.TargetID, HostID: sl.HostID.Int64, Address: sl.Address})
 		}
 	}
 	doms, err := q.ListDomains(ctx)
@@ -328,19 +461,51 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		_ = json.Unmarshal([]byte(d.Observed), &x.Observed)
 		s.Domains = append(s.Domains, x)
 	}
+	s.indexDomains()
+	for _, p := range s.Projects {
+		for _, sv := range p.Services {
+			fe, be := Compile(p, sv)
+			s.Frontends = append(s.Frontends, fe)
+			s.Backends = append(s.Backends, be)
+			s.feByID[fe.ID] = fe
+			s.beByID[be.ID] = be
+		}
+	}
 	return s, nil
 }
 
-// SlotKey identifies a resolved address of a server; HostID is 0 for IP servers.
+// Compile turns one service of a project into the HAProxy frontend/backend pair the renderer
+// understands (ids = service id). All services of a project share its targets.
+func Compile(p *Project, sv *Service) (*Frontend, *Backend) {
+	mode := sv.Mode()
+	be := &Backend{BackendCfg: BackendCfg{ID: sv.ID, BalancerID: p.ID, NodeID: p.NodeID, Name: p.Name, Mode: mode, Algorithm: p.Algorithm,
+		Port: sv.DestinationPort, StickyEnabled: sv.StickyEnabled, StickyCookieName: sv.StickyCookieName, StickyCookieLifetimeS: sv.StickyCookieLifetimeS,
+		ProxyProtocol: sv.ProxyProtocol, TimeoutServerS: sv.TimeoutS, HcProtocol: sv.HcProtocol, HcPort: sv.HcPort, HcIntervalS: sv.HcIntervalS,
+		HcTimeoutS: sv.HcTimeoutS, HcRetries: sv.HcRetries, HcDomain: sv.HcDomain, HcPath: sv.HcPath, HcResponse: sv.HcResponse, HcTlsVerify: sv.HcTlsVerify},
+		Labels: p.Labels, StatusCodes: sv.StatusCodes, Servers: p.Targets}
+	var tls, fwd int64
+	if sv.Protocol == "https" {
+		tls = 1
+	}
+	if mode == "http" {
+		fwd = 1
+	}
+	fe := &Frontend{FrontendCfg: FrontendCfg{ID: sv.ID, BalancerID: p.ID, NodeID: p.NodeID, Name: p.Name, Mode: mode, Tls: tls,
+		DefaultBackendID: sql.NullInt64{Int64: sv.ID, Valid: true}, TimeoutClientS: sv.TimeoutS, ForwardedHeaders: fwd, Enabled: 1,
+		Maintenance: p.Maintenance}, Labels: p.Labels, Binds: []Bind{{Address: "*", Port: sv.ListenPort}}, CertIDs: sv.CertIDs}
+	return fe, be
+}
+
+// SlotKey identifies a resolved address of a target; HostID is 0 for IP targets.
 type SlotKey struct {
 	HostID  int64
 	Address string
 }
 
-// ResolveServer computes the concrete addresses of a backend server.
-func ResolveServer(sv db.BackendServer, hosts []db.Host) ([]SlotKey, error) {
+// ResolveTarget computes the concrete addresses of a target.
+func ResolveTarget(t db.Target, hosts []db.Host) ([]SlotKey, error) {
 	addr := func(h db.Host) string {
-		if sv.UsePrivateIp != 0 && h.PrivateIpv4 != "" {
+		if t.UsePrivateIp != 0 && h.PrivateIpv4 != "" {
 			return h.PrivateIpv4
 		}
 		if h.Ipv4 != "" {
@@ -348,16 +513,16 @@ func ResolveServer(sv db.BackendServer, hosts []db.Host) ([]SlotKey, error) {
 		}
 		return h.Ipv6
 	}
-	switch sv.Type {
+	switch t.Type {
 	case "ip":
-		a, err := netip.ParseAddr(sv.Ip)
+		a, err := netip.ParseAddr(t.Ip)
 		if err != nil {
 			return nil, err
 		}
 		return []SlotKey{{0, a.String()}}, nil
 	case "host":
 		for _, h := range hosts {
-			if h.ID == sv.HostID.Int64 {
+			if h.ID == t.HostID.Int64 {
 				if a := addr(h); a != "" {
 					return []SlotKey{{h.ID, a}}, nil
 				}
@@ -366,7 +531,7 @@ func ResolveServer(sv db.BackendServer, hosts []db.Host) ([]SlotKey, error) {
 		}
 		return nil, nil
 	case "label_selector":
-		sel, err := model.ParseSelector(sv.LabelSelector)
+		sel, err := model.ParseSelector(t.LabelSelector)
 		if err != nil {
 			return nil, err
 		}
@@ -380,13 +545,13 @@ func ResolveServer(sv db.BackendServer, hosts []db.Host) ([]SlotKey, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("unknown server type %q", sv.Type)
+	return nil, fmt.Errorf("unknown target type %q", t.Type)
 }
 
-// SyncSlots reconciles server_slots with the resolution of every backend server so that
-// HAProxy server ids stay stable. Must run inside the write transaction.
+// SyncSlots reconciles target_slots with the resolution of every target so that HAProxy
+// server ids stay stable. Must run inside the write transaction.
 func SyncSlots(ctx context.Context, q *db.Queries) error {
-	srvs, err := q.ListBackendServers(ctx)
+	tgts, err := q.ListTargets(ctx)
 	if err != nil {
 		return err
 	}
@@ -400,25 +565,25 @@ func SyncSlots(ctx context.Context, q *db.Queries) error {
 	}
 	existing := map[int64]map[SlotKey]int64{}
 	for _, sl := range slots {
-		m := existing[sl.ServerID]
+		m := existing[sl.TargetID]
 		if m == nil {
 			m = map[SlotKey]int64{}
-			existing[sl.ServerID] = m
+			existing[sl.TargetID] = m
 		}
 		m[SlotKey{sl.HostID.Int64, sl.Address}] = sl.ID
 	}
-	for _, sv := range srvs {
-		want, err := ResolveServer(sv, hosts)
+	for _, t := range tgts {
+		want, err := ResolveTarget(t, hosts)
 		if err != nil {
 			return err
 		}
-		have := existing[sv.ID]
+		have := existing[t.ID]
 		wantSet := map[SlotKey]bool{}
 		for _, k := range want {
 			wantSet[k] = true
 			if _, ok := have[k]; !ok {
 				hid := sql.NullInt64{Int64: k.HostID, Valid: k.HostID != 0}
-				if _, err := q.CreateSlot(ctx, db.CreateSlotParams{BackendID: sv.BackendID, ServerID: sv.ID, HostID: hid, Address: k.Address}); err != nil {
+				if _, err := q.CreateSlot(ctx, db.CreateSlotParams{BalancerID: t.BalancerID, TargetID: t.ID, HostID: hid, Address: k.Address}); err != nil {
 					return err
 				}
 			}
@@ -454,7 +619,7 @@ func (h *Holder) Refresh(ctx context.Context, q *db.Queries, box *secrets.Box) (
 	return s, nil
 }
 
-// TestSnapshot builds an indexed snapshot (tests only).
+// TestSnapshot builds an indexed snapshot from rendering objects (tests only).
 func TestSnapshot(fes []*Frontend, bes []*Backend, certs ...*Cert) *Snapshot {
 	s := newSnapshot()
 	s.Frontends, s.Backends, s.Certs = fes, bes, certs
@@ -466,6 +631,27 @@ func TestSnapshot(fes []*Frontend, bes []*Backend, certs ...*Cert) *Snapshot {
 	}
 	for _, c := range certs {
 		s.certByID[c.ID] = c
+	}
+	return s
+}
+
+// TestProjects builds an indexed snapshot from projects, compiling their services (tests only).
+func TestProjects(ps []*Project, domains []*Domain, certs ...*Cert) *Snapshot {
+	s := newSnapshot()
+	s.Projects, s.Domains, s.Certs = ps, domains, certs
+	s.indexDomains()
+	for _, c := range certs {
+		s.certByID[c.ID] = c
+	}
+	for _, p := range ps {
+		s.projByID[p.ID] = p
+		for _, sv := range p.Services {
+			s.svcProj[sv.ID] = p
+			fe, be := Compile(p, sv)
+			s.Frontends = append(s.Frontends, fe)
+			s.Backends = append(s.Backends, be)
+			s.feByID[fe.ID], s.beByID[be.ID] = fe, be
+		}
 	}
 	return s
 }

@@ -36,6 +36,6 @@
   .inner { display: flex; flex-direction: column; height: 100%; }
   header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--border); }
   header h2 { flex: 1; font-size: var(--fs-lg); overflow-wrap: anywhere; }
-  .body { flex: 1; overflow: auto; padding: 18px 20px 28px; }
+  .body { flex: 1; overflow: auto; overscroll-behavior: contain; padding: 18px 20px 28px; }
   @keyframes slide { from { transform: translateX(24px); opacity: 0; } }
 </style>

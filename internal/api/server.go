@@ -38,6 +38,7 @@ type Server struct {
 	// listenMu serializes changes that add listeners (frontend create/update/enable, domain
 	// attach) so a collision check and its commit cannot interleave with another request.
 	listenMu sync.Mutex
+	issueMu  sync.Mutex // serializes automatic certificate issuance for domains
 	Cfg      *config.Config
 	Store    *store.Store
 	Box      *secrets.Box
@@ -52,7 +53,7 @@ type Server struct {
 	Static   http.Handler
 	Limiter  *auth.Limiter
 	NodeInfo func() (version string, features []string)
-	Drain    func(backendID, serverID int64)
+	Drain    func(projectID, targetID int64)
 	Notifier *notify.Notifier
 	Logs     *logrecv.Receiver
 }
