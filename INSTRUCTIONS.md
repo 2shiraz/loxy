@@ -442,10 +442,10 @@ backend be_1 from loxy_http
     http-check expect status 200-399
     http-check expect string 'OK'
     timeout check 10s
-    server s101 10.0.0.11:8080 id 101 check inter 15s rise 3 fall 3
-    server s102x7 10.0.0.12:8080 id 102 check inter 15s rise 3 fall 3
-    server s102x8 10.0.0.13:8080 id 103 check inter 15s rise 3 fall 3
-    server s103 10.0.0.14:8080 id 104 check inter 15s rise 3 fall 3 backup
+    server s101 10.0.0.11:8080 id 101 check inter 15s rise 3 fall 3 weight 100
+    server s102x7 10.0.0.12:8080 id 102 check inter 15s rise 3 fall 3 weight 100
+    server s102x8 10.0.0.13:8080 id 103 check inter 15s rise 3 fall 3 weight 100
+    server s103 10.0.0.14:8080 id 104 check inter 15s rise 3 fall 3 weight 100 backup
 
 # ---------- project 1 "shop" · service 2 (https :20002 -> 8080) ----------
 frontend fe_2 from loxy_http
@@ -462,10 +462,10 @@ backend be_2 from loxy_http
     balance roundrobin
     timeout server 60s
     cookie LOXYSTICKY insert indirect nocache httponly secure maxlife 300s
-    server s101 10.0.0.11:8080 id 101 check inter 15s rise 3 fall 3 cookie s101
-    server s102x7 10.0.0.12:8080 id 102 check inter 15s rise 3 fall 3 cookie s102x7
-    server s102x8 10.0.0.13:8080 id 103 check inter 15s rise 3 fall 3 cookie s102x8
-    server s103 10.0.0.14:8080 id 104 check inter 15s rise 3 fall 3 cookie s103 backup
+    server s101 10.0.0.11:8080 id 101 check inter 15s rise 3 fall 3 cookie s101 weight 100
+    server s102x7 10.0.0.12:8080 id 102 check inter 15s rise 3 fall 3 cookie s102x7 weight 100
+    server s102x8 10.0.0.13:8080 id 103 check inter 15s rise 3 fall 3 cookie s102x8 weight 100
+    server s103 10.0.0.14:8080 id 104 check inter 15s rise 3 fall 3 cookie s103 weight 100 backup
 
 # ---------- project 2 "db" · service 3 (tcp :20003 -> 5432) ----------
 frontend fe_3 from loxy_tcp
@@ -478,7 +478,7 @@ frontend fe_3 from loxy_tcp
 backend be_3 from loxy_tcp
     balance leastconn
     timeout server 60s
-    server s120 10.0.0.41:5432 id 120 check inter 15s rise 3 fall 3 send-proxy-v2 check-send-proxy
+    server s120 10.0.0.41:5432 id 120 check inter 15s rise 3 fall 3 send-proxy-v2 check-send-proxy weight 100
 ```
 
 `crt-lists/svc2.lst` contains `12.pem [alpn h2,http/1.1]`; `crt-lists/sys_https.lst` contains `21.pem [alpn h2,http/1.1]`; `maps/maint.map` contains `3 1` (project #2 is in maintenance).
@@ -524,7 +524,7 @@ Notes:
 |---|---|
 | ip / host / label selector | `server s<T>` / `s<T>x<H>` `<address>:<port> id <slot>` — address: IP, host `ipv4` (or `private_ipv4` with `use_private_ip`, else `ipv6`), one server per matching host for selectors |
 | port | overrides the service destination port |
-| weight | `weight <n>` (omitted when 100) |
+| weight | `weight <n>` always, including 100 (HAProxy defaults to 1) |
 | backup | `backup` |
 | admin_state | applied at runtime (`set server … state`) and kept across reloads by server‑state (ADR 0004 §6, §8). `render.ServerArgs` (shared with runtime `add server`) never carries it; the backend renderer appends `disabled` to the server line of a target in `maint`, so a cold start keeps maintenance. `drain` is runtime‑only |
 

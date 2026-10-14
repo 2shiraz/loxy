@@ -200,9 +200,9 @@ func ServerArgs(be *state.Backend, sv *state.Server, sl *state.Slot) string {
 	case "v2":
 		b.WriteString(" send-proxy-v2 check-send-proxy")
 	}
-	if sv.Weight != 100 {
-		fmt.Fprintf(&b, " weight %d", sv.Weight)
-	}
+	// HAProxy defaults to 1, while Loxy defaults to 100. Always emit the
+	// configured weight for both static and dynamically added servers.
+	fmt.Fprintf(&b, " weight %d", sv.Weight)
 	if sv.Backup != 0 {
 		b.WriteString(" backup")
 	}

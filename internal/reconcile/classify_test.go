@@ -68,6 +68,8 @@ func TestClassify(t *testing.T) {
 			[]string{"add server be_1/s2 10.0.0.2:80 id 2 check", "enable health be_1/s2", "enable server be_1/s2"}},
 		{"remove server", base, mk("roundrobin", false, 80), "runtime", []string{"set server be_1/s1 state maint", "wait 5s srv-removable", "del server be_1/s1"}},
 		{"weight", base, mk("roundrobin", false, 80, srvSpec{1, "10.0.0.1", 50, "ready"}), "runtime", []string{"set server be_1/s1 weight 50"}},
+		{"lower weight", base, mk("roundrobin", false, 80, srvSpec{1, "10.0.0.1", 10, "ready"}), "runtime", []string{"set server be_1/s1 weight 10"}},
+		{"restore default weight", mk("roundrobin", false, 80, srvSpec{1, "10.0.0.1", 10, "ready"}), base, "runtime", []string{"set server be_1/s1 weight 100"}},
 		{"drain", base, mk("roundrobin", false, 80, srvSpec{1, "10.0.0.1", 100, "drain"}), "runtime", []string{"set server be_1/s1 state drain"}},
 		{"maintenance", base, mk("roundrobin", true, 80, one), "runtime", []string{"add map /live/maps/maint.map 1 1"}},
 		{"algorithm", base, mk("leastconn", false, 80, one), "reload", nil},
