@@ -64,12 +64,22 @@ export function algorithmLabel(a: string): string {
   return ({ roundrobin: 'Round Robin', leastconn: 'Least Connections', source: 'Source IP', random: 'Random' } as Record<string, string>)[a] ?? a;
 }
 
-/** "*:443, 10.0.0.5:80" — IPv6 addresses are bracketed. */
-export function bindsText(binds: { address: string; port: number }[] | undefined): string {
-  if (!binds?.length) return '—';
-  return binds.map((b) => `${b.address.includes(':') ? `[${b.address}]` : b.address || '*'}:${b.port}`).join(', ');
+/** Short label for a project endpoint: ":20001" for ports, the hostname for domains. */
+export function endpointLabel(e: { kind: string; url: string }): string {
+  const m = /^[a-z]+:\/\/(\[[^\]]+\]|[^/:]+)(?::(\d+))?/i.exec(e.url);
+  if (!m) return e.url;
+  if (e.kind === 'port') return m[2] ? `:${m[2]}` : e.url;
+  return m[1];
 }
 
-export function modeLabel(mode: string, tls?: boolean): string {
-  return mode === 'tcp' ? 'TCP' : tls ? 'HTTPS' : 'HTTP';
+/** Only http(s) endpoints can be opened in a browser. */
+export function isWebUrl(u: string): boolean {
+  return /^https?:\/\//i.test(u);
+}
+
+/** One status word for a project: apply problems first, then health. */
+export function projectStatus(p: { status: string; health: { status: string } }): string {
+  if (p.status === 'error') return 'apply_error';
+  if (p.status === 'applying') return 'applying';
+  return p.health.status;
 }

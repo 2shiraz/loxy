@@ -36,7 +36,7 @@
     if (r) { ipOpen = false; void nodes.reload(); }
   }
   async function delIp(n: Node, ipid: number, a: string) {
-    const ok = await confirm({ title: `Remove ${a}?`, message: 'Frontends bound to this address keep their bind, but it is no longer suggested. Remove those binds first if the address is going away.', confirmLabel: 'Remove address', danger: true });
+    const ok = await confirm({ title: `Remove ${a}?`, message: 'It is no longer listed in the DNS records domains need.', confirmLabel: 'Remove address', danger: true });
     if (!ok) return;
     const r = await mutate(api.DELETE('/nodes/{id}/ips/{ipid}', { params: { path: { id: n.id, ipid } } }), { success: 'Address removed' });
     if (r !== undefined) void nodes.reload();
@@ -91,7 +91,7 @@
 
         <div class="iph">
           <h3>Node addresses</h3>
-          <span class="muted small">Suggested when you add binds to a frontend.</span>
+          <span class="muted small">Used for the DNS records of your domains and for project endpoints.</span>
           <span class="spacer"></span>
           <button class="btn sm" onclick={() => openIp(n)}><Icon name="plus" size={13} />Add address</button>
         </div>
@@ -111,7 +111,7 @@
               </tbody>
             </table>
           </div>
-        {:else}<p class="muted small">No addresses yet. Frontends can still bind to “*” (all addresses).</p>{/if}
+        {:else}<p class="muted small">No addresses yet. Add the server's public IPs so Loxy can show which DNS records domains need.</p>{/if}
       </section>
     {/each}
   {/if}

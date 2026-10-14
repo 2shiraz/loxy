@@ -42,12 +42,12 @@
     es = undefined;
   }
 
-  async function connect(feId: number) {
+  async function connect(pid: number) {
     close();
     const my = ++gen;
     status = 'connecting';
     errMsg = '';
-    const url = `/api/v1/frontends/${feId}/logs/stream`;
+    const url = `/api/v1/projects/${pid}/logs/stream`;
 
     // Probe first: EventSource hides the HTTP status, so a 404 (live logs off)
     // would otherwise look like a generic connection error.
@@ -144,10 +144,10 @@
   });
 
   $effect(() => {
-    const feId = id;
+    const pid = id;
     lines = [];
     held = [];
-    void connect(feId);
+    void connect(pid);
     return close;
   });
 

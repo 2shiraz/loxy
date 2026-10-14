@@ -133,7 +133,7 @@
     <div class="field"><label for="ue">Email</label><input id="ue" class="input" type="email" bind:value={nu.email} aria-invalid={uErr.email ? 'true' : undefined} />{#if uErr.email}<span class="ferr">{uErr.email}</span>{/if}</div>
     <div class="field"><label for="up">Initial password</label><input id="up" class="input" type="password" autocomplete="new-password" bind:value={nu.password} aria-invalid={uErr.password ? 'true' : undefined} />{#if uErr.password}<span class="ferr">{uErr.password}</span>{/if}</div>
     <div class="field"><label for="ur">Role</label>
-      <select id="ur" class="select" bind:value={nu.role}><option value="admin">Admin — everything except owner settings</option><option value="operator">Operator — manage frontends and backends</option><option value="viewer">Viewer — read only</option></select></div>
+      <select id="ur" class="select" bind:value={nu.role}><option value="admin">Admin — everything except owner settings</option><option value="operator">Operator — manage projects</option><option value="viewer">Viewer — read only</option></select></div>
   </form>
   {#snippet footer()}
     <button class="btn" onclick={() => (uOpen = false)}>Cancel</button>

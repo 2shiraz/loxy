@@ -12,15 +12,16 @@
 
   const ov = resource(() => unwrap(api.GET('/overview')), { keys: () => ['overview', 'nodes'] });
   const events = resource(async () => (await unwrap(api.GET('/events/history', { params: { query: { limit: 10 } } }))).events, { keys: () => ['events'] });
-  const fes = resource(async () => (await unwrap(api.GET('/frontends'))).frontends, { keys: () => ['frontends'] });
-  const failing = $derived((fes.data ?? []).filter((f) => f.status === 'apply_error'));
+  const projects = resource(async () => (await unwrap(api.GET('/projects'))).projects, { keys: () => ['projects'] });
+  const failing = $derived((projects.data ?? []).filter((p) => p.status === 'error'));
+  const unhealthy = $derived((projects.data ?? []).filter((p) => p.status !== 'error' && (p.health.status === 'unhealthy' || p.health.status === 'degraded')));
 
   let retrying = $state(false);
   async function retry() {
     retrying = true;
     const r = await mutate(api.POST('/apply/retry'), { success: 'Retrying apply…' });
     retrying = false;
-    if (r !== undefined) { void ov.reload(); void fes.reload(); }
+    if (r !== undefined) { void ov.reload(); void projects.reload(); }
   }
   const sevIcon = (s: string) => (s === 'error' ? 'x' : s === 'warning' ? 'alert' : 'info');
 </script>
@@ -36,37 +37,36 @@
   {@const o = ov.data}
   {@const n = o.node}
   <div class="stack-lg">
-    {#if o.frontends.apply_errors > 0 || failing.length}
+    {#if o.projects.apply_errors > 0 || failing.length}
       <div class="banner err" role="alert">
         <Icon name="alert" />
         <div class="spacer">
-          <b>{o.frontends.apply_errors || failing.length} frontend{(o.frontends.apply_errors || failing.length) === 1 ? '' : 's'} could not be applied.</b>
+          <b>{o.projects.apply_errors || failing.length} project{(o.projects.apply_errors || failing.length) === 1 ? '' : 's'} could not be applied.</b>
           HAProxy keeps running the last good configuration.
-          {#if failing.length}<span class="names">{#each failing as f, i (f.id)}{i ? ', ' : ''}<a href="/frontends/{f.id}">{f.name}</a>{/each}</span>{/if}
+          {#if failing.length}<span class="names">{#each failing as f, i (f.id)}{i ? ', ' : ''}<a href="/projects/{f.id}/overview">{f.name}</a>{/each}</span>{/if}
         </div>
         <button class="btn sm" onclick={retry} disabled={retrying}><Icon name="refresh" size={13} />{retrying ? 'Retrying…' : 'Retry'}</button>
       </div>
     {/if}
 
     <div class="cards">
-      <a class="card sc" href="/frontends">
-        <span class="lbl">Frontends</span>
-        <span class="big">{num(o.frontends.total)}</span>
-        <span class="sub small">{#if o.frontends.apply_errors}<span class="err-text">{o.frontends.apply_errors} apply error{o.frontends.apply_errors === 1 ? '' : 's'}</span>{:else}<span class="muted">all applied</span>{/if}</span>
-      </a>
-      <a class="card sc" href="/backends">
-        <span class="lbl">Backends</span>
-        <span class="big">{num(o.backends.total)}</span>
+      <a class="card sc" href="/projects">
+        <span class="lbl">Projects</span>
+        <span class="big">{num(o.projects.total)}</span>
         <span class="sub small">
-          <span class="ok-text">{o.backends.healthy} healthy</span>
-          {#if o.backends.degraded}<span class="warn-text"> · {o.backends.degraded} degraded</span>{/if}
-          {#if o.backends.unhealthy}<span class="err-text"> · {o.backends.unhealthy} unhealthy</span>{/if}
+          {#if !o.projects.total}<span class="muted">none yet</span>
+          {:else}
+            <span class="ok-text">{o.projects.healthy} healthy</span>
+            {#if o.projects.degraded}<span class="warn-text"> · {o.projects.degraded} degraded</span>{/if}
+            {#if o.projects.unhealthy}<span class="err-text"> · {o.projects.unhealthy} unhealthy</span>{/if}
+            {#if o.projects.apply_errors}<span class="err-text"> · {o.projects.apply_errors} apply error{o.projects.apply_errors === 1 ? '' : 's'}</span>{/if}
+          {/if}
         </span>
       </a>
-      <a class="card sc" href="/backends">
-        <span class="lbl">Servers</span>
-        <span class="big">{num(o.servers.healthy)}<span class="of"> / {num(o.servers.total)}</span></span>
-        <span class="sub small">{#if o.servers.total && o.servers.healthy < o.servers.total}<span class="warn-text">{o.servers.total - o.servers.healthy} not healthy</span>{:else if o.servers.total}<span class="muted">all healthy</span>{:else}<span class="muted">none yet</span>{/if}</span>
+      <a class="card sc" href="/projects">
+        <span class="lbl">Targets</span>
+        <span class="big">{num(o.targets.healthy)}<span class="of"> / {num(o.targets.total)}</span></span>
+        <span class="sub small">{#if o.targets.total && o.targets.healthy < o.targets.total}<span class="warn-text">{o.targets.total - o.targets.healthy} not healthy</span>{:else if o.targets.total}<span class="muted">all healthy</span>{:else}<span class="muted">none yet</span>{/if}</span>
       </a>
       <a class="card sc" href="/certificates">
         <span class="lbl">Certificates</span>
@@ -78,6 +78,21 @@
         </span>
       </a>
     </div>
+
+    {#if unhealthy.length}
+      <section class="card flush" aria-labelledby="att-h">
+        <div class="card-head pad"><h2 id="att-h">Needs attention</h2></div>
+        <ul class="att">
+          {#each unhealthy as p (p.id)}
+            <li>
+              <HealthBadge status={p.health.status} />
+              <a href="/projects/{p.id}/targets">{p.name}</a>
+              <span class="muted small msg">{p.health.messages[0] ?? `${p.health.healthy} of ${p.health.total} checks healthy`}</span>
+            </li>
+          {/each}
+        </ul>
+      </section>
+    {/if}
 
     <section aria-labelledby="tr-h">
       <h2 id="tr-h" class="section-title">Current traffic</h2>
@@ -125,8 +140,7 @@
               <li>
                 <span class="sev {e.severity}"><Icon name={sevIcon(e.severity)} size={13} label={e.severity} /></span>
                 <span class="msg">
-                  {#if e.frontend_id}<a href="/frontends/{e.frontend_id}">{e.message}</a>
-                  {:else if e.backend_id}<a href="/backends/{e.backend_id}">{e.message}</a>
+                  {#if e.project_id}<a href="/projects/{e.project_id}/overview">{e.message}</a>
                   {:else}{e.message}{/if}
                 </span>
                 <time class="xs muted" datetime={new Date(e.ts).toISOString()} title={dateTime(e.ts)}>{relTime(e.ts)}</time>
@@ -159,4 +173,7 @@
   .sev.warning { color: var(--warn); }
   .sev.error { color: var(--err); }
   time { flex: none; }
+  .att { list-style: none; margin: 0; padding: 0; }
+  .att li { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-top: 1px solid var(--border); min-width: 0; }
+  .att a { font-weight: 500; }
 </style>

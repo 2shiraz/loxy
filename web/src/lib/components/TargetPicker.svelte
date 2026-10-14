@@ -1,10 +1,10 @@
 <script lang="ts">
   /**
-   * Server picker for a backend (§8.6): hosts from the inventory, a label
+   * Target picker for a project (§8.6): hosts from the inventory, a label
    * selector with live preview, or a list of IPs with an optional port.
-   * Emits BackendServerInput[] for POST /backends/{id}/servers.
+   * Emits TargetInput[] for POST /projects/{id}/targets (or ProjectCreate.targets).
    */
-  import { api, unwrap, type Host, type BackendServerInput } from '$lib/api/client';
+  import { api, unwrap, type Host, type TargetInput } from '$lib/api/client';
   import { targetIpError, portError } from '$lib/util/validate';
   import LabelChips from './LabelChips.svelte';
 
@@ -16,7 +16,7 @@
     showModes = true
   }: {
     mode?: Mode;
-    targets?: BackendServerInput[];
+    targets?: TargetInput[];
     error?: string;
     showModes?: boolean;
   } = $props();
@@ -73,7 +73,7 @@
       const lines = ipText.split(/[\s,]+/).map((l) => l.trim()).filter(Boolean);
       let err = pErr || wErr;
       const seen = new Set<string>();
-      const out: BackendServerInput[] = [];
+      const out: TargetInput[] = [];
       for (const l of lines) {
         if (err) break;
         const a = parseAddr(l);
@@ -100,7 +100,7 @@
 
 <div class="tp">
   {#if showModes}
-    <div class="seg" role="radiogroup" aria-label="Server source">
+    <div class="seg" role="radiogroup" aria-label="Target source">
       <button type="button" role="radio" aria-checked={mode === 'ip'} class:on={mode === 'ip'} onclick={() => (mode = 'ip')}>IP addresses</button>
       <button type="button" role="radio" aria-checked={mode === 'host'} class:on={mode === 'host'} onclick={() => (mode = 'host')}>Hosts</button>
       <button type="button" role="radio" aria-checked={mode === 'label_selector'} class:on={mode === 'label_selector'} onclick={() => (mode = 'label_selector')}>Label selector</button>
@@ -153,14 +153,15 @@
   {/if}
   <div class="form-grid">
     <div class="field">
-      <label for="tp-port">Port <span class="muted">(optional)</span></label>
-      <input id="tp-port" class="input mono" type="number" min="1" max="65535" placeholder="backend default" bind:value={port} />
+      <label for="tp-port">Port override <span class="muted">(optional)</span></label>
+      <input id="tp-port" class="input mono" type="number" min="1" max="65535" placeholder="service port" bind:value={port} />
+      <span class="hint">Empty = each service's destination port.</span>
     </div>
     <div class="field">
       <label for="tp-w">Weight</label>
       <input id="tp-w" class="input mono" type="number" min="0" max="256" bind:value={weight} />
     </div>
-    <label class="check bk"><input type="checkbox" bind:checked={backup} />Backup server</label>
+    <label class="check bk"><input type="checkbox" bind:checked={backup} />Backup target</label>
   </div>
 </div>
 

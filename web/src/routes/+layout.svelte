@@ -15,8 +15,7 @@
 
   const nav = [
     { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
-    { href: '/frontends', label: 'Frontends', icon: 'frontend' },
-    { href: '/backends', label: 'Backends', icon: 'backend' },
+    { href: '/projects', label: 'Projects', icon: 'lb' },
     { href: '/hosts', label: 'Hosts', icon: 'host' },
     { href: '/certificates', label: 'Certificates', icon: 'cert' },
     { href: '/domains', label: 'Domains', icon: 'dns' },

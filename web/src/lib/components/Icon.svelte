@@ -2,8 +2,6 @@
   const P: Record<string, string> = {
     lb: 'M4 6h16M4 12h16M4 18h16M8 6v12',
     dashboard: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
-    frontend: 'M3 12h7M7 8l4 4-4 4M14 4h6v16h-6',
-    backend: 'M4 5h16v4H4zM4 15h16v4H4zM12 9v6M8 12h8',
     host: 'M4 5h16v10H4zM9 19h6M12 15v4',
     arrowUp: 'M12 19V5M6 11l6-6 6 6',
     arrowDown: 'M12 5v14M6 13l6 6 6-6',

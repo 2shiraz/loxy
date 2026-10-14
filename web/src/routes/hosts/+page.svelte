@@ -15,8 +15,8 @@
   import ErrorBox from '$lib/components/ErrorBox.svelte';
 
   const hosts = resource(async () => (await unwrap(api.GET('/hosts'))).hosts, { keys: () => ['hosts'] });
-  const bes = resource(async () => (await unwrap(api.GET('/backends'))).backends, { keys: () => ['backends'] });
-  const beName = (id: number) => bes.data?.find((b) => b.id === id)?.name ?? `#${id}`;
+  const projects = resource(async () => (await unwrap(api.GET('/projects'))).projects, { keys: () => ['projects'] });
+  const projectName = (id: number) => projects.data?.find((b) => b.id === id)?.name ?? `#${id}`;
   let q = $state('');
   const rows = $derived((hosts.data ?? []).filter((s) => {
     const t = q.trim();
@@ -57,7 +57,7 @@
     if (r) { open = false; void hosts.reload(); }
   }
   async function remove(s: Host) {
-    if (s.used_by?.length) { toast.error(`${s.name} is used by ${s.used_by.length} backend${s.used_by.length === 1 ? '' : 's'}. Remove it there first.`); return; }
+    if (s.used_by?.length) { toast.error(`${s.name} is a target of ${s.used_by.length} project${s.used_by.length === 1 ? '' : 's'}. Remove it there first.`); return; }
     const ok = await confirm({ title: `Delete ${s.name}?`, message: 'The host is removed from the inventory. This cannot be undone.', confirmLabel: 'Delete host', danger: true });
     if (!ok) return;
     const r = await mutate(api.DELETE('/hosts/{id}', { params: { path: { id: s.id } } }), { success: 'Host deleted' });
@@ -71,7 +71,7 @@
   <h1>Hosts</h1>
   <button class="btn primary" onclick={() => openForm()}><Icon name="plus" size={14} />Add host</button>
 </div>
-<p class="section-intro">Your inventory of machines. Add them to backends directly, or label them and let a backend's label selector pick them up.</p>
+<p class="section-intro">Your inventory of machines. Add them to a project as targets, or label them and let a project's label selector pick them up.</p>
 
 <label class="search">
   <Icon name="search" size={14} /><span class="sr-only">Search hosts</span>
@@ -81,7 +81,7 @@
 {#if hosts.error && !hosts.data}<ErrorBox message={hosts.error} onretry={hosts.reload} />
 {:else if !hosts.data}<Skeleton card rows={5} />
 {:else if !hosts.data.length}
-  <div class="card"><EmptyState icon="host" title="No hosts yet" text="Add the machines that should receive traffic. Labels let backends pick them up automatically."><button class="btn primary" onclick={() => openForm()}>Add host</button></EmptyState></div>
+  <div class="card"><EmptyState icon="host" title="No hosts yet" text="Add the machines that should receive traffic. Labels let projects pick them up automatically."><button class="btn primary" onclick={() => openForm()}>Add host</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
     <table class="tbl">
@@ -94,7 +94,7 @@
             <td><CopyText text={s.ipv6} /></td>
             <td><CopyText text={s.private_ipv4} /></td>
             <td><LabelChips labels={s.labels} max={4} /></td>
-            <td class="small">{#if s.used_by?.length}{#each s.used_by as b, i (b)}{i ? ', ' : ''}<a href="/backends/{b}">{beName(b)}</a>{/each}{:else}<span class="muted">—</span>{/if}</td>
+            <td class="small">{#if s.used_by?.length}{#each s.used_by as b, i (b)}{i ? ', ' : ''}<a href="/projects/{b}/targets">{projectName(b)}</a>{/each}{:else}<span class="muted">—</span>{/if}</td>
             <td class="actions"><Menu label="Actions for {s.name}" items={[{ label: 'Edit', onclick: () => openForm(s) }, { label: 'Delete', onclick: () => remove(s), danger: true, separator: true }]} /></td>
           </tr>
         {:else}

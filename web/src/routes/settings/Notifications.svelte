@@ -19,13 +19,14 @@
 
   const KIND_LABEL: Record<Kind, string> = { webhook: 'Webhook', slack: 'Slack', telegram: 'Telegram', email: 'Email' };
   const EVENT_KINDS = [
-    ['server.health.changed', 'Server health changed'],
+    ['target.health.changed', 'Target health changed'],
     ['apply.failed', 'Config apply failed'],
     ['config.applied', 'Config applied'],
     ['config.rollback', 'Config rolled back'],
     ['domain.status.changed', 'Domain status changed'],
     ['domain.sync.failed', 'Domain sync failed'],
-    ['certificate.updated', 'Certificate updated']
+    ['certificate.updated', 'Certificate updated'],
+    ['backup.failed', 'Backup failed']
   ] as const;
   const SEVERITIES: [Severity, string][] = [['info', 'Info and above'], ['warning', 'Warning and above'], ['error', 'Errors only']];
 
@@ -234,7 +235,7 @@
     <div class="field">
       <label for="nrl">Label filter</label>
       <input id="nrl" class="input mono" bind:value={nr.label_filter} placeholder="env=prod" spellcheck="false" aria-invalid={rErr.label_filter ? 'true' : undefined} />
-      {#if rErr.label_filter}<span class="ferr">{rErr.label_filter}</span>{:else}<span class="hint">Label selector on frontend/backend labels. Leave empty to match everything.</span>{/if}
+      {#if rErr.label_filter}<span class="ferr">{rErr.label_filter}</span>{:else}<span class="hint">Label selector on project labels. Leave empty to match everything.</span>{/if}
     </div>
     <div class="form-grid">
       <div class="field">

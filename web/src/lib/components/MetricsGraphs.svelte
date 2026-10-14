@@ -10,8 +10,9 @@
 
 <script lang="ts">
   /**
-   * Range picker + stacked uPlot charts for one frontend or backend.
-   * Frontends also get a 1 s "Live" range fed by /metrics/stream.
+   * Range picker + stacked uPlot charts for one project (optionally one
+   * service). The whole-project view gets a 1 s "Live" range fed by
+   * /projects/{id}/metrics/stream.
    */
   import { onDestroy, untrack } from 'svelte';
   import { api, unwrap, type Metrics } from '$lib/api/client';
@@ -20,7 +21,7 @@
   import ErrorBox from './ErrorBox.svelte';
   import EmptyState from './EmptyState.svelte';
 
-  let { kind, id, types, charts }: { kind: 'frontends' | 'backends'; id: number; types: string; charts: ChartDef[] } = $props();
+  let { id, serviceId, types, charts }: { id: number; serviceId?: number; types: string; charts: ChartDef[] } = $props();
 
   const ALL = [
     { id: 'live', label: 'Live', sec: 300, step: 1 },
@@ -31,12 +32,12 @@
     { id: '7d', label: '7 d', sec: 604800, step: 1800 },
     { id: '30d', label: '30 d', sec: 2592000, step: 7200 }
   ];
-  const streams = $derived(kind === 'frontends');
+  const streams = $derived(serviceId == null);
   const ranges = $derived(streams ? ALL : ALL.slice(1));
   const keys = $derived([...new Set(charts.flatMap((c) => c.series.map((s) => s.key)))]);
 
   // svelte-ignore state_referenced_locally
-  let range = $state(kind === 'frontends' ? 'live' : '1h');
+  let range = $state(serviceId == null ? 'live' : '1h');
   let ts = $state<number[]>([]);
   let data = $state<Record<string, (number | null)[]>>({});
   let present = $state<Set<string>>(new Set());
@@ -52,10 +53,8 @@
     loading = ts.length === 0;
     error = '';
     try {
-      const query = { type: types, start: end - r.sec, end, step: r.step };
-      const m: Metrics = kind === 'frontends'
-        ? await unwrap(api.GET('/frontends/{id}/metrics', { params: { path: { id }, query } }))
-        : await unwrap(api.GET('/backends/{id}/metrics', { params: { path: { id }, query } }));
+      const query = { type: types, start: end - r.sec, end, step: r.step, ...(serviceId != null ? { service_id: serviceId } : {}) };
+      const m: Metrics = await unwrap(api.GET('/projects/{id}/metrics', { params: { path: { id }, query } }));
       ts = m.timestamps;
       const next: Record<string, (number | null)[]> = {};
       for (const k of keys) next[k] = m.series[k] ?? m.timestamps.map(() => null);
@@ -85,7 +84,7 @@
 
   function startLive() {
     stopLive();
-    es = new EventSource(`/api/v1/frontends/${id}/metrics/stream`, { withCredentials: true });
+    es = new EventSource(`/api/v1/projects/${id}/metrics/stream`, { withCredentials: true });
     es.addEventListener('metrics.tick', (e) => {
       try {
         pending.push(JSON.parse((e as MessageEvent).data) as Record<string, number>);
@@ -98,6 +97,7 @@
   $effect(() => {
     const r = range;
     void id;
+    void serviceId;
     untrack(() => {
       stopLive();
       void load(r).then(() => { if (r === 'live' && range === 'live') startLive(); });
@@ -128,7 +128,7 @@
 {:else if loading}
   <div class="stack"><Skeleton card rows={5} /><Skeleton card rows={5} /></div>
 {:else if !shown.length}
-  <div class="card"><EmptyState icon="pulse" title="No metrics yet" text="Metrics appear once HAProxy has served traffic for this resource." /></div>
+  <div class="card"><EmptyState icon="pulse" title="No metrics yet" text="Metrics appear once HAProxy has served traffic for this project." /></div>
 {:else}
   <div class="charts">
     {#each shown as c (c.title)}
