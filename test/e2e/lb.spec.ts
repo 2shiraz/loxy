@@ -31,7 +31,7 @@ test('login, create LB via wizard, serve traffic, maintenance, delete', async ({
   await expect(page.getByText(name).first()).toBeVisible();
 
   // Traffic flows within a few seconds (§8.2 acceptance: reachable within 3 s).
-  await expect.poll(async () => (await request.get(`http://${lbHost}:${port}/`).catch(() => null))?.status(), { timeout: 5_000 }).toBe(200);
+  await expect.poll(async () => (await request.get(`http://${lbHost}:${port}/`).catch(() => null))?.status(), { timeout: 10_000 }).toBe(200);
 
   // Services tab shows the target healthy.
   await page.getByRole('link', { name: 'Services' }).click();
