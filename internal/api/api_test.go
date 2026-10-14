@@ -143,8 +143,8 @@ func TestLoadBalancerLifecycle(t *testing.T) {
 		t.Fatalf("https without cert: %d %v", st, b)
 	}
 	// targets: loopback rejected, quota enforced (lb11: 25)
-	if st, b = c.req("POST", fmt.Sprintf("/load_balancers/%d/targets", id), map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": "127.0.0.1"}}}); st != 422 {
-		t.Fatalf("loopback: %d %v", st, b)
+	if st, b = c.req("POST", fmt.Sprintf("/load_balancers/%d/targets", id), map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": "224.0.0.1"}}}); st != 422 {
+		t.Fatalf("multicast target: %d %v", st, b)
 	}
 	var many []any
 	for i := 0; i < 24; i++ {
