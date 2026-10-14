@@ -1723,6 +1723,8 @@ components:
           - https
         port:
           type: integer
+          nullable: true
+          description: check port; null = each server's own port
         interval_s:
           type: integer
         timeout_s:
@@ -2421,7 +2423,7 @@ components:
           type: integer
         label_filter:
           type: string
-          description: label selector on frontend/backend labels
+          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
     AlertRuleInput:
       type: object
       required:
@@ -2445,7 +2447,7 @@ components:
           type: integer
         label_filter:
           type: string
-          description: label selector on frontend/backend labels
+          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
     Bind:
       type: object
       required:

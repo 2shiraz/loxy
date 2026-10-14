@@ -258,8 +258,17 @@ func (s *Server) respondDomain(w http.ResponseWriter, status int, id int64) {
 
 // domainRefs validates frontend / provider references; returns the detected zone.
 func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors) string {
-	if in.FrontendId != nil && *in.FrontendId != 0 && s.Snap.Get().Frontend(*in.FrontendId) == nil {
-		fe.Add("frontend_id", "unknown frontend")
+	if in.FrontendId != nil && *in.FrontendId != 0 {
+		snap := s.Snap.Get()
+		if f := snap.Frontend(*in.FrontendId); f == nil {
+			fe.Add("frontend_id", "unknown frontend")
+		} else if !needsACME(snap, f.ID, f.CertIDs) {
+			// The frontend starts answering HTTP-01 challenges on :80 (§8.9): that listener
+			// must not collide with another frontend.
+			if msg := listenerCollision(snap, f, true); msg != "" {
+				fe.Add("frontend_id", "HTTP-01 challenges need :80 on this frontend's addresses: "+msg)
+			}
+		}
 	}
 	zone := ""
 	if in.DnsProviderId != nil && *in.DnsProviderId != 0 {

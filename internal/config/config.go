@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/base64"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -31,6 +32,19 @@ type Config struct {
 	LiveLogs int
 	// NoHAProxy disables talking to the HAProxy sockets (render/validate only).
 	NoHAProxy bool
+	// IPv6 adds IPv6 listeners for "*" binds (LOXY_IPV6=auto|on|off; auto probes the host).
+	IPv6 bool
+}
+
+// ipv6Available reports whether this network namespace (shared with HAProxy) can open
+// IPv6 sockets; HAProxy refuses to start with an IPv6 listener otherwise.
+func ipv6Available() bool {
+	l, err := net.Listen("tcp6", "[::]:0")
+	if err != nil {
+		return false
+	}
+	_ = l.Close()
+	return true
 }
 
 const LetsEncryptProduction = "https://acme-v02.api.letsencrypt.org/directory"
@@ -72,6 +86,15 @@ func Load() (*Config, error) {
 	}
 	c.ACMEInsecure, _ = strconv.ParseBool(env("LOXY_ACME_INSECURE", "false"))
 	c.NoHAProxy, _ = strconv.ParseBool(env("LOXY_NO_HAPROXY", "false"))
+	switch v := env("LOXY_IPV6", "auto"); v {
+	case "auto":
+		c.IPv6 = ipv6Available()
+	case "on", "true", "1":
+		c.IPv6 = true
+	case "off", "false", "0":
+	default:
+		return nil, fmt.Errorf("LOXY_IPV6: want auto, on or off, got %q", v)
+	}
 	for _, s := range strings.Split(env("LOXY_PANEL_ALLOW", ""), ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			c.PanelAllow = append(c.PanelAllow, s)

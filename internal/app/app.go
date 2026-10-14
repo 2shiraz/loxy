@@ -138,7 +138,7 @@ func New(cfg *config.Config, version string) (*App, error) {
 	a.Rec = reconcile.New(st, box, revfs.New(cfg.HAProxyConfDir), a.Val, node, a.Hub, reconcile.Options{
 		NodeID: 1, PanelPort: cfg.PanelPort, PanelAllow: cfg.PanelAllow, LoxyAddr: cfg.Listen, StateDir: cfg.HAProxyStateDir,
 		SocketPath: filepath.Join(cfg.HAProxyRunDir, "admin.sock"), GlobalMaxConn: maxconn,
-		PanelPEM: panelPEM, PlaceholderPEM: placeholder, NoHAProxy: cfg.NoHAProxy,
+		PanelPEM: panelPEM, PlaceholderPEM: placeholder, NoHAProxy: cfg.NoHAProxy, IPv6: cfg.IPv6,
 	})
 	for _, f := range a.features {
 		if f == "PROMEX" {
@@ -195,6 +195,9 @@ func New(cfg *config.Config, version string) (*App, error) {
 		a.Issuer.Kick()
 	}
 	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(e events.Event) map[string]string {
+		if e.BackendID == nil && e.FrontendID == nil {
+			return nil // node-wide event
+		}
 		snap := a.Snap.Get()
 		out := map[string]string{}
 		if e.BackendID != nil {

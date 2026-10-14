@@ -42,6 +42,8 @@ type Options struct {
 	PlaceholderPEM string
 	// NoHAProxy: render + validate + swap only (no sockets).
 	NoHAProxy bool
+	// IPv6: render IPv6 listeners for "*" binds.
+	IPv6 bool
 }
 
 type Reconciler struct {
@@ -145,7 +147,7 @@ func (r *Reconciler) Input(snap *state.Snapshot, root string, rev, desired int64
 		PanelPort: r.Opt.PanelPort, PanelAllow: r.Opt.PanelAllow, LoxyAddr: r.Opt.LoxyAddr, Promex: r.promex,
 		StateFile: filepath.Join(r.Opt.StateDir, "server-state"), SocketPath: r.Opt.SocketPath, GlobalMaxConn: r.Opt.GlobalMaxConn,
 		Frontends: snap.FrontendsOnNode(r.Opt.NodeID), Backends: snap.BackendsOnNode(r.Opt.NodeID), Cert: snap.Cert, ACMEHTTP01: ACMEFrontends(snap),
-		PanelPEM: r.Opt.PanelPEM, PlaceholderPEM: r.Opt.PlaceholderPEM,
+		PanelPEM: r.Opt.PanelPEM, PlaceholderPEM: r.Opt.PlaceholderPEM, IPv6: r.Opt.IPv6,
 	}
 }
 

@@ -1031,7 +1031,8 @@ export interface components {
         HealthCheck: {
             /** @enum {string} */
             protocol?: "tcp" | "http" | "https";
-            port?: number;
+            /** @description check port; null = each server's own port */
+            port?: number | null;
             interval_s?: number;
             timeout_s?: number;
             retries?: number;
@@ -1321,7 +1322,7 @@ export interface components {
             /** @enum {string} */
             min_severity: "info" | "warning" | "error";
             cooldown_s: number;
-            /** @description label selector on frontend/backend labels */
+            /** @description label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it */
             label_filter: string;
         };
         AlertRuleInput: {
@@ -1332,7 +1333,7 @@ export interface components {
             /** @enum {string} */
             min_severity?: "info" | "warning" | "error";
             cooldown_s?: number;
-            /** @description label selector on frontend/backend labels */
+            /** @description label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it */
             label_filter?: string;
         };
         Bind: {

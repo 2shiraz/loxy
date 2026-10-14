@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/netip"
 	"path"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -47,6 +48,9 @@ type Input struct {
 	PlaceholderPEM string
 	MaintPage      string
 	OmitServers    bool // skeleton mode used for change classification
+	// IPv6 adds an `ipv6@:::port v6only` listener for "*" binds. HAProxy refuses to start
+	// when the host has no IPv6 support, so this follows a startup probe (LOXY_IPV6).
+	IPv6 bool
 }
 
 // Output is the rendered tree, paths relative to the revision dir.
@@ -125,10 +129,22 @@ func CrtListPath(root string, fe int64) string {
 }
 func MaintMapPath(root string) string { return path.Join(root, "maps", "maint.map") }
 
-func bindAddr(addr string, port int64) string {
+// bindAddrs returns the bind address(es) for one frontend address. "*" means every IPv4
+// address plus, when the host supports IPv6, every IPv6 address (a separate v6only socket so
+// the two listeners never overlap).
+func bindAddrs(in *Input, addr string, port int64) []string {
 	if addr == "*" || addr == "" {
-		return ":" + strconv.FormatInt(port, 10)
+		p := strconv.FormatInt(port, 10)
+		out := []string{"0.0.0.0:" + p}
+		if in.IPv6 {
+			out = append(out, "ipv6@:::"+p+" v6only")
+		}
+		return out
 	}
+	return []string{bindAddr(addr, port)}
+}
+
+func bindAddr(addr string, port int64) string {
 	a, err := netip.ParseAddr(addr)
 	if err == nil && a.Is6() {
 		return "ipv6@" + a.String() + ":" + strconv.FormatInt(port, 10)
@@ -377,11 +393,13 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 	tls := f.Mode == "http" && f.Tls != 0
 	fe := section{Header: fmt.Sprintf("frontend %s from %s", FrontendName(f.ID), mode)}
 	for _, b := range f.Binds {
-		line := "bind " + bindAddr(b.Address, b.Port)
-		if tls {
-			line += " ssl crt-list " + CrtListPath(in.Root, f.ID) + " alpn h2,http/1.1"
+		for _, a := range bindAddrs(in, b.Address, b.Port) {
+			line := "bind " + a
+			if tls {
+				line += " ssl crt-list " + CrtListPath(in.Root, f.ID) + " alpn h2,http/1.1"
+			}
+			fe.Lines = append(fe.Lines, line)
 		}
-		fe.Lines = append(fe.Lines, line)
 	}
 	if f.Maxconn > 0 {
 		fe.Lines = append(fe.Lines, fmt.Sprintf("maxconn %d", f.Maxconn))
@@ -443,7 +461,9 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 		if f.HttpRedirect != 0 {
 			rd := section{Header: fmt.Sprintf("frontend %s from loxy_http", RedirectName(f.ID))}
 			for _, a := range addrs(f) {
-				rd.Lines = append(rd.Lines, "bind "+bindAddr(a, 80))
+				for _, b := range bindAddrs(in, a, 80) {
+					rd.Lines = append(rd.Lines, "bind "+b)
+				}
 			}
 			rd.Lines = append(rd.Lines, acmeLine, "http-request redirect scheme https code 301")
 			blk.Sections = append(blk.Sections, rd)
@@ -452,7 +472,9 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 	if in.ACMEHTTP01[f.ID] && !HasPort80(f) {
 		ac := section{Header: fmt.Sprintf("frontend %s from loxy_http", ACMEFrontend(f.ID))}
 		for _, a := range addrs(f) {
-			ac.Lines = append(ac.Lines, "bind "+bindAddr(a, 80))
+			for _, b := range bindAddrs(in, a, 80) {
+				ac.Lines = append(ac.Lines, "bind "+b)
+			}
 		}
 		ac.Lines = append(ac.Lines, acmeLine, "http-request return status 404")
 		blk.Sections = append(blk.Sections, ac)
@@ -490,6 +512,22 @@ func Ports80(f *state.Frontend, acme bool) []string {
 	return addrs(f)
 }
 
+// onlyTLS reports whether backend id is used, and only by frontends that terminate TLS
+// (its sticky cookie can then be marked secure, §7.5).
+func onlyTLS(in *Input, id int64) bool {
+	used := false
+	for _, f := range in.Frontends {
+		if f.Enabled == 0 || !slices.Contains(f.BackendIDs(), id) {
+			continue
+		}
+		if f.Mode != "http" || f.Tls == 0 {
+			return false
+		}
+		used = true
+	}
+	return used
+}
+
 func renderBackend(in *Input, b *state.Backend) (section, error) {
 	mode := "loxy_http"
 	if b.Mode == "tcp" {
@@ -504,7 +542,11 @@ func renderBackend(in *Input, b *state.Backend) (section, error) {
 		if !model.ValidCookieName(b.StickyCookieName) {
 			return be, fmt.Errorf("invalid cookie name")
 		}
-		be.Lines = append(be.Lines, fmt.Sprintf("cookie %s insert indirect nocache httponly maxlife %ds", b.StickyCookieName, b.StickyCookieLifetimeS))
+		secure := ""
+		if onlyTLS(in, b.ID) {
+			secure = " secure"
+		}
+		be.Lines = append(be.Lines, fmt.Sprintf("cookie %s insert indirect nocache httponly%s maxlife %ds", b.StickyCookieName, secure, b.StickyCookieLifetimeS))
 	}
 	if b.HcProtocol == "http" || b.HcProtocol == "https" {
 		be.Lines = append(be.Lines, "option httpchk")

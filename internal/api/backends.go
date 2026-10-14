@@ -130,6 +130,9 @@ func (s *Server) buildBackend(existing *state.Backend, in gen.BackendInput) (db.
 		fe.Add("cookie_lifetime_s", "must be 1–31536000")
 	}
 	codes := []string{"2??", "3??"}
+	if p.Mode == "http" {
+		p.HcProtocol = "http" // §8.6: http checks by default for http backends
+	}
 	if hc := in.HealthCheck; hc != nil {
 		if hc.Protocol != nil {
 			p.HcProtocol = string(*hc.Protocol)
@@ -164,17 +167,14 @@ func (s *Server) buildBackend(existing *state.Backend, in gen.BackendInput) (db.
 			}
 		}
 	}
-	if p.HcPort == p.Port {
-		p.HcPort = 0 // same as server port
-	}
 	if p.HcProtocol != "tcp" && p.HcProtocol != "http" && p.HcProtocol != "https" {
 		fe.Add("health_check.protocol", "must be tcp, http or https")
 	}
 	if p.HcPort != 0 && !model.ValidPort(int(p.HcPort)) {
 		fe.Add("health_check.port", "must be 1–65535")
 	}
-	if p.HcIntervalS < 1 || p.HcIntervalS > 3600 {
-		fe.Add("health_check.interval_s", "must be 1–3600")
+	if p.HcIntervalS < 3 || p.HcIntervalS > 3600 {
+		fe.Add("health_check.interval_s", "must be 3–3600")
 	}
 	if p.HcTimeoutS < 1 || p.HcTimeoutS > 3600 {
 		fe.Add("health_check.timeout_s", "must be 1–3600")
@@ -319,8 +319,9 @@ func (s *Server) ListBackendServers(w http.ResponseWriter, r *http.Request, id g
 		return
 	}
 	out := []map[string]any{}
+	view := s.serverViewer(b)
 	for _, sv := range b.Servers {
-		out = append(out, s.viewServer(b, sv))
+		out = append(out, view(sv))
 	}
 	writeJSON(w, 200, map[string]any{"servers": out})
 }
@@ -440,9 +441,10 @@ func (s *Server) CreateBackendServers(w http.ResponseWriter, r *http.Request, id
 	}
 	out := []map[string]any{}
 	if nb := s.Snap.Get().Backend(id); nb != nil {
+		view := s.serverViewer(nb)
 		for _, sid := range ids {
 			if sv := nb.Server(sid); sv != nil {
-				out = append(out, s.viewServer(nb, sv))
+				out = append(out, view(sv))
 			}
 		}
 	}
@@ -494,7 +496,7 @@ func (s *Server) UpdateBackendServer(w http.ResponseWriter, r *http.Request, id 
 		w.WriteHeader(204)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"server": s.viewServer(nb, nb.Server(sid))})
+	writeJSON(w, 200, map[string]any{"server": s.serverViewer(nb)(nb.Server(sid))})
 }
 
 // DeleteBackendServer starts a graceful removal: drain → wait for sessions to end or timeout → delete (§7.6).

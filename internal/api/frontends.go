@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 
 	"github.com/2shiraz/loxy/internal/api/gen"
@@ -86,6 +87,43 @@ func listeners(f *state.Frontend, acme bool) []state.Bind {
 		out = append(out, state.Bind{Address: a, Port: 80})
 	}
 	return out
+}
+
+// needsACME reports whether frontend id (0 = new) answers HTTP-01 challenges on :80 with
+// the given certificates: it has a domain or a managed http01 certificate (cf. reconcile.ACMEFrontends).
+func needsACME(snap *state.Snapshot, id int64, certs []int64) bool {
+	for _, d := range snap.Domains {
+		if id != 0 && d.FrontendID.Valid && d.FrontendID.Int64 == id {
+			return true
+		}
+	}
+	for _, cid := range certs {
+		if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
+			return true
+		}
+	}
+	return false
+}
+
+// listenerCollision describes the first overlap between a frontend's listeners (explicit and
+// implicit :80) and those of another enabled frontend, or returns ""; probe.ID is skipped
+// (0 for a new frontend).
+func listenerCollision(snap *state.Snapshot, probe *state.Frontend, acme bool) string {
+	others := reconcile.ACMEFrontends(snap)
+	mine := listeners(probe, acme)
+	for _, o := range snap.Frontends {
+		if o.ID == probe.ID {
+			continue
+		}
+		for _, ob := range listeners(o, others[o.ID]) {
+			for _, mb := range mine {
+				if bindsCollide(ob, mb) {
+					return fmt.Sprintf("%s:%d collides with frontend %q (%s:%d)", mb.Address, mb.Port, o.Name, ob.Address, ob.Port)
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func bindsCollide(a, b state.Bind) bool {
@@ -175,6 +213,10 @@ func (s *Server) buildFrontend(existing *state.Frontend, in gen.FrontendInput) (
 		for _, c := range *in.Certificates {
 			if snap.Cert(c) == nil {
 				fe.Add("certificates", fmt.Sprintf("unknown certificate %d", c))
+			}
+			if slices.Contains(plan.certs, c) {
+				fe.Add("certificates", fmt.Sprintf("certificate %d listed twice", c))
+				continue
 			}
 			plan.certs = append(plan.certs, c)
 		}
@@ -271,21 +313,14 @@ func (s *Server) buildFrontend(existing *state.Frontend, in gen.FrontendInput) (
 		return nil, errInput(fe)
 	}
 	// Listener collisions with other frontends (incl. implicit :80 redirect/ACME listeners).
-	acme := reconcile.ACMEFrontends(snap)
 	probe := &state.Frontend{Frontend: db.Frontend{Mode: mode, Tls: b2i(tls), HttpRedirect: b2i(redirect), Enabled: b2i(plan.enabled)}, Binds: plan.binds}
-	selfACME := existing != nil && acme[existing.ID]
-	mine := listeners(probe, selfACME)
-	for _, o := range snap.Frontends {
-		if existing != nil && o.ID == existing.ID {
-			continue
-		}
-		for _, ob := range listeners(o, acme[o.ID]) {
-			for _, mb := range mine {
-				if bindsCollide(ob, mb) {
-					return nil, errField("binds", fmt.Sprintf("%s:%d collides with frontend %q (%s:%d)", mb.Address, mb.Port, o.Name, ob.Address, ob.Port))
-				}
-			}
-		}
+	var selfID int64
+	if existing != nil {
+		selfID = existing.ID
+	}
+	probe.ID = selfID
+	if msg := listenerCollision(snap, probe, needsACME(snap, selfID, plan.certs)); msg != "" {
+		return nil, errField("binds", msg)
 	}
 	bj, _ := json.Marshal(plan.binds)
 	plan.p = db.CreateFrontendParams{Name: name, Description: desc, Mode: mode, Tls: b2i(tls), Binds: string(bj), HttpRedirect: b2i(redirect),
@@ -404,7 +439,10 @@ func (s *Server) PatchFrontend(w http.ResponseWriter, r *http.Request, id gen.Id
 		p.Name = *in.Name
 	}
 	if in.Description != nil {
-		p.Description = *in.Description
+		p.Description = strings.TrimSpace(*in.Description)
+		if len(p.Description) > 500 {
+			fe.Add("description", "at most 500 characters")
+		}
 	}
 	if in.Labels != nil {
 		model.ValidateLabels(fe, "labels", *in.Labels)
@@ -419,6 +457,16 @@ func (s *Server) PatchFrontend(w http.ResponseWriter, r *http.Request, id gen.Id
 	if !fe.Empty() {
 		fail(w, errInput(fe))
 		return
+	}
+	if p.Enabled != 0 && f.Enabled == 0 {
+		// Enabling brings the frontend's listeners back: they must not collide.
+		probe := *f
+		probe.Enabled = 1
+		snap := s.Snap.Get()
+		if msg := listenerCollision(snap, &probe, needsACME(snap, f.ID, f.CertIDs)); msg != "" {
+			fail(w, errField("enabled", msg))
+			return
+		}
 	}
 	if err := s.mutate(r, "frontend.patch", "frontend", func() int64 { return id }, in, func(q *db.Queries) error {
 		return q.UpdateFrontend(r.Context(), p)

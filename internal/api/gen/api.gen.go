@@ -863,7 +863,7 @@ type AlertRule struct {
 	EventKinds []string `json:"event_kinds"`
 	Id         int64    `json:"id"`
 
-	// LabelFilter label selector on frontend/backend labels
+	// LabelFilter label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
 	LabelFilter string               `json:"label_filter"`
 	MinSeverity AlertRuleMinSeverity `json:"min_severity"`
 }
@@ -879,7 +879,7 @@ type AlertRuleInput struct {
 	// EventKinds e.g. server.health.changed, apply.*; empty = all
 	EventKinds *[]string `json:"event_kinds,omitempty"`
 
-	// LabelFilter label selector on frontend/backend labels
+	// LabelFilter label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
 	LabelFilter *string                    `json:"label_filter,omitempty"`
 	MinSeverity *AlertRuleInputMinSeverity `json:"min_severity,omitempty"`
 }
@@ -1319,11 +1319,13 @@ type HealthCheck struct {
 		StatusCodes *[]string `json:"status_codes,omitempty"`
 		TlsVerify   *bool     `json:"tls_verify,omitempty"`
 	} `json:"http,omitempty"`
-	IntervalS *int                 `json:"interval_s,omitempty"`
-	Port      *int                 `json:"port,omitempty"`
-	Protocol  *HealthCheckProtocol `json:"protocol,omitempty"`
-	Retries   *int                 `json:"retries,omitempty"`
-	TimeoutS  *int                 `json:"timeout_s,omitempty"`
+	IntervalS *int `json:"interval_s,omitempty"`
+
+	// Port check port; null = each server's own port
+	Port     *int                 `json:"port,omitempty"`
+	Protocol *HealthCheckProtocol `json:"protocol,omitempty"`
+	Retries  *int                 `json:"retries,omitempty"`
+	TimeoutS *int                 `json:"timeout_s,omitempty"`
 }
 
 // HealthCheckProtocol defines model for HealthCheck.Protocol.

@@ -400,3 +400,52 @@ func TestReviewRegressions(t *testing.T) {
 		t.Fatal("owner session revoked")
 	}
 }
+
+// Review round 2: listener collisions via enable/domains, duplicate certs, health-check defaults.
+func TestFrontendBackendRegressions(t *testing.T) {
+	c, _ := setup(t)
+	login(c)
+	be := mkBackend(c, "pool")
+	// http backends default to http checks; an explicit check port equal to the backend port is kept.
+	st, b := c.req("POST", "/backends", map[string]any{"name": "hc", "mode": "http", "port": 80, "health_check": map[string]any{"port": 80}})
+	if st != 201 {
+		t.Fatalf("backend %d %v", st, b)
+	}
+	hc := b["backend"].(map[string]any)["health_check"].(map[string]any)
+	if hc["protocol"] != "http" || hc["port"] != float64(80) {
+		t.Fatalf("health check %v", hc)
+	}
+	if st, b = c.req("POST", "/backends", map[string]any{"name": "fast", "mode": "http", "port": 80, "health_check": map[string]any{"interval_s": 2, "timeout_s": 1}}); st != 422 || !fields(b)["health_check.interval_s"] {
+		t.Fatalf("interval < 3 accepted: %d %v", st, b)
+	}
+	// duplicate certificate ids are a field error, not a 500.
+	crt, key, _ := certs.SelfSigned("d.example.com", []string{"d.example.com"}, 48*time.Hour)
+	_, b = c.req("POST", "/certificates", map[string]any{"name": "d", "type": "uploaded", "certificate": crt, "private_key": key})
+	cid := b["certificate"].(map[string]any)["id"].(float64)
+	if st, b = c.req("POST", "/frontends", map[string]any{"name": "dup", "mode": "http", "tls": true, "certificates": []float64{cid, cid},
+		"binds": []any{map[string]any{"address": "*", "port": 443}}, "default_backend_id": be}); st != 422 || !fields(b)["certificates"] {
+		t.Fatalf("duplicate certs: %d %v", st, b)
+	}
+	// a disabled frontend on a taken port cannot be enabled.
+	mk := func(name string, port int, extra map[string]any) float64 {
+		body := map[string]any{"name": name, "mode": "http", "binds": []any{map[string]any{"address": "*", "port": port}}, "default_backend_id": be}
+		for k, v := range extra {
+			body[k] = v
+		}
+		st, b := c.req("POST", "/frontends", body)
+		if st != 201 {
+			t.Fatalf("frontend %s: %d %v", name, st, b)
+		}
+		return b["frontend"].(map[string]any)["id"].(float64)
+	}
+	mk("a", 80, nil)
+	off := mk("b", 80, map[string]any{"enabled": false})
+	if st, b = c.req("PATCH", fmt.Sprintf("/frontends/%v", off), map[string]any{"enabled": true}); st != 422 || !fields(b)["enabled"] {
+		t.Fatalf("enable onto taken port: %d %v", st, b)
+	}
+	// attaching a domain adds a :80 ACME listener, which collides with frontend a.
+	tcp := mk("c", 8081, nil)
+	if st, b = c.req("POST", "/domains", map[string]any{"fqdn": "c.invalid", "frontend_id": tcp}); st != 422 || !fields(b)["frontend_id"] {
+		t.Fatalf("domain ACME :80 collision: %d %v", st, b)
+	}
+}

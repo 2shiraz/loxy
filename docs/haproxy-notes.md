@@ -30,6 +30,8 @@ All items below are covered by `test/integration` (`make test-integration`, real
 - **ACME HTTP-01 via `virt@acme_http01`:** the virtual map only exists once a loaded config references it, so issuance waits until the certificate is served by an applied config (then lego → `add map virt@acme_http01` → Pebble validation → `Success`, ~9 s end-to-end in `TestACMEHTTP01Pebble`).
 - **Zero-downtime:** 100 consecutive reloads plus a runtime server add/remove under ~6 000 rps (8 keep-alive clients): 884 116 requests, 0 failures (`TestApplyPathZeroDowntime`, `LOXY_IT_RELOADS=100`). Default CI run uses 20 reloads.
 
+- **`ipv6@:::<port>` without host IPv6** makes the worker exit at startup ("protocol tcpv6: cannot create receiving socket (Address family not supported by protocol)"), although `haproxy -c` passes. IPv6 wildcard listeners are therefore rendered only when the startup probe (or `LOXY_IPV6=on`) says the host supports IPv6 (ADR 0004 §9).
+
 ## Not yet verified
 - `shm-stats-file` counter preservation (§10.3) — not used.
 - `chroot auto` (§7.4) — not enabled.

@@ -28,6 +28,11 @@ func TestMatches(t *testing.T) {
 	if Matches(r, events.Event{Kind: "server.health.changed", Severity: "info"}, map[string]string{"env": "prod"}) {
 		t.Fatal("severity")
 	}
+	// Node-wide events (no frontend/backend → nil labels) are not narrowed by the label filter.
+	r2 := db.AlertRule{EventKinds: `["apply.failed"]`, MinSeverity: "warning", LabelFilter: "env=prod"}
+	if !Matches(r2, events.Event{Kind: "apply.failed", Severity: "error"}, nil) {
+		t.Fatal("node-wide event filtered out by label filter")
+	}
 }
 
 func TestWebhookDeliveryWithin5s(t *testing.T) {

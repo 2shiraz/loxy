@@ -53,9 +53,9 @@
     const pe = portError(port);
     if (pe) e.port = pe;
     if (hcPort !== '' && portError(hcPort)) e['health_check.port'] = portError(hcPort);
-    if (!(hcInterval >= 1 && hcInterval <= 3600)) e['health_check.interval_s'] = '1–3600 s';
+    if (!(hcInterval >= 3 && hcInterval <= 3600)) e['health_check.interval_s'] = '3–3600 s';
     if (!(hcTimeout >= 1 && hcTimeout <= 3600)) e['health_check.timeout_s'] = '1–3600 s';
-    else if (hcTimeout > hcInterval) e['health_check.timeout_s'] = 'Must not exceed the interval';
+    else if (hcTimeout >= hcInterval) e['health_check.timeout_s'] = 'Must be less than the interval';
     if (!(hcRetries >= 1 && hcRetries <= 10)) e['health_check.retries'] = '1–10';
     if (isHttpCheck) {
       if (!hcPath.startsWith('/')) e['health_check.http.path'] = 'Must start with /';
@@ -177,7 +177,7 @@
         </select>
       </div>
       {@render num('b-hcport', 'Port', 'health_check.port', 'Defaults to the server port.', () => hcPort, (v) => (hcPort = v), 1, 65535, 'server port')}
-      {@render num('b-hci', 'Interval (s)', 'health_check.interval_s', '', () => hcInterval, (v) => (hcInterval = Number(v)))}
+      {@render num('b-hci', 'Interval (s)', 'health_check.interval_s', '', () => hcInterval, (v) => (hcInterval = Number(v)), 3)}
       {@render num('b-hct', 'Timeout (s)', 'health_check.timeout_s', '', () => hcTimeout, (v) => (hcTimeout = Number(v)))}
       {@render num('b-hcr', 'Retries', 'health_check.retries', 'Failures before marking down.', () => hcRetries, (v) => (hcRetries = Number(v)), 1, 10)}
     </div>

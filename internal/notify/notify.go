@@ -120,9 +120,11 @@ func Matches(r db.AlertRule, e events.Event, objLabels map[string]string) bool {
 			return false
 		}
 	}
-	if r.LabelFilter != "" {
+	// The label filter scopes events about a frontend/backend. Node-wide events (nil labels,
+	// e.g. apply.failed, backup.failed) concern every object, so they always pass it.
+	if r.LabelFilter != "" && objLabels != nil {
 		sel, err := model.ParseSelector(r.LabelFilter)
-		if err != nil || objLabels == nil || !sel.Matches(objLabels) {
+		if err != nil || !sel.Matches(objLabels) {
 			return false
 		}
 	}

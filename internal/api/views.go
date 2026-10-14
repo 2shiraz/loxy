@@ -135,9 +135,9 @@ func viewHealthCheck(b *state.Backend) map[string]any {
 		hcHTTP = map[string]any{"domain": nullStr(b.HcDomain), "path": b.HcPath, "response": nullStr(b.HcResponse),
 			"status_codes": codes, "tls_verify": b.HcTlsVerify != 0}
 	}
-	port := b.HcPort
-	if port == 0 {
-		port = b.Port
+	var port any // null: each server is checked on its own port
+	if b.HcPort != 0 {
+		port = b.HcPort
 	}
 	return map[string]any{"protocol": b.HcProtocol, "port": port, "interval_s": b.HcIntervalS, "timeout_s": b.HcTimeoutS,
 		"retries": b.HcRetries, "http": hcHTTP}
@@ -158,22 +158,28 @@ func (s *Server) viewBackend(b *state.Backend) map[string]any {
 	}
 }
 
-func (s *Server) viewServer(b *state.Backend, sv *state.Server) map[string]any {
+// serverViewer computes the backend's health once and returns a view func for its servers
+// (avoids a full health pass per server on large pools).
+func (s *Server) serverViewer(b *state.Backend) func(sv *state.Server) map[string]any {
 	_, all := s.backendHealth(b)
-	resolved := []resolvedView{}
+	byServer := map[int64][]resolvedView{}
 	for _, r := range all {
-		if r.ServerID == sv.ID {
-			resolved = append(resolved, r)
+		byServer[r.ServerID] = append(byServer[r.ServerID], r)
+	}
+	return func(sv *state.Server) map[string]any {
+		resolved := byServer[sv.ID]
+		if resolved == nil {
+			resolved = []resolvedView{}
 		}
-	}
-	var port any
-	if sv.Port.Valid {
-		port = sv.Port.Int64
-	}
-	return map[string]any{
-		"id": sv.ID, "backend_id": sv.BackendID, "type": sv.Type, "ip": nullStr(sv.Ip), "host_id": nullI64(sv.HostID),
-		"label_selector": nullStr(sv.LabelSelector), "port": port, "use_private_ip": sv.UsePrivateIp != 0, "weight": sv.Weight,
-		"backup": sv.Backup != 0, "admin_state": sv.AdminState, "removing": sv.Removing != 0, "resolved": resolved,
+		var port any
+		if sv.Port.Valid {
+			port = sv.Port.Int64
+		}
+		return map[string]any{
+			"id": sv.ID, "backend_id": sv.BackendID, "type": sv.Type, "ip": nullStr(sv.Ip), "host_id": nullI64(sv.HostID),
+			"label_selector": nullStr(sv.LabelSelector), "port": port, "use_private_ip": sv.UsePrivateIp != 0, "weight": sv.Weight,
+			"backup": sv.Backup != 0, "admin_state": sv.AdminState, "removing": sv.Removing != 0, "resolved": resolved,
+		}
 	}
 }
 

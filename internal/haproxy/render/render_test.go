@@ -24,7 +24,7 @@ func input(t *testing.T, root string) Input {
 	fes, bes, cf := fixture(c, k)
 	return Input{
 		Root: root, NodeID: 1, Revision: 123, DesiredVersion: 456, PanelPort: 8443, PanelAllow: []string{"10.0.0.0/8", "192.0.2.1"},
-		Promex: true, Frontends: fes, Backends: bes, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k, ACMEHTTP01: map[int64]bool{7: true},
+		Promex: true, Frontends: fes, Backends: bes, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k, ACMEHTTP01: map[int64]bool{7: true}, IPv6: true,
 	}
 }
 
