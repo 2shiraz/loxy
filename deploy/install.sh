@@ -3,6 +3,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/install.sh | sudo bash
 # Environment overrides:
 #   LOXY_VERSION     loxy release to install (default: latest GitHub release)
+#   LOXY_BUILD_FROM_SOURCE  1 to build locally; automatic when no release exists
+#   LOXY_REF         source ref to build (default: main)
 #   HAPROXY_VERSION  pinned HAProxy version (default: 3.4.6)
 #   LOXY_DIR         install dir (default: /opt/loxy)
 #   LOXY_PANEL_PORT  panel port (default: 8443)
@@ -16,6 +18,11 @@ HAPROXY_VERSION="${HAPROXY_VERSION:-3.4.6}"
 LOXY_PANEL_PORT="${LOXY_PANEL_PORT:-8443}"
 LOXY_CHECK_PORTS="${LOXY_CHECK_PORTS:-80 443}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
+LOXY_BUILD_FROM_SOURCE="${LOXY_BUILD_FROM_SOURCE:-0}"
+LOXY_REF="${LOXY_REF:-main}"
+SOURCE_TMP=""
+cleanup() { [[ -z "$SOURCE_TMP" ]] || rm -rf "$SOURCE_TMP"; }
+trap cleanup EXIT
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33mwarn:\033[0m %s\n' "$*" >&2; }
@@ -56,12 +63,53 @@ else
   done
 fi
 
-if [[ -z "${LOXY_VERSION:-}" ]]; then
-  LOXY_VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1 || true)"
-  [[ -n "$LOXY_VERSION" ]] || die "could not determine latest release; set LOXY_VERSION"
+[[ "$LOXY_BUILD_FROM_SOURCE" == 0 || "$LOXY_BUILD_FROM_SOURCE" == 1 ]] || die "LOXY_BUILD_FROM_SOURCE must be 0 or 1"
+[[ "$HAPROXY_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "HAPROXY_VERSION must be a pinned version such as 3.4.6"
+if [[ -z "${LOXY_VERSION:-}" && "$LOXY_BUILD_FROM_SOURCE" == 0 ]]; then
+  release_json="$(mktemp)"
+  release_status="$(curl -sSL -o "$release_json" -w '%{http_code}' "https://api.github.com/repos/${REPO}/releases/latest")" || {
+    rm -f "$release_json"
+    die "cannot reach GitHub; retry or set LOXY_VERSION to a published image tag"
+  }
+  LOXY_VERSION="$(sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' "$release_json" | head -n1)"
+  rm -f "$release_json"
+  if [[ "$release_status" == 404 ]]; then
+    warn "no public GitHub release found; building from source ($LOXY_REF) instead"
+    LOXY_VERSION=""
+    LOXY_BUILD_FROM_SOURCE=1
+  elif [[ "$release_status" != 200 || -z "$LOXY_VERSION" ]]; then
+    die "GitHub release lookup failed (HTTP $release_status); retry or set LOXY_VERSION"
+  fi
 fi
+if [[ "$LOXY_BUILD_FROM_SOURCE" == 1 ]]; then
+  LOXY_VERSION="${LOXY_VERSION:-source}"
+fi
+[[ "$LOXY_VERSION" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || die "LOXY_VERSION is not a valid image tag"
 log "installing loxy $LOXY_VERSION with HAProxy $HAPROXY_VERSION into $LOXY_DIR"
+
+# Prepare the image before changing host configuration.
+if [[ "$LOXY_BUILD_FROM_SOURCE" == 1 ]]; then
+  if [[ -f "$SCRIPT_DIR/../deploy/docker/Dockerfile" ]]; then
+    source_dir="$(cd "$SCRIPT_DIR/.." && pwd)"
+  else
+    command -v tar >/dev/null || die "tar is required to build from source"
+    SOURCE_TMP="$(mktemp -d)"
+    log "downloading source ($LOXY_REF)"
+    curl -fsSL "https://api.github.com/repos/${REPO}/tarball/${LOXY_REF}" -o "$SOURCE_TMP/source.tar.gz"
+    mkdir "$SOURCE_TMP/src"
+    tar -xzf "$SOURCE_TMP/source.tar.gz" -C "$SOURCE_TMP/src" --strip-components=1
+    source_dir="$SOURCE_TMP/src"
+    SCRIPT_DIR="$source_dir/deploy"
+  fi
+  log "building Loxy image locally (this may take several minutes)"
+  docker build -f "$source_dir/deploy/docker/Dockerfile" \
+    --build-arg "HAPROXY_VERSION=$HAPROXY_VERSION" \
+    --build-arg "LOXY_VERSION=$LOXY_VERSION" \
+    -t "ghcr.io/${REPO}:${LOXY_VERSION}-haproxy${HAPROXY_VERSION}" "$source_dir"
+else
+  docker pull "ghcr.io/${REPO}:${LOXY_VERSION}-haproxy${HAPROXY_VERSION}" || die "release image unavailable; check the tag and GHCR access, or use LOXY_BUILD_FROM_SOURCE=1"
+fi
+docker pull "haproxy:${HAPROXY_VERSION}-alpine"
 
 # ---- 2. sysctl ---------------------------------------------------------------
 fetch deploy/sysctl/99-loxy.conf /etc/sysctl.d/99-loxy.conf
@@ -80,6 +128,8 @@ if [[ -f "$LOXY_DIR/.env" ]]; then
   log "keeping existing $LOXY_DIR/.env (updating versions only)"
   sed -i -e "s/^LOXY_VERSION=.*/LOXY_VERSION=${LOXY_VERSION}/" \
          -e "s/^HAPROXY_VERSION=.*/HAPROXY_VERSION=${HAPROXY_VERSION}/" "$LOXY_DIR/.env"
+  grep -q '^LOXY_VERSION=' "$LOXY_DIR/.env" || printf '\nLOXY_VERSION=%s\n' "$LOXY_VERSION" >> "$LOXY_DIR/.env"
+  grep -q '^HAPROXY_VERSION=' "$LOXY_DIR/.env" || printf '\nHAPROXY_VERSION=%s\n' "$HAPROXY_VERSION" >> "$LOXY_DIR/.env"
 else
   umask 077
   cat > "$LOXY_DIR/.env" <<ENV
@@ -106,10 +156,8 @@ chmod 0600 "$LOXY_DIR/.env"
 
 # ---- 5. start ----------------------------------------------------------------
 cd "$LOXY_DIR"
-log "pulling images"
-docker compose pull
 log "starting"
-docker compose up -d
+docker compose up -d --pull never
 
 log "waiting for loxy to become healthy"
 cid="$(docker compose ps -q loxy)"

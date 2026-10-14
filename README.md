@@ -44,7 +44,21 @@ curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/install.sh
 
 It checks prerequisites, applies host sysctls, creates `/opt/loxy`, writes
 `compose.yml` and `.env` (with a generated `LOXY_SECRET_KEY`), starts the stack
-and prints the panel URL. Pin a version with `LOXY_VERSION=vX.Y.Z`.
+and prints the panel URL. It installs the latest published GitHub release.
+If no public release exists yet, it downloads the source and builds the image
+on your server using Docker (no host Go or Node installation needed; the build
+can take several minutes and needs more memory than running Loxy).
+
+Pin a published version by passing it to the installer process:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/install.sh -o /tmp/loxy-install.sh
+sudo env LOXY_VERSION=vX.Y.Z bash /tmp/loxy-install.sh
+```
+
+To explicitly build from source, use `sudo env LOXY_BUILD_FROM_SOURCE=1 bash
+/tmp/loxy-install.sh`. `LOXY_REF` selects a source tag or commit (default `main`).
+When run from a checkout, the installer builds that checkout.
 
 ### Docker Compose by hand
 
@@ -54,10 +68,29 @@ sudo chown -R 1500:1500 /opt/loxy/data /opt/loxy/run
 cd /opt/loxy
 sudo curl -fsSLO https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/compose/compose.yml
 sudo curl -fsSL  https://raw.githubusercontent.com/2shiraz/loxy/main/.env.example -o .env
-# edit .env: set LOXY_VERSION and LOXY_SECRET_KEY=$(openssl rand -base64 32)
+# Set LOXY_VERSION to an ACTUAL published release tag (not an empty value).
+# Set LOXY_SECRET_KEY to the output of: openssl rand -base64 32
+# If no release exists, use the source-build method below instead.
 sudo chmod 0600 .env
+sudo chmod 0770 run/haproxy
+sudo docker compose config --quiet
+sudo docker compose pull
 sudo docker compose up -d
 ```
+
+### Build from source without a published release
+
+On your Linux server with Docker and Git installed:
+
+```sh
+git clone https://github.com/2shiraz/loxy.git loxy-src
+cd loxy-src
+sudo env LOXY_BUILD_FROM_SOURCE=1 bash deploy/install.sh
+```
+
+This builds the production image locally and installs it into `/opt/loxy`.
+Re-running it preserves the existing `.env` settings and data. Never replace
+an existing secret key when upgrading.
 
 Open `https://<host>:8443` and log in as `admin@loxy.local` (override with
 `LOXY_OWNER_EMAIL`) with the one-time owner password:

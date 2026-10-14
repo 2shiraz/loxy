@@ -1,7 +1,7 @@
 name: loxy
 services:
   loxy:
-    image: ghcr.io/2shiraz/loxy:${LOXY_VERSION}-haproxy${HAPROXY_VERSION}
+    image: ghcr.io/2shiraz/loxy:${LOXY_VERSION:?Set LOXY_VERSION to a published release or use deploy/install.sh}-haproxy${HAPROXY_VERSION:-3.4.6}
     network_mode: host
     restart: unless-stopped
     read_only: true
@@ -19,7 +19,7 @@ services:
       retries: 12
 
   haproxy:
-    image: haproxy:${HAPROXY_VERSION}-alpine
+    image: haproxy:${HAPROXY_VERSION:-3.4.6}-alpine
     network_mode: host
     restart: unless-stopped
     user: "0:0"

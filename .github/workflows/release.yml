@@ -5,7 +5,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 env:
@@ -37,3 +37,11 @@ jobs:
           tags: ${{ env.IMAGE }}:${{ github.ref_name }}-haproxy${{ env.HAPROXY_VERSION }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: create GitHub release after publishing images
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --generate-notes
+          fi
