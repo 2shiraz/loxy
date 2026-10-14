@@ -148,344 +148,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/load_balancers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listLoadBalancers"];
-        put?: never;
-        post: operations["createLoadBalancer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["getLoadBalancer"];
-        put?: never;
-        post?: never;
-        delete: operations["deleteLoadBalancer"];
-        options?: never;
-        head?: never;
-        patch: operations["updateLoadBalancer"];
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/change_plan": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["changePlan"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/enable_public_interface": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["enablePublicInterface"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/disable_public_interface": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["disablePublicInterface"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/attach_to_network": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["attachToNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/detach_from_network": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["detachFromNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/actions/retry_apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["retryApply"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/status": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["getLoadBalancerStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/config": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["getLoadBalancerConfig"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["getLoadBalancerMetrics"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/metrics/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["streamLoadBalancerMetrics"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/logs/stream": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["streamLoadBalancerLogs"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/services": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["listServices"];
-        put?: never;
-        post: operations["createService"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/services/{sid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                sid: number;
-            };
-            cookie?: never;
-        };
-        get: operations["getService"];
-        put: operations["updateService"];
-        post?: never;
-        delete: operations["deleteService"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/targets": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get: operations["listTargets"];
-        put?: never;
-        post: operations["createTargets"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/load_balancers/{id}/targets/{tid}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                tid: number;
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["deleteTarget"];
-        options?: never;
-        head?: never;
-        patch: operations["updateTarget"];
-        trace?: never;
-    };
-    "/label_selector/preview": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["previewLabelSelector"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/plans": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listPlans"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/certificates": {
         parameters: {
             query?: never;
@@ -674,74 +336,6 @@ export interface paths {
         put?: never;
         post: operations["createDNSRecord"];
         delete: operations["deleteDNSRecord"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/servers": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listServers"];
-        put?: never;
-        post: operations["createServer"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/servers/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["deleteServer"];
-        options?: never;
-        head?: never;
-        patch: operations["updateServer"];
-        trace?: never;
-    };
-    "/networks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["listNetworks"];
-        put?: never;
-        post: operations["createNetwork"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/networks/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: operations["deleteNetwork"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1076,6 +670,301 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/frontends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listFrontends"];
+        put?: never;
+        post: operations["createFrontend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/frontends/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFrontend"];
+        put: operations["updateFrontend"];
+        post?: never;
+        delete: operations["deleteFrontend"];
+        options?: never;
+        head?: never;
+        patch: operations["patchFrontend"];
+        trace?: never;
+    };
+    "/frontends/{id}/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFrontendConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/frontends/{id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFrontendMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/frontends/{id}/metrics/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["streamFrontendMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/frontends/{id}/logs/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["streamFrontendLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/apply/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryApply"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listBackends"];
+        put?: never;
+        post: operations["createBackend"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBackend"];
+        put: operations["updateBackend"];
+        post?: never;
+        delete: operations["deleteBackend"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends/{id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBackendStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends/{id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["getBackendMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends/{id}/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["listBackendServers"];
+        put?: never;
+        post: operations["createBackendServers"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backends/{id}/servers/{sid}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                sid: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteBackendServer"];
+        options?: never;
+        head?: never;
+        patch: operations["updateBackendServer"];
+        trace?: never;
+    };
+    "/hosts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listHosts"];
+        put?: never;
+        post: operations["createHost"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hosts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["deleteHost"];
+        options?: never;
+        head?: never;
+        patch: operations["updateHost"];
+        trace?: never;
+    };
+    "/label_selector/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["previewLabelSelector"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1087,7 +976,7 @@ export interface components {
         ErrorResponse: {
             error: {
                 /** @enum {string} */
-                code: "invalid_input" | "quota_exceeded" | "conflict" | "protected" | "not_found" | "forbidden" | "unauthorized" | "rate_limited" | "apply_failed" | "internal" | "totp_required";
+                code: "invalid_input" | "conflict" | "not_found" | "forbidden" | "unauthorized" | "rate_limited" | "apply_failed" | "internal" | "totp_required";
                 message: string;
                 details?: {
                     fields?: {
@@ -1132,143 +1021,12 @@ export interface components {
             user: components["schemas"]["User"];
             csrf_token: string;
         };
-        Plan: {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            max_connections: number;
-            max_services: number;
-            max_targets: number;
-            max_certificates: number;
-            /** Format: int64 */
-            traffic_quota_bytes: number;
-            price_monthly_cents?: number | null;
-            currency?: string;
-        };
-        Location: {
-            city?: string;
-            country?: string;
-            network_zone?: string;
-            lat?: number;
-            lon?: number;
-        };
-        LoadBalancer: {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            /** Format: int64 */
-            version: number;
-            /** Format: int64 */
-            node_id: number;
-            plan: components["schemas"]["Plan"];
-            location: components["schemas"]["Location"];
-            public_net: {
-                enabled: boolean;
-                ipv4?: string | null;
-                ipv6?: string | null;
-            };
-            private_net: {
-                /** Format: int64 */
-                network_id: number;
-                ip: string;
-            }[];
-            /** @enum {string} */
-            algorithm: "roundrobin" | "leastconn" | "source" | "random";
-            delete_protected: boolean;
-            maintenance: boolean;
-            labels: components["schemas"]["Labels"];
-            /** @enum {string} */
-            status: "active" | "applying" | "apply_error";
-            last_error?: string | null;
-            /** Format: int64 */
-            created_at: number;
-            usage: {
-                targets: number;
-                services: number;
-                certificates: number;
-                open_connections: number;
-                /** Format: int64 */
-                traffic_out_month_bytes: number;
-            };
-            health: components["schemas"]["HealthSummary"];
-        };
-        LoadBalancerResponse: {
-            load_balancer: components["schemas"]["LoadBalancer"];
-        };
-        LoadBalancerList: {
-            load_balancers: components["schemas"]["LoadBalancer"][];
-        };
-        LoadBalancerCreate: {
-            name: string;
-            /** Format: int64 */
-            plan_id: number;
-            /** Format: int64 */
-            node_id?: number;
-            /** @enum {string} */
-            algorithm?: "roundrobin" | "leastconn" | "source" | "random";
-            /**
-             * Format: int64
-             * @description IP from the node pool; omitted = auto-assign a free one, none free = shared node address
-             */
-            ipv4_id?: number;
-            /** Format: int64 */
-            ipv6_id?: number;
-            public_enabled?: boolean;
-            labels?: components["schemas"]["Labels"];
-            services?: components["schemas"]["ServiceInput"][];
-            targets?: components["schemas"]["TargetInput"][];
-        };
-        LoadBalancerUpdate: {
-            name?: string;
-            labels?: components["schemas"]["Labels"];
-            /** @enum {string} */
-            algorithm?: "roundrobin" | "leastconn" | "source" | "random";
-            delete_protected?: boolean;
-            maintenance?: boolean;
-        };
-        AttachNetwork: {
-            /** Format: int64 */
-            network_id: number;
-            ip: string;
-        };
         HealthSummary: {
             /** @enum {string} */
             status: "healthy" | "degraded" | "unhealthy" | "unknown";
             healthy: number;
             total: number;
             messages: string[];
-        };
-        CheckStatus: {
-            /** Format: int64 */
-            target_id: number;
-            /** Format: int64 */
-            slot_id: number;
-            /** Format: int64 */
-            server_id?: number | null;
-            name?: string | null;
-            address: string;
-            /** @enum {string} */
-            status: "healthy" | "unhealthy" | "maintenance" | "draining" | "unknown";
-            /** @description e.g. L7OK/200 in 3ms */
-            check?: string;
-        };
-        HealthTree: {
-            summary: components["schemas"]["HealthSummary"];
-            services: {
-                /** Format: int64 */
-                service_id: number;
-                healthy: number;
-                total: number;
-                checks: components["schemas"]["CheckStatus"][];
-            }[];
-        };
-        ServiceHTTP: {
-            redirect_http?: boolean;
-            timeout_s?: number;
-            certificates?: number[];
-            sticky_sessions?: boolean;
-            cookie_name?: string;
-            cookie_lifetime_s?: number;
         };
         HealthCheck: {
             /** @enum {string} */
@@ -1284,83 +1042,6 @@ export interface components {
                 status_codes?: string[];
                 tls_verify?: boolean;
             } | null;
-        };
-        ServiceInput: {
-            /** @enum {string} */
-            protocol: "tcp" | "http" | "https";
-            listen_port: number;
-            destination_port: number;
-            /** @enum {string} */
-            proxy_protocol?: "none" | "v1" | "v2";
-            http?: components["schemas"]["ServiceHTTP"];
-            health_check?: components["schemas"]["HealthCheck"];
-        };
-        Service: {
-            /** Format: int64 */
-            id: number;
-            /** Format: int64 */
-            lb_id: number;
-            /** Format: int64 */
-            version: number;
-            /** @enum {string} */
-            protocol: "tcp" | "http" | "https";
-            listen_port: number;
-            destination_port: number;
-            /** @enum {string} */
-            proxy_protocol: "none" | "v1" | "v2";
-            http: components["schemas"]["ServiceHTTP"];
-            health_check: components["schemas"]["HealthCheck"];
-        };
-        ServiceResponse: {
-            service: components["schemas"]["Service"];
-        };
-        TargetInput: {
-            /** @enum {string} */
-            type: "server" | "label_selector" | "ip";
-            /** Format: int64 */
-            server_id?: number;
-            label_selector?: string;
-            ip?: string;
-            use_private_ip?: boolean;
-            weight?: number;
-            backup?: boolean;
-        };
-        TargetsCreate: {
-            targets: components["schemas"]["TargetInput"][];
-        };
-        TargetUpdate: {
-            weight?: number;
-            /** @enum {string} */
-            admin_state?: "ready" | "drain" | "maint";
-            backup?: boolean;
-        };
-        Target: {
-            /** Format: int64 */
-            id: number;
-            /** @enum {string} */
-            type: "server" | "label_selector" | "ip";
-            /** Format: int64 */
-            server_id?: number | null;
-            label_selector?: string | null;
-            ip?: string | null;
-            use_private_ip: boolean;
-            weight: number;
-            backup: boolean;
-            /** @enum {string} */
-            admin_state: "ready" | "drain" | "maint";
-            removing?: boolean;
-            resolved: {
-                /** Format: int64 */
-                slot_id: number;
-                /** Format: int64 */
-                server_id?: number | null;
-                name?: string | null;
-                address: string;
-                public_ip?: string | null;
-                private_ip?: string | null;
-                healthy: number;
-                total: number;
-            }[];
         };
         Certificate: {
             /** Format: int64 */
@@ -1421,10 +1102,6 @@ export interface components {
             id: number;
             fqdn: string;
             /** Format: int64 */
-            lb_id?: number | null;
-            /** Format: int64 */
-            service_id?: number | null;
-            /** Format: int64 */
             dns_provider_id?: number | null;
             zone?: string | null;
             auto_records: boolean;
@@ -1442,16 +1119,16 @@ export interface components {
             certificate_id?: number | null;
             /** Format: int64 */
             created_at: number;
+            /** Format: int64 */
+            frontend_id?: number | null;
         };
         DomainInput: {
             fqdn?: string;
             /** Format: int64 */
-            lb_id?: number | null;
-            /** Format: int64 */
-            service_id?: number | null;
-            /** Format: int64 */
             dns_provider_id?: number | null;
             auto_records?: boolean;
+            /** Format: int64 */
+            frontend_id?: number | null;
         };
         DomainResponse: {
             domain: components["schemas"]["Domain"];
@@ -1496,39 +1173,12 @@ export interface components {
             ttl?: number;
             managed?: boolean;
         };
-        ServerInput: {
-            name?: string;
-            public_ipv4?: string | null;
-            public_ipv6?: string | null;
-            private_ipv4?: string | null;
-            labels?: components["schemas"]["Labels"];
-            notes?: string;
-        };
-        Server: {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            public_ipv4?: string | null;
-            public_ipv6?: string | null;
-            private_ipv4?: string | null;
-            labels: components["schemas"]["Labels"];
-            notes?: string;
-            source: string;
-        };
-        Network: {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            cidr: string;
-        };
         NodeIP: {
             /** Format: int64 */
             id: number;
             address: string;
             family: number;
-            kind: string;
-            /** Format: int64 */
-            assigned_lb_id?: number | null;
+            label?: string;
         };
         Node: {
             /** Format: int64 */
@@ -1542,7 +1192,6 @@ export interface components {
             /** Format: int64 */
             uptime_s?: number;
             reloads?: number;
-            location: components["schemas"]["Location"];
             ips: components["schemas"]["NodeIP"][];
             /** Format: int64 */
             desired_version: number;
@@ -1551,7 +1200,6 @@ export interface components {
         };
         NodeUpdate: {
             name?: string;
-            location?: components["schemas"]["Location"];
         };
         Revision: {
             /** Format: int64 */
@@ -1596,8 +1244,6 @@ export interface components {
             id: number;
             /** Format: int64 */
             ts: number;
-            /** Format: int64 */
-            lb_id?: number | null;
             kind: string;
             /** @enum {string} */
             severity: "info" | "warning" | "error";
@@ -1605,6 +1251,10 @@ export interface components {
             data?: {
                 [key: string]: unknown;
             };
+            /** Format: int64 */
+            frontend_id?: number | null;
+            /** Format: int64 */
+            backend_id?: number | null;
         };
         AuditEntry: {
             /** Format: int64 */
@@ -1666,23 +1316,264 @@ export interface components {
             /** Format: int64 */
             id: number;
             event_kinds: string[];
-            lb_filter: string;
             /** Format: int64 */
             channel_id: number;
             /** @enum {string} */
             min_severity: "info" | "warning" | "error";
             cooldown_s: number;
+            /** @description label selector on frontend/backend labels */
+            label_filter: string;
         };
         AlertRuleInput: {
-            /** @description e.g. target.health.changed, lb.apply.*; empty = all */
+            /** @description e.g. server.health.changed, apply.*; empty = all */
             event_kinds?: string[];
-            /** @description label selector on LB labels */
-            lb_filter?: string;
             /** Format: int64 */
             channel_id: number;
             /** @enum {string} */
             min_severity?: "info" | "warning" | "error";
             cooldown_s?: number;
+            /** @description label selector on frontend/backend labels */
+            label_filter?: string;
+        };
+        Bind: {
+            /** @description IP address, or "*" for all interfaces */
+            address: string;
+            port: number;
+        };
+        Route: {
+            /** Format: int64 */
+            id?: number;
+            /** @description Host header match; "*.example.com" matches subdomains */
+            hosts?: string[];
+            /** @description e.g. /api; empty = any path */
+            path_prefix?: string;
+            /** Format: int64 */
+            backend_id: number;
+        };
+        FrontendInput: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            mode: "http" | "tcp";
+            /** @description terminate TLS (http mode); requires certificates */
+            tls?: boolean;
+            binds: components["schemas"]["Bind"][];
+            certificates?: number[];
+            /** @description tls only: also listen on :80 and redirect to https */
+            http_redirect?: boolean;
+            /** Format: int64 */
+            default_backend_id?: number | null;
+            routes?: components["schemas"]["Route"][];
+            timeout_client_s?: number;
+            /** @description 0 = unlimited */
+            maxconn?: number;
+            /** @description http: X-Forwarded-For/Proto/Port */
+            forwarded_headers?: boolean;
+            enabled?: boolean;
+            labels?: components["schemas"]["Labels"];
+        };
+        FrontendPatch: {
+            name?: string;
+            labels?: components["schemas"]["Labels"];
+            maintenance?: boolean;
+            enabled?: boolean;
+            description?: string;
+        };
+        Frontend: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            mode: "http" | "tcp";
+            /** @description terminate TLS (http mode); requires certificates */
+            tls: boolean;
+            binds: components["schemas"]["Bind"][];
+            certificates: number[];
+            /** @description tls only: also listen on :80 and redirect to https */
+            http_redirect: boolean;
+            /** Format: int64 */
+            default_backend_id: number | null;
+            routes: components["schemas"]["Route"][];
+            timeout_client_s: number;
+            /** @description 0 = unlimited */
+            maxconn: number;
+            /** @description http: X-Forwarded-For/Proto/Port */
+            forwarded_headers: boolean;
+            enabled: boolean;
+            labels: components["schemas"]["Labels"];
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            version: number;
+            maintenance: boolean;
+            /** @enum {string} */
+            status: "active" | "applying" | "apply_error";
+            last_error?: string | null;
+            /** Format: int64 */
+            created_at: number;
+            stats: {
+                open_connections: number;
+                requests_per_second: number;
+                bytes_out_per_second: number;
+            };
+            health: components["schemas"]["HealthSummary"];
+        };
+        BackendInput: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            mode: "http" | "tcp";
+            /** @enum {string} */
+            algorithm?: "roundrobin" | "leastconn" | "source" | "random";
+            /** @description default server port */
+            port: number;
+            health_check?: components["schemas"]["HealthCheck"];
+            sticky_sessions?: boolean;
+            cookie_name?: string;
+            cookie_lifetime_s?: number;
+            /** @enum {string} */
+            proxy_protocol?: "none" | "v1" | "v2";
+            timeout_server_s?: number;
+            labels?: components["schemas"]["Labels"];
+        };
+        Backend: {
+            name: string;
+            description?: string;
+            /** @enum {string} */
+            mode: "http" | "tcp";
+            /** @enum {string} */
+            algorithm: "roundrobin" | "leastconn" | "source" | "random";
+            /** @description default server port */
+            port: number;
+            health_check: components["schemas"]["HealthCheck"];
+            sticky_sessions: boolean;
+            cookie_name: string;
+            cookie_lifetime_s: number;
+            /** @enum {string} */
+            proxy_protocol: "none" | "v1" | "v2";
+            timeout_server_s: number;
+            labels: components["schemas"]["Labels"];
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            version: number;
+            /** Format: int64 */
+            created_at: number;
+            /** @description frontend ids */
+            used_by: number[];
+            servers_count: number;
+            health: components["schemas"]["HealthSummary"];
+            stats: {
+                sessions: number;
+                queue: number;
+                response_time_ms: number;
+            };
+        };
+        BackendServerInput: {
+            /** @enum {string} */
+            type: "ip" | "host" | "label_selector";
+            ip?: string;
+            /** Format: int64 */
+            host_id?: number;
+            label_selector?: string;
+            /** @description override the backend port */
+            port?: number;
+            use_private_ip?: boolean;
+            weight?: number;
+            backup?: boolean;
+        };
+        BackendServersCreate: {
+            servers: components["schemas"]["BackendServerInput"][];
+        };
+        BackendServerUpdate: {
+            weight?: number;
+            /** @enum {string} */
+            admin_state?: "ready" | "drain" | "maint";
+            backup?: boolean;
+        };
+        ResolvedServer: {
+            /** Format: int64 */
+            slot_id: number;
+            /** Format: int64 */
+            host_id?: number | null;
+            name?: string | null;
+            address: string;
+            port: number;
+            /** @enum {string} */
+            status: "healthy" | "unhealthy" | "maintenance" | "draining" | "unknown";
+            check?: string;
+            sessions?: number;
+        };
+        BackendServer: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            backend_id: number;
+            /** @enum {string} */
+            type: "ip" | "host" | "label_selector";
+            ip?: string | null;
+            /** Format: int64 */
+            host_id?: number | null;
+            label_selector?: string | null;
+            port?: number | null;
+            use_private_ip: boolean;
+            weight: number;
+            backup: boolean;
+            /** @enum {string} */
+            admin_state: "ready" | "drain" | "maint";
+            removing?: boolean;
+            resolved: components["schemas"]["ResolvedServer"][];
+        };
+        BackendHealth: {
+            summary: components["schemas"]["HealthSummary"];
+            servers: components["schemas"]["ResolvedServer"][];
+        };
+        HostInput: {
+            name?: string;
+            ipv4?: string | null;
+            ipv6?: string | null;
+            private_ipv4?: string | null;
+            labels?: components["schemas"]["Labels"];
+            notes?: string;
+        };
+        Host: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            ipv4?: string | null;
+            ipv6?: string | null;
+            private_ipv4?: string | null;
+            labels: components["schemas"]["Labels"];
+            notes?: string;
+            /** @description backend ids */
+            used_by?: number[];
+        };
+        Overview: {
+            frontends: {
+                total: number;
+                apply_errors: number;
+            };
+            backends: {
+                total: number;
+                healthy: number;
+                degraded: number;
+                unhealthy: number;
+            };
+            servers: {
+                total: number;
+                healthy: number;
+            };
+            certificates: {
+                total: number;
+                expiring_soon: number;
+                failed: number;
+            };
+            node: components["schemas"]["Node"];
+            traffic?: {
+                open_connections: number;
+                requests_per_second: number;
+                bytes_in_per_second: number;
+                bytes_out_per_second: number;
+            };
         };
     };
     responses: {
@@ -1905,669 +1796,6 @@ export interface operations {
                 content?: never;
             };
             422: components["responses"]["Error"];
-        };
-    };
-    listLoadBalancers: {
-        parameters: {
-            query?: {
-                label_selector?: string;
-                name?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerList"];
-                };
-            };
-        };
-    };
-    createLoadBalancer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoadBalancerCreate"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    getLoadBalancer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description LB */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            404: components["responses"]["Error"];
-        };
-    };
-    deleteLoadBalancer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            423: components["responses"]["Error"];
-        };
-    };
-    updateLoadBalancer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LoadBalancerUpdate"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            409: components["responses"]["Error"];
-            422: components["responses"]["Error"];
-        };
-    };
-    changePlan: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** Format: int64 */
-                    plan_id: number;
-                };
-            };
-        };
-        responses: {
-            /** @description Changed */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    enablePublicInterface: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-        };
-    };
-    disablePublicInterface: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    attachToNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AttachNetwork"];
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    detachFromNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** Format: int64 */
-                    network_id: number;
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LoadBalancerResponse"];
-                };
-            };
-        };
-    };
-    retryApply: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Queued */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    getLoadBalancerStatus: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Health tree */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HealthTree"];
-                };
-            };
-        };
-    };
-    getLoadBalancerConfig: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description HAProxy sections of this LB */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/plain": string;
-                };
-            };
-        };
-    };
-    getLoadBalancerMetrics: {
-        parameters: {
-            query?: {
-                /** @description comma separated: open_connections,connections_per_second,requests_per_second,bandwidth */
-                type?: string;
-                /** @description unix seconds */
-                start?: number;
-                end?: number;
-                step?: number;
-                service_id?: number;
-            };
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Columnar series */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Metrics"];
-                };
-            };
-        };
-    };
-    streamLoadBalancerMetrics: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description SSE: event `metrics.tick`, data MetricsPoint */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-        };
-    };
-    streamLoadBalancerLogs: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description SSE: recent lines then live ones; event `log`, data {ts, text}. Sampled; off unless LOXY_LIVE_LOGS is set */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": string;
-                };
-            };
-            404: components["responses"]["Error"];
-        };
-    };
-    listServices: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        services: components["schemas"]["Service"][];
-                    };
-                };
-            };
-        };
-    };
-    createService: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ServiceInput"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    getService: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                sid: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Service */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
-                };
-            };
-        };
-    };
-    updateService: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                sid: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ServiceInput"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceResponse"];
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    deleteService: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                sid: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    listTargets: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        targets: components["schemas"]["Target"][];
-                    };
-                };
-            };
-        };
-    };
-    createTargets: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TargetsCreate"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        targets: components["schemas"]["Target"][];
-                    };
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    deleteTarget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                tid: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Removal started (graceful drain) */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
-    updateTarget: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-                tid: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["TargetUpdate"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        target: components["schemas"]["Target"];
-                    };
-                };
-            };
-        };
-    };
-    previewLabelSelector: {
-        parameters: {
-            query: {
-                selector: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Matches */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        servers: components["schemas"]["Server"][];
-                    };
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    listPlans: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Plans */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        plans: components["schemas"]["Plan"][];
-                    };
-                };
-            };
         };
     };
     listCertificates: {
@@ -3046,175 +2274,6 @@ export interface operations {
             };
         };
     };
-    listServers: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        servers: components["schemas"]["Server"][];
-                    };
-                };
-            };
-        };
-    };
-    createServer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ServerInput"];
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        server: components["schemas"]["Server"];
-                    };
-                };
-            };
-            422: components["responses"]["Error"];
-        };
-    };
-    deleteServer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            409: components["responses"]["Error"];
-        };
-    };
-    updateServer: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ServerInput"];
-            };
-        };
-        responses: {
-            /** @description Updated */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        server: components["schemas"]["Server"];
-                    };
-                };
-            };
-        };
-    };
-    listNetworks: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description List */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        networks: components["schemas"]["Network"][];
-                    };
-                };
-            };
-        };
-    };
-    createNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    name: string;
-                    cidr: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        network: components["schemas"]["Network"];
-                    };
-                };
-            };
-        };
-    };
-    deleteNetwork: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     listNodes: {
         parameters: {
             query?: never;
@@ -3278,8 +2337,7 @@ export interface operations {
             content: {
                 "application/json": {
                     address: string;
-                    /** @enum {string} */
-                    kind?: "primary" | "additional" | "failover" | "private";
+                    label?: string;
                 };
             };
         };
@@ -3414,7 +2472,8 @@ export interface operations {
     listEvents: {
         parameters: {
             query?: {
-                lb_id?: number;
+                frontend_id?: number;
+                backend_id?: number;
                 kind?: string;
                 limit?: number;
             };
@@ -3763,6 +2822,698 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    listFrontends: {
+        parameters: {
+            query?: {
+                label_selector?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        frontends: components["schemas"]["Frontend"][];
+                    };
+                };
+            };
+        };
+    };
+    createFrontend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrontendInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        frontend: components["schemas"]["Frontend"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    getFrontend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Frontend */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        frontend: components["schemas"]["Frontend"];
+                    };
+                };
+            };
+            404: components["responses"]["Error"];
+        };
+    };
+    updateFrontend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrontendInput"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        frontend: components["schemas"]["Frontend"];
+                    };
+                };
+            };
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteFrontend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            423: components["responses"]["Error"];
+        };
+    };
+    patchFrontend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FrontendPatch"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        frontend: components["schemas"]["Frontend"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    getFrontendConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rendered HAProxy sections of this frontend (and the backends it uses) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+        };
+    };
+    getFrontendMetrics: {
+        parameters: {
+            query?: {
+                /** @description comma separated series names */
+                type?: string;
+                start?: number;
+                end?: number;
+                step?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Columnar series */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Metrics"];
+                };
+            };
+        };
+    };
+    streamFrontendMetrics: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE: event `metrics.tick`, data MetricsPoint */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+        };
+    };
+    streamFrontendLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE: event `log`, data {ts, text}; off unless LOXY_LIVE_LOGS is set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            404: components["responses"]["Error"];
+        };
+    };
+    retryApply: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listBackends: {
+        parameters: {
+            query?: {
+                label_selector?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        backends: components["schemas"]["Backend"][];
+                    };
+                };
+            };
+        };
+    };
+    createBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackendInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        backend: components["schemas"]["Backend"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    getBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        backend: components["schemas"]["Backend"];
+                    };
+                };
+            };
+            404: components["responses"]["Error"];
+        };
+    };
+    updateBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackendInput"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        backend: components["schemas"]["Backend"];
+                    };
+                };
+            };
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Error"];
+        };
+    };
+    getBackendStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Health of every server */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BackendHealth"];
+                };
+            };
+        };
+    };
+    getBackendMetrics: {
+        parameters: {
+            query?: {
+                /** @description comma separated series names */
+                type?: string;
+                start?: number;
+                end?: number;
+                step?: number;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Columnar series */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Metrics"];
+                };
+            };
+        };
+    };
+    listBackendServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Servers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        servers: components["schemas"]["BackendServer"][];
+                    };
+                };
+            };
+        };
+    };
+    createBackendServers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackendServersCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        servers: components["schemas"]["BackendServer"][];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteBackendServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removal started (graceful drain) */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateBackendServer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+                sid: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BackendServerUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        server: components["schemas"]["BackendServer"];
+                    };
+                };
+            };
+        };
+    };
+    listHosts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description List */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hosts: components["schemas"]["Host"][];
+                    };
+                };
+            };
+        };
+    };
+    createHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HostInput"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        host: components["schemas"]["Host"];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            409: components["responses"]["Error"];
+        };
+    };
+    updateHost: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HostInput"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        host: components["schemas"]["Host"];
+                    };
+                };
+            };
+        };
+    };
+    previewLabelSelector: {
+        parameters: {
+            query: {
+                selector: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Matching hosts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        hosts: components["schemas"]["Host"][];
+                    };
+                };
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    getOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Dashboard summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Overview"];
+                };
             };
         };
     };

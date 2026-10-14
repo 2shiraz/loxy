@@ -119,7 +119,7 @@
         <button type="button" class="btn sm primary" disabled={creating} onclick={createManaged}>{creating ? 'Requesting…' : 'Create'}</button>
         <button type="button" class="btn sm ghost" onclick={() => (newOpen = false)}>Cancel</button>
       </div>
-      <span id="{id}-newhint" class={newErr ? 'ferr' : 'hint'} aria-live="polite">{newErr || 'Issued automatically via HTTP-01 once the domains point to this load balancer.'}</span>
+      <span id="{id}-newhint" class={newErr ? 'ferr' : 'hint'} aria-live="polite">{newErr || 'Issued automatically via HTTP-01 once the domains resolve to this HAProxy node.'}</span>
     </div>
   {/if}
   {#if error}<span class="ferr" id="{id}-err">{error}</span>{/if}

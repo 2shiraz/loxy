@@ -1,7 +1,10 @@
 /**
  * One SSE connection to /api/v1/events. Each event bumps invalidation
- * counters; pages read `live.tick(key)` inside an $effect and refetch.
- * Keys: 'lbs', 'lb:<id>', 'certificates', 'domains', 'nodes', 'events'.
+ * counters; pages read `tick(key)` inside resource() keys and refetch.
+ * Keys: 'frontends', 'fe:<id>', 'backends', 'be:<id>', 'hosts',
+ * 'certificates', 'domains', 'nodes', 'events', 'overview'.
+ * Refetching is deliberately broad: any resource event invalidates the
+ * frontend/backend lists and the overview.
  */
 import type { LoxyEvent } from '$lib/api/client';
 import { toast } from './toast.svelte';
@@ -14,10 +17,13 @@ export const live = $state<{ state: ConnState; last: LoxyEvent | null }>({ state
 let es: EventSource | null = null;
 
 const KINDS = [
-  'lb.updated', 'lb.apply.started', 'lb.apply.succeeded', 'lb.apply.failed',
-  'target.health.changed', 'service.health.changed', 'certificate.updated',
-  'domain.status.changed', 'domain.sync.failed', 'action.updated', 'node.status.changed'
-];
+  'config.updated', 'config.applied', 'config.rollback',
+  'apply.started', 'apply.succeeded', 'apply.failed',
+  'server.health.changed', 'certificate.updated',
+  'domain.status.changed', 'domain.sync.failed', 'notification.test',
+  // tolerated aliases from earlier builds
+  'frontend.updated', 'backend.health.changed', 'target.health.changed', 'node.status.changed'
+]
 
 export function bump(...keys: string[]) {
   for (const k of keys) ticks[k] = (ticks[k] ?? 0) + 1;
@@ -32,17 +38,21 @@ function handle(kind: string, raw: string) {
   let ev: LoxyEvent | null = null;
   try { ev = JSON.parse(raw) as LoxyEvent; } catch { /* non-JSON payload */ }
   if (ev) live.last = ev;
-  const lb = ev?.lb_id ?? (ev?.data as { lb_id?: number } | undefined)?.lb_id;
-  const keys = ['events'];
-  if (kind.startsWith('lb.') || kind.startsWith('target.') || kind.startsWith('service.')) {
-    keys.push('lbs');
-    if (lb != null) keys.push(`lb:${lb}`);
+  const d = (ev?.data ?? {}) as { frontend_id?: number; backend_id?: number };
+  const fe = ev?.frontend_id ?? d.frontend_id;
+  const be = ev?.backend_id ?? d.backend_id;
+  const keys = ['events', 'overview', 'frontends', 'backends'];
+  if (fe != null) keys.push(`fe:${fe}`);
+  if (be != null) keys.push(`be:${be}`);
+  if (kind.startsWith('apply.') || kind.startsWith('config.') || kind.endsWith('.health.changed')) {
+    // Apply/health results can touch any frontend or backend page.
+    keys.push('fe:*', 'be:*', 'nodes');
   }
-  if (kind.startsWith('certificate.')) keys.push('certificates', 'lbs');
+  if (kind.startsWith('certificate.')) keys.push('certificates');
   if (kind.startsWith('domain.')) keys.push('domains');
-  if (kind.startsWith('node.') || kind === 'lb.apply.succeeded' || kind === 'lb.apply.failed') keys.push('nodes');
+  if (kind.startsWith('node.')) keys.push('nodes');
   bump(...keys);
-  if (kind === 'lb.apply.failed') toast.error(ev?.message ?? 'Applying configuration failed.');
+  if (kind === 'apply.failed') toast.error(ev?.message ?? 'Applying the configuration failed.');
   if (kind === 'domain.sync.failed') toast.error(ev?.message ?? 'DNS sync failed.');
 }
 

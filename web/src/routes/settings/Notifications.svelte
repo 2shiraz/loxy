@@ -19,8 +19,9 @@
 
   const KIND_LABEL: Record<Kind, string> = { webhook: 'Webhook', slack: 'Slack', telegram: 'Telegram', email: 'Email' };
   const EVENT_KINDS = [
-    ['target.health.changed', 'Target health changed'],
-    ['lb.apply.failed', 'Config apply failed'],
+    ['server.health.changed', 'Server health changed'],
+    ['apply.failed', 'Config apply failed'],
+    ['config.applied', 'Config applied'],
     ['config.rollback', 'Config rolled back'],
     ['domain.status.changed', 'Domain status changed'],
     ['domain.sync.failed', 'Domain sync failed'],
@@ -88,11 +89,11 @@
   // ---- Rules ----
   let rOpen = $state(false);
   let rBusy = $state(false);
-  let nr = $state<{ event_kinds: string[]; lb_filter: string; channel_id: number | null; min_severity: Severity; cooldown_s: number }>({ event_kinds: [], lb_filter: '', channel_id: null, min_severity: 'warning', cooldown_s: 300 });
+  let nr = $state<{ event_kinds: string[]; label_filter: string; channel_id: number | null; min_severity: Severity; cooldown_s: number }>({ event_kinds: [], label_filter: '', channel_id: null, min_severity: 'warning', cooldown_s: 300 });
   let rErr = $state<Record<string, string>>({});
 
   function startRule() {
-    nr = { event_kinds: [], lb_filter: '', channel_id: channels.data?.notification_channels[0]?.id ?? null, min_severity: 'warning', cooldown_s: 300 };
+    nr = { event_kinds: [], label_filter: '', channel_id: channels.data?.notification_channels[0]?.id ?? null, min_severity: 'warning', cooldown_s: 300 };
     rErr = {};
     rOpen = true;
   }
@@ -102,12 +103,12 @@
   async function createRule() {
     rErr = {};
     if (nr.channel_id == null) rErr.channel_id = 'Choose a channel';
-    const filter = nr.lb_filter.trim();
-    if (filter && !/^[A-Za-z0-9._/-]+(!?=[A-Za-z0-9._-]*)?(\s*,\s*[A-Za-z0-9._/-]+(!?=[A-Za-z0-9._-]*)?)*$/.test(filter)) rErr.lb_filter = 'Use key=value pairs separated by commas';
+    const filter = nr.label_filter.trim();
+    if (filter && !/^[A-Za-z0-9._/-]+(!?=[A-Za-z0-9._-]*)?(\s*,\s*[A-Za-z0-9._/-]+(!?=[A-Za-z0-9._-]*)?)*$/.test(filter)) rErr.label_filter = 'Use key=value pairs separated by commas';
     if (!Number.isInteger(nr.cooldown_s) || nr.cooldown_s < 0) rErr.cooldown_s = 'Whole seconds, 0 or more';
     if (Object.keys(rErr).length) return;
     rBusy = true;
-    const body = { event_kinds: nr.event_kinds, lb_filter: filter, channel_id: nr.channel_id as number, min_severity: nr.min_severity, cooldown_s: nr.cooldown_s };
+    const body = { event_kinds: nr.event_kinds, label_filter: filter, channel_id: nr.channel_id as number, min_severity: nr.min_severity, cooldown_s: nr.cooldown_s };
     const r = await mutate(api.POST('/alert_rules', { body }), { success: 'Alert rule added', onFieldErrors: (f) => (rErr = f) });
     rBusy = false;
     if (r) { rOpen = false; void rules.reload(); }
@@ -172,12 +173,12 @@
     {:else}
       <div class="table-wrap bare">
         <table class="tbl">
-          <thead><tr><th>Events</th><th>Load balancers</th><th>Severity</th><th>Channel</th><th class="right">Cooldown</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th>Events</th><th>Label filter</th><th>Severity</th><th>Channel</th><th class="right">Cooldown</th><th><span class="sr-only">Actions</span></th></tr></thead>
           <tbody>
             {#each rules.data as r (r.id)}
               <tr>
                 <td class="wrap">{#if r.event_kinds.length}<span class="row-wrap">{#each r.event_kinds as k (k)}<span class="chip">{k}</span>{/each}</span>{:else}<span class="muted">All events</span>{/if}</td>
-                <td>{#if r.lb_filter}<span class="chip">{r.lb_filter}</span>{:else}<span class="muted small">All</span>{/if}</td>
+                <td>{#if r.label_filter}<span class="chip">{r.label_filter}</span>{:else}<span class="muted small">All</span>{/if}</td>
                 <td class="small">{r.min_severity}+</td>
                 <td class="small">{chanById.get(r.channel_id)?.name ?? `#${r.channel_id}`}</td>
                 <td class="small muted right">{r.cooldown_s ? duration(r.cooldown_s) : 'None'}</td>
@@ -231,9 +232,9 @@
       {#if rErr.event_kinds}<span class="ferr">{rErr.event_kinds}</span>{:else}<span class="hint">{nr.event_kinds.length ? `${nr.event_kinds.length} selected.` : 'None selected — the rule matches all events.'}</span>{/if}
     </fieldset>
     <div class="field">
-      <label for="nrl">Load balancer filter</label>
-      <input id="nrl" class="input mono" bind:value={nr.lb_filter} placeholder="env=prod" spellcheck="false" aria-invalid={rErr.lb_filter ? 'true' : undefined} />
-      {#if rErr.lb_filter}<span class="ferr">{rErr.lb_filter}</span>{:else}<span class="hint">Label selector on load balancer labels. Leave empty for all load balancers.</span>{/if}
+      <label for="nrl">Label filter</label>
+      <input id="nrl" class="input mono" bind:value={nr.label_filter} placeholder="env=prod" spellcheck="false" aria-invalid={rErr.label_filter ? 'true' : undefined} />
+      {#if rErr.label_filter}<span class="ferr">{rErr.label_filter}</span>{:else}<span class="hint">Label selector on frontend/backend labels. Leave empty to match everything.</span>{/if}
     </div>
     <div class="form-grid">
       <div class="field">

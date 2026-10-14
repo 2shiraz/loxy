@@ -22,7 +22,7 @@
         setCsrf(r.data.csrf_token);
         session.user = r.data.user;
         const next = page.url.searchParams.get('next');
-        void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/load-balancers', { replaceState: true });
+        void goto(next && next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard', { replaceState: true });
       } else if (r.response.status === 429) {
         error = 'Too many attempts. Wait a minute and try again.';
       } else if (r.response.status === 401 && (r.error as { error?: { code?: string } })?.error?.code === 'totp_required') {

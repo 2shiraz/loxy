@@ -128,7 +128,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 .badge.ok { background: var(--ok-soft); color: var(--ok); }
 .badge.warn { background: var(--warn-soft); color: var(--warn); }
 .badge.err { background: var(--err-soft); color: var(--err); }
-.badge.plan { border-radius: var(--radius-xs); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.02em; background: var(--surface-3); color: var(--text); }
+.badge.mode { border-radius: var(--radius-xs); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.02em; background: var(--surface-3); color: var(--text); }
 .chip {
   display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px;
   border-radius: var(--radius-xs); border: 1px solid var(--border-strong);
@@ -159,3 +159,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-md); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
 }
+
+.crumbs { display: flex; align-items: center; gap: 6px; color: var(--muted); margin-bottom: 10px; }
+.crumbs a { color: var(--muted); text-decoration: none; }
+.crumbs a:hover { color: var(--text); }

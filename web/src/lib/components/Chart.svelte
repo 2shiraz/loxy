@@ -9,7 +9,7 @@
     ts,
     series,
     fmt = (v: number) => String(v),
-    syncKey = 'lb',
+    syncKey = 'loxy',
     height = 180,
     onhover
   }: { title: string; ts: number[]; series: S[]; fmt?: (v: number) => string; syncKey?: string; height?: number; onhover?: (h: boolean) => void } = $props();

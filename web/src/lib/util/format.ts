@@ -34,14 +34,15 @@ export function duration(sec: number | null | undefined): string {
   return `${s}s`;
 }
 
+// API timestamps are unix milliseconds (spec §6); metric series use unix seconds.
 export function dateTime(ts: number | null | undefined): string {
   if (!ts) return '—';
-  return new Date(ts * 1000).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return new Date(ts).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function relTime(ts: number | null | undefined): string {
   if (!ts) return '—';
-  const diff = ts - Date.now() / 1000;
+  const diff = (ts - Date.now()) / 1000;
   const a = Math.abs(diff);
   const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
   if (a < 60) return rtf.format(Math.round(diff), 'second');
@@ -52,18 +53,7 @@ export function relTime(ts: number | null | undefined): string {
 
 export function daysUntil(ts: number | null | undefined): number | null {
   if (!ts) return null;
-  return Math.floor((ts - Date.now() / 1000) / 86400);
-}
-
-export function price(cents: number | null | undefined, currency = 'EUR'): string {
-  if (cents == null) return '—';
-  return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'EUR' }).format(cents / 100);
-}
-
-export function flag(country: string | undefined): string {
-  if (!country || country.length !== 2) return '';
-  const cc = country.toUpperCase();
-  return String.fromCodePoint(...[...cc].map((c) => 0x1f1a5 + c.charCodeAt(0)));
+  return Math.floor((ts - Date.now()) / 86_400_000);
 }
 
 export function plural(n: number, one: string, many = one + 's') {
@@ -72,4 +62,14 @@ export function plural(n: number, one: string, many = one + 's') {
 
 export function algorithmLabel(a: string): string {
   return ({ roundrobin: 'Round Robin', leastconn: 'Least Connections', source: 'Source IP', random: 'Random' } as Record<string, string>)[a] ?? a;
+}
+
+/** "*:443, 10.0.0.5:80" — IPv6 addresses are bracketed. */
+export function bindsText(binds: { address: string; port: number }[] | undefined): string {
+  if (!binds?.length) return '—';
+  return binds.map((b) => `${b.address.includes(':') ? `[${b.address}]` : b.address || '*'}:${b.port}`).join(', ');
+}
+
+export function modeLabel(mode: string, tls?: boolean): string {
+  return mode === 'tcp' ? 'TCP' : tls ? 'HTTPS' : 'HTTP';
 }

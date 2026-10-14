@@ -14,13 +14,14 @@
   let { children } = $props();
 
   const nav = [
-    { href: '/load-balancers', label: 'Load Balancers', icon: 'lb' },
-    { href: '/domains', label: 'Domains', icon: 'dns' },
+    { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+    { href: '/frontends', label: 'Frontends', icon: 'frontend' },
+    { href: '/backends', label: 'Backends', icon: 'backend' },
+    { href: '/hosts', label: 'Hosts', icon: 'host' },
     { href: '/certificates', label: 'Certificates', icon: 'cert' },
-    { href: '/servers', label: 'Servers', icon: 'server' },
-    { href: '/networks', label: 'Networks', icon: 'network' },
-    { href: '/nodes', label: 'Nodes', icon: 'node' },
+    { href: '/domains', label: 'Domains', icon: 'dns' },
     { href: '/activity', label: 'Activity', icon: 'activity' },
+    { href: '/system', label: 'System', icon: 'node' },
     { href: '/settings', label: 'Settings', icon: 'settings' }
   ];
 
@@ -56,7 +57,7 @@
 {:else}
   <div class="shell" class:nav-open={navOpen}>
     <aside class="sidebar" aria-label="Primary">
-      <a class="brand" href="/load-balancers" aria-label="Loxy home">
+      <a class="brand" href="/dashboard" aria-label="Loxy home">
         <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="var(--surface-3)"/><path d="M9 8v16h6M17 12l6 6m0-6-6 6" stroke="var(--accent)" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Loxy</span>
       </a>

@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { api, unwrap, mutate, type Domain, type Service } from '$lib/api/client';
+  import { api, unwrap, mutate, type Domain } from '$lib/api/client';
   import { resource } from '$lib/stores/resource.svelte';
   import { confirm } from '$lib/stores/confirm.svelte';
   import { fqdnError } from '$lib/util/validate';
-  import { relTime, serviceLabel } from '$lib/util/dns';
+  import { relTime } from '$lib/util/dns';
   import Icon from '$lib/components/Icon.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import Drawer from '$lib/components/Drawer.svelte';
@@ -14,11 +14,11 @@
   import DomainStatus from '$lib/components/DomainStatus.svelte';
 
   const domains = resource(async () => (await unwrap(api.GET('/domains'))).domains, { keys: () => ['domains'] });
-  const lbs = resource(async () => (await unwrap(api.GET('/load_balancers'))).load_balancers, { keys: () => ['lbs'] });
+  const fes = resource(async () => (await unwrap(api.GET('/frontends'))).frontends, { keys: () => ['frontends'] });
   const providers = resource(async () => (await unwrap(api.GET('/dns_providers'))).dns_providers);
   const certs = resource(async () => (await unwrap(api.GET('/certificates'))).certificates, { keys: () => ['certificates'] });
 
-  const lbName = (id: number | null | undefined) => lbs.data?.find((l) => l.id === id)?.name ?? (id ? `#${id}` : '—');
+  const feName = (id: number | null | undefined) => fes.data?.find((l) => l.id === id)?.name ?? (id ? `#${id}` : '—');
   const provName = (id: number | null | undefined) => (id ? (providers.data?.find((p) => p.id === id)?.name ?? `#${id}`) : 'Manual');
   function certState(d: Domain) {
     if (!d.certificate_id) return 'none';
@@ -28,32 +28,23 @@
   // Add domain
   let addOpen = $state(false);
   let fqdn = $state('');
-  let lbId = $state<number | ''>('');
-  let svcId = $state<number | ''>('');
+  let feId = $state<number | ''>('');
   let provId = $state<number | ''>('');
   let auto = $state(false);
-  let svcs = $state<Service[]>([]);
   let errs = $state<Record<string, string>>({});
   let busy = $state(false);
 
-  $effect(() => {
-    const l = lbId;
-    svcs = [];
-    svcId = '';
-    if (l === '') return;
-    void unwrap(api.GET('/load_balancers/{id}/services', { params: { path: { id: l } } })).then((r) => (svcs = r.services)).catch(() => {});
-  });
   $effect(() => { if (provId === '') auto = false; });
 
-  function openAdd() { fqdn = ''; lbId = lbs.data?.[0]?.id ?? ''; provId = ''; auto = false; errs = {}; addOpen = true; }
+  function openAdd() { fqdn = ''; feId = fes.data?.find((f) => f.mode === 'http')?.id ?? fes.data?.[0]?.id ?? ''; provId = ''; auto = false; errs = {}; addOpen = true; }
   async function add() {
     const fe = fqdnError(fqdn.trim().toLowerCase());
     errs = {};
     if (fe) errs.fqdn = fe;
-    if (lbId === '') errs.lb_id = 'Choose a load balancer';
+    if (feId === '') errs.frontend_id = 'Choose a frontend';
     if (Object.keys(errs).length) return;
     busy = true;
-    const r = await mutate(api.POST('/domains', { body: { fqdn: fqdn.trim().toLowerCase(), lb_id: lbId as number, service_id: svcId === '' ? null : svcId, dns_provider_id: provId === '' ? null : provId, auto_records: auto } }), {
+    const r = await mutate(api.POST('/domains', { body: { fqdn: fqdn.trim().toLowerCase(), frontend_id: feId as number, dns_provider_id: provId === '' ? null : provId, auto_records: auto } }), {
       success: 'Domain added. Checking DNS…', onFieldErrors: (f) => (errs = f)
     });
     busy = false;
@@ -99,7 +90,7 @@
 </script>
 
 <div class="row" style:margin-bottom="14px">
-  <p class="muted" style:max-width="70ch">Point names at your load balancers. Loxy checks that DNS resolves to the right addresses and can issue certificates once it does.</p>
+  <p class="muted" style:max-width="70ch">Point names at your frontends. Loxy checks that DNS resolves to the right addresses and can issue certificates once it does.</p>
   <span class="spacer"></span>
   <button class="btn primary" onclick={openAdd}><Icon name="plus" size={14} />Add domain</button>
 </div>
@@ -109,16 +100,16 @@
 {:else if !domains.data}
   <Skeleton card rows={5} />
 {:else if !domains.data.length}
-  <div class="card"><EmptyState icon="dns" title="No domains yet" text="Add a domain to see which DNS records it needs and whether they already resolve to your load balancer."><button class="btn primary" onclick={openAdd}>Add domain</button></EmptyState></div>
+  <div class="card"><EmptyState icon="dns" title="No domains yet" text="Add a domain to see which DNS records it needs and whether they already resolve to this HAProxy node."><button class="btn primary" onclick={openAdd}>Add domain</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
     <table class="tbl">
-      <thead><tr><th>Domain</th><th>Load balancer</th><th>DNS</th><th>Status</th><th>Last checked</th><th>Certificate</th><th>Auto records</th></tr></thead>
+      <thead><tr><th>Domain</th><th>Frontend</th><th>DNS</th><th>Status</th><th>Last checked</th><th>Certificate</th><th>Auto records</th></tr></thead>
       <tbody>
         {#each domains.data as d (d.id)}
           <tr class="clickable" onclick={() => (selected = d)}>
             <td><button class="linklike name mono" onclick={(e) => { e.stopPropagation(); selected = d; }}>{d.fqdn}</button></td>
-            <td>{#if d.lb_id}<a href="/load-balancers/{d.lb_id}/overview" onclick={(e) => e.stopPropagation()}>{lbName(d.lb_id)}</a>{:else}—{/if}</td>
+            <td>{#if d.frontend_id}<a href="/frontends/{d.frontend_id}" onclick={(e) => e.stopPropagation()}>{feName(d.frontend_id)}</a>{:else}—{/if}</td>
             <td>{provName(d.dns_provider_id)}</td>
             <td><DomainStatus status={d.status} /></td>
             <td class="muted small">{relTime(d.checked_at)}</td>
@@ -139,19 +130,12 @@
       {#if errs.fqdn}<span class="ferr">{errs.fqdn}</span>{/if}
     </div>
     <div class="field">
-      <label for="dlb">Load balancer</label>
-      <select id="dlb" class="select" bind:value={lbId} aria-invalid={errs.lb_id ? 'true' : undefined}>
-        {#each lbs.data ?? [] as l (l.id)}<option value={l.id}>{l.name} ({l.public_net.ipv4 ?? 'no IPv4'})</option>{/each}
+      <label for="dfe">Frontend</label>
+      <select id="dfe" class="select" bind:value={feId} aria-invalid={errs.frontend_id ? 'true' : undefined} aria-describedby="dfe-h">
+        {#if !fes.data?.length}<option value="">No frontends yet</option>{/if}
+        {#each fes.data ?? [] as l (l.id)}<option value={l.id}>{l.name} ({l.mode.toUpperCase()}{l.tls ? ' + TLS' : ''})</option>{/each}
       </select>
-      {#if errs.lb_id}<span class="ferr">{errs.lb_id}</span>{/if}
-    </div>
-    <div class="field">
-      <label for="dsvc">Service <span class="muted">(optional)</span></label>
-      <select id="dsvc" class="select" bind:value={svcId}>
-        <option value="">Any service</option>
-        {#each svcs as s (s.id)}<option value={s.id}>{serviceLabel(s)}</option>{/each}
-      </select>
-      <span class="hint">An HTTPS service gets the issued certificate attached automatically.</span>
+      {#if errs.frontend_id}<span class="ferr" id="dfe-h">{errs.frontend_id}</span>{:else}<span class="hint" id="dfe-h">A TLS frontend gets the issued certificate attached automatically.</span>{/if}
     </div>
     <div class="field">
       <label for="dprov">DNS provider <span class="muted">(optional)</span></label>
@@ -197,7 +181,7 @@
             </table>
           </div>
         {:else}
-          <p class="muted small">The load balancer has no public addresses, so no records are required.</p>
+          <p class="muted small">The frontend listens on no public addresses, so no records are required.</p>
         {/if}
       </section>
 
@@ -218,7 +202,7 @@
       </section>
 
       <dl class="kv">
-        <dt>Load balancer</dt><dd>{lbName(d.lb_id)}</dd>
+        <dt>Frontend</dt><dd>{#if d.frontend_id}<a href="/frontends/{d.frontend_id}">{feName(d.frontend_id)}</a>{:else}—{/if}</dd>
         <dt>DNS provider</dt><dd>{provName(d.dns_provider_id)}{d.zone ? ` · zone ${d.zone}` : ''}</dd>
         <dt>Auto records</dt><dd>{d.auto_records ? 'On' : 'Off'}</dd>
         <dt>Certificate</dt><dd>{#if d.certificate_id}<a href="/certificates">{certState(d)}</a>{:else}None{/if}</dd>

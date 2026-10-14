@@ -1,6 +1,4 @@
 export { relTime } from './format';
-import { serviceTitle } from './services';
-export function serviceLabel(s: { protocol: string; listen_port: number; destination_port: number }) { return serviceTitle(s); }
 
 export const RECORD_HINTS: Record<string, { placeholder: string; hint: string }> = {
   A: { placeholder: '203.0.113.10', hint: 'IPv4 address' },

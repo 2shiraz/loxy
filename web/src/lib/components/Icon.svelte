@@ -1,6 +1,12 @@
 <script lang="ts" module>
   const P: Record<string, string> = {
     lb: 'M4 6h16M4 12h16M4 18h16M8 6v12',
+    dashboard: 'M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z',
+    frontend: 'M3 12h7M7 8l4 4-4 4M14 4h6v16h-6',
+    backend: 'M4 5h16v4H4zM4 15h16v4H4zM12 9v6M8 12h8',
+    host: 'M4 5h16v10H4zM9 19h6M12 15v4',
+    arrowUp: 'M12 19V5M6 11l6-6 6 6',
+    arrowDown: 'M12 5v14M6 13l6 6 6-6',
     globe: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm-9 9h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3Z',
     shield: 'M12 3 5 6v6c0 4.2 2.9 7.6 7 9 4.1-1.4 7-4.8 7-9V6l-7-3Z',
     server: 'M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01',

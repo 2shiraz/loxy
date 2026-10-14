@@ -55,7 +55,7 @@
 {#if res.error && !res.data}<ErrorBox message={res.error} onretry={res.reload} />
 {:else if !res.data}<Skeleton card rows={3} />
 {:else if !res.data.dns_providers.length}
-  <div class="card"><EmptyState icon="dns" title="No DNS providers connected" text="Connect Hetzner DNS, Hetzner Console or Cloudflare to manage records and issue wildcard certificates."><button class="btn primary" onclick={openAdd}>Connect provider</button></EmptyState></div>
+  <div class="card"><EmptyState icon="dns" title="No DNS providers connected" text="Connect a DNS provider such as Cloudflare to manage records and issue wildcard certificates."><button class="btn primary" onclick={openAdd}>Connect provider</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
     <table class="tbl">

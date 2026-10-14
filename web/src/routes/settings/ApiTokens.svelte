@@ -129,7 +129,7 @@
       <label for="atr">Role</label>
       <select id="atr" class="select" bind:value={nt.role} aria-invalid={err.role ? 'true' : undefined}>
         <option value="admin">Admin — everything except owner settings</option>
-        <option value="operator">Operator — manage load balancers</option>
+        <option value="operator">Operator — manage frontends and backends</option>
         <option value="viewer">Viewer — read only</option>
       </select>
       {#if err.role}<span class="ferr">{err.role}</span>{/if}
