@@ -1409,18 +1409,18 @@ func (q *Queries) ListDomains(ctx context.Context) ([]Domain, error) {
 }
 
 const listEvents = `-- name: ListEvents :many
-SELECT id, ts, project_id, lb_id, kind, severity, message, data FROM events WHERE (?2 IS NULL OR lb_id = ?2) AND (?3 IS NULL OR kind = ?3)
-ORDER BY id DESC LIMIT ?
+SELECT id, ts, project_id, lb_id, kind, severity, message, data FROM events WHERE (?1 IS NULL OR lb_id = ?1) AND (?2 IS NULL OR kind = ?2)
+ORDER BY id DESC LIMIT ?3
 `
 
 type ListEventsParams struct {
-	LbID  interface{}
-	Kind  interface{}
-	Limit int64
+	LbID    interface{}
+	Kind    interface{}
+	MaxRows int64
 }
 
 func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error) {
-	rows, err := q.db.QueryContext(ctx, listEvents, arg.LbID, arg.Kind, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, listEvents, arg.LbID, arg.Kind, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}

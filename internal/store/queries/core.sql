@@ -274,7 +274,7 @@ INSERT INTO events (ts, lb_id, kind, severity, message, data) VALUES (?, ?, ?, ?
 
 -- name: ListEvents :many
 SELECT * FROM events WHERE (sqlc.narg(lb_id) IS NULL OR lb_id = sqlc.narg(lb_id)) AND (sqlc.narg(kind) IS NULL OR kind = sqlc.narg(kind))
-ORDER BY id DESC LIMIT ?;
+ORDER BY id DESC LIMIT sqlc.arg(max_rows);
 
 -- name: CreateAudit :exec
 INSERT INTO audit_log (ts, actor_user_id, actor_token_id, actor, ip, action, resource_type, resource_id, before, after) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);

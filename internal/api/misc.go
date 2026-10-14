@@ -816,7 +816,7 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request, p gen.ListEv
 	if p.Limit != nil && *p.Limit > 0 && *p.Limit <= 1000 {
 		lim = int64(*p.Limit)
 	}
-	arg := db.ListEventsParams{Limit: lim}
+	arg := db.ListEventsParams{MaxRows: lim}
 	if p.LbId != nil {
 		arg.LbID = *p.LbId
 	}
