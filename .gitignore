@@ -19,3 +19,4 @@ internal/webui/dist/*
 !internal/webui/dist/.gitkeep
 bin/
 *.test
+__pycache__/
