@@ -186,7 +186,10 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			hc := &http.Client{Timeout: 5 * time.Second}
+			// One keep-alive connection per worker: the shared default transport keeps only
+			// 2 idle conns per host, so the other workers would dial per request and exhaust
+			// ephemeral ports on fast runners ("cannot assign requested address").
+			hc := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{MaxIdleConnsPerHost: 1, IdleConnTimeout: time.Minute}}
 			for {
 				select {
 				case <-stop:
