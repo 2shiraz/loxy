@@ -336,6 +336,7 @@ const (
 	Protected     ErrorResponseErrorCode = "protected"
 	QuotaExceeded ErrorResponseErrorCode = "quota_exceeded"
 	RateLimited   ErrorResponseErrorCode = "rate_limited"
+	TotpRequired  ErrorResponseErrorCode = "totp_required"
 	Unauthorized  ErrorResponseErrorCode = "unauthorized"
 )
 
@@ -359,6 +360,8 @@ func (e ErrorResponseErrorCode) Valid() bool {
 	case QuotaExceeded:
 		return true
 	case RateLimited:
+		return true
+	case TotpRequired:
 		return true
 	case Unauthorized:
 		return true
@@ -1273,6 +1276,9 @@ type Location struct {
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+
+	// Totp 6-digit code, required when 2FA is enabled (401 with code totp_required otherwise)
+	Totp *string `json:"totp,omitempty"`
 }
 
 // Metrics defines model for Metrics.
@@ -1538,6 +1544,7 @@ type User struct {
 	Id          int64    `json:"id"`
 	LastLoginAt *int64   `json:"last_login_at,omitempty"`
 	Role        UserRole `json:"role"`
+	TotpEnabled *bool    `json:"totp_enabled,omitempty"`
 }
 
 // UserRole defines model for User.Role.
@@ -1562,6 +1569,16 @@ type Error = ErrorResponse
 // ListAuditParams defines parameters for ListAudit.
 type ListAuditParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// TotpDisableJSONBody defines parameters for TotpDisable.
+type TotpDisableJSONBody struct {
+	Code string `json:"code"`
+}
+
+// TotpEnableJSONBody defines parameters for TotpEnable.
+type TotpEnableJSONBody struct {
+	Code string `json:"code"`
 }
 
 // UpdateCertificateJSONBody defines parameters for UpdateCertificate.
@@ -1641,6 +1658,12 @@ type LoginJSONRequestBody = LoginRequest
 
 // ChangePasswordJSONRequestBody defines body for ChangePassword for application/json ContentType.
 type ChangePasswordJSONRequestBody = ChangePasswordRequest
+
+// TotpDisableJSONRequestBody defines body for TotpDisable for application/json ContentType.
+type TotpDisableJSONRequestBody TotpDisableJSONBody
+
+// TotpEnableJSONRequestBody defines body for TotpEnable for application/json ContentType.
+type TotpEnableJSONRequestBody TotpEnableJSONBody
 
 // CreateCertificateJSONRequestBody defines body for CreateCertificate for application/json ContentType.
 type CreateCertificateJSONRequestBody = CertificateCreate
@@ -1746,6 +1769,15 @@ type ServerInterface interface {
 
 	// (POST /auth/password)
 	ChangePassword(w http.ResponseWriter, r *http.Request)
+
+	// (POST /auth/totp/disable)
+	TotpDisable(w http.ResponseWriter, r *http.Request)
+
+	// (POST /auth/totp/enable)
+	TotpEnable(w http.ResponseWriter, r *http.Request)
+
+	// (POST /auth/totp/setup)
+	TotpSetup(w http.ResponseWriter, r *http.Request)
 
 	// (GET /certificates)
 	ListCertificates(w http.ResponseWriter, r *http.Request)
@@ -2158,6 +2190,48 @@ func (siw *ServerInterfaceWrapper) ChangePassword(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ChangePassword(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpDisable operation middleware
+func (siw *ServerInterfaceWrapper) TotpDisable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpDisable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpEnable operation middleware
+func (siw *ServerInterfaceWrapper) TotpEnable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpEnable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TotpSetup operation middleware
+func (siw *ServerInterfaceWrapper) TotpSetup(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TotpSetup(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4142,6 +4216,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/auth/me", wrapper.Me)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/password", wrapper.ChangePassword)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/setup", wrapper.TotpSetup)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/enable", wrapper.TotpEnable)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/disable", wrapper.TotpDisable)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers", wrapper.ListLoadBalancers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers", wrapper.CreateLoadBalancer)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/load_balancers/{id}", wrapper.DeleteLoadBalancer)

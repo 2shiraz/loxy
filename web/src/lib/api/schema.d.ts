@@ -100,6 +100,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/totp/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["totpSetup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/totp/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["totpEnable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/totp/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["totpDisable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/load_balancers": {
         parameters: {
             query?: never;
@@ -1021,7 +1069,7 @@ export interface components {
         ErrorResponse: {
             error: {
                 /** @enum {string} */
-                code: "invalid_input" | "quota_exceeded" | "conflict" | "protected" | "not_found" | "forbidden" | "unauthorized" | "rate_limited" | "apply_failed" | "internal";
+                code: "invalid_input" | "quota_exceeded" | "conflict" | "protected" | "not_found" | "forbidden" | "unauthorized" | "rate_limited" | "apply_failed" | "internal" | "totp_required";
                 message: string;
                 details?: {
                     fields?: {
@@ -1037,6 +1085,8 @@ export interface components {
         LoginRequest: {
             email: string;
             password: string;
+            /** @description 6-digit code, required when 2FA is enabled (401 with code totp_required otherwise) */
+            totp?: string;
         };
         ChangePasswordRequest: {
             current_password: string;
@@ -1052,6 +1102,7 @@ export interface components {
             created_at: number;
             /** Format: int64 */
             last_login_at?: number | null;
+            totp_enabled?: boolean;
         };
         UserCreate: {
             email: string;
@@ -1756,6 +1807,79 @@ export interface operations {
         };
         responses: {
             /** @description Changed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    totpSetup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New secret (not active until confirmed) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        secret: string;
+                        otpauth_url: string;
+                    };
+                };
+            };
+        };
+    };
+    totpEnable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 2FA enabled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            422: components["responses"]["Error"];
+        };
+    };
+    totpDisable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    code: string;
+                };
+            };
+        };
+        responses: {
+            /** @description 2FA disabled */
             204: {
                 headers: {
                     [name: string]: unknown;

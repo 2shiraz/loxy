@@ -73,6 +73,33 @@ paths:
         "204": { description: Changed }
         "422": { $ref: "#/components/responses/Error" }
 
+  /auth/totp/setup:
+    post:
+      operationId: totpSetup
+      tags: [auth]
+      responses:
+        "200": { description: "New secret (not active until confirmed)", content: { application/json: { schema: { type: object, required: [secret, otpauth_url], properties: { secret: { type: string }, otpauth_url: { type: string } } } } } }
+  /auth/totp/enable:
+    post:
+      operationId: totpEnable
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        "204": { description: 2FA enabled }
+        "422": { $ref: "#/components/responses/Error" }
+  /auth/totp/disable:
+    post:
+      operationId: totpDisable
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [code], properties: { code: { type: string } } } } }
+      responses:
+        "204": { description: 2FA disabled }
+        "422": { $ref: "#/components/responses/Error" }
+
   /load_balancers:
     get:
       operationId: listLoadBalancers
@@ -698,7 +725,7 @@ components:
           type: object
           required: [code, message]
           properties:
-            code: { type: string, enum: [invalid_input, quota_exceeded, conflict, protected, not_found, forbidden, unauthorized, rate_limited, apply_failed, internal] }
+            code: { type: string, enum: [invalid_input, quota_exceeded, conflict, protected, not_found, forbidden, unauthorized, rate_limited, apply_failed, internal, totp_required] }
             message: { type: string }
             details:
               type: object
@@ -712,7 +739,7 @@ components:
     LoginRequest:
       type: object
       required: [email, password]
-      properties: { email: { type: string }, password: { type: string } }
+      properties: { email: { type: string }, password: { type: string }, totp: { type: string, description: "6-digit code, required when 2FA is enabled (401 with code totp_required otherwise)" } }
     ChangePasswordRequest:
       type: object
       required: [current_password, new_password]
@@ -726,6 +753,7 @@ components:
         role: { type: string, enum: [owner, admin, operator, viewer] }
         created_at: { type: integer, format: int64 }
         last_login_at: { type: integer, format: int64, nullable: true }
+        totp_enabled: { type: boolean }
     UserCreate:
       type: object
       required: [email, password, role]

@@ -285,3 +285,30 @@ func TestAPITokens(t *testing.T) {
 		t.Fatalf("revoked token: %d", s)
 	}
 }
+
+func TestTOTP(t *testing.T) {
+	c, a := setup(t)
+	login(c)
+	st, b := c.req("POST", "/auth/totp/setup", nil)
+	if st != 200 {
+		t.Fatalf("setup %d %v", st, b)
+	}
+	secret := b["secret"].(string)
+	if st, _ = c.req("POST", "/auth/totp/enable", map[string]any{"code": "000000"}); st != 422 {
+		t.Fatalf("bad code accepted: %d", st)
+	}
+	code := totpNow(secret)
+	if st, b = c.req("POST", "/auth/totp/enable", map[string]any{"code": code}); st != 204 {
+		t.Fatalf("enable %d %v", st, b)
+	}
+	jar, _ := cookiejar.New(nil)
+	c2 := &tc{t: t, srv: c.srv, hc: &http.Client{Jar: jar}}
+	st, b = c2.req("POST", "/auth/login", map[string]any{"email": "admin@loxy.local", "password": "unit-test-password"})
+	if st != 401 || b["error"].(map[string]any)["code"] != "totp_required" {
+		t.Fatalf("expected totp_required: %d %v", st, b)
+	}
+	if st, _ = c2.req("POST", "/auth/login", map[string]any{"email": "admin@loxy.local", "password": "unit-test-password", "totp": totpNow(secret)}); st != 200 {
+		t.Fatalf("login with totp: %d", st)
+	}
+	_ = a
+}

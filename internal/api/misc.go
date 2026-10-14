@@ -51,7 +51,7 @@ func (s *Server) ListPlans(w http.ResponseWriter, r *http.Request) {
 // ---------- auth ----------
 
 func viewUser(u db.User) map[string]any {
-	return map[string]any{"id": u.ID, "email": u.Email, "role": u.Role, "created_at": u.CreatedAt, "last_login_at": nullI64(u.LastLoginAt)}
+	return map[string]any{"id": u.ID, "email": u.Email, "role": u.Role, "created_at": u.CreatedAt, "last_login_at": nullI64(u.LastLoginAt), "totp_enabled": totpEnabled(u)}
 }
 
 func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +72,17 @@ func (s *Server) Login(w http.ResponseWriter, r *http.Request) {
 		s.Limiter.Fail(keys...)
 		writeErr(w, 401, "unauthorized", "invalid email or password", nil)
 		return
+	}
+	if totpEnabled(u) {
+		if in.Totp == nil || *in.Totp == "" {
+			writeErr(w, 401, "totp_required", "enter the 6-digit code from your authenticator app", nil)
+			return
+		}
+		if !s.totpOK(u, *in.Totp) {
+			s.Limiter.Fail(keys...)
+			writeErr(w, 401, "unauthorized", "invalid two-factor code", nil)
+			return
+		}
 	}
 	s.Limiter.Reset(keys...)
 	sid := auth.RandomToken(32)

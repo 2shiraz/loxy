@@ -282,6 +282,20 @@ func (q *Queries) ListChannels(ctx context.Context) ([]NotificationChannel, erro
 	return items, nil
 }
 
+const setUserTOTP = `-- name: SetUserTOTP :exec
+UPDATE users SET totp_secret_enc = ? WHERE id = ?
+`
+
+type SetUserTOTPParams struct {
+	TotpSecretEnc []byte
+	ID            int64
+}
+
+func (q *Queries) SetUserTOTP(ctx context.Context, arg SetUserTOTPParams) error {
+	_, err := q.db.ExecContext(ctx, setUserTOTP, arg.TotpSecretEnc, arg.ID)
+	return err
+}
+
 const touchAPIToken = `-- name: TouchAPIToken :exec
 UPDATE api_tokens SET last_used_at = ? WHERE id = ?
 `

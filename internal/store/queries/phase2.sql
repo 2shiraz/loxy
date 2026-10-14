@@ -33,3 +33,6 @@ INSERT INTO alert_rules (event_kinds, lb_filter, channel_id, min_severity, coold
 
 -- name: DeleteAlertRule :exec
 DELETE FROM alert_rules WHERE id = ?;
+
+-- name: SetUserTOTP :exec
+UPDATE users SET totp_secret_enc = ? WHERE id = ?;
