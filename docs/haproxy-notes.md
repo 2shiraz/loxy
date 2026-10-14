@@ -14,11 +14,13 @@ All items below are covered by `test/integration` (`make test-integration`, real
 | §7.6 dynamic servers | **Confirmed.** `add server` with the exact `render.ServerArgs` (incl. `cookie`) → `New server registered.`; `enable server`/`enable health` → empty output; `set server … weight/state` → empty; `del server` after maint → `Server deleted.` | `TestDynamicServers` |
 | §7.6 SSL runtime | **Confirmed.** `set ssl cert` → "Transaction created/updated", `commit ssl cert` → `Success!`, `new ssl cert` → "New empty certificate store", `add ssl crt-list` (payload) → `Success!`, `del ssl crt-list` → "deleted in crtlist", `del ssl cert` → "deleted!" (command available). | `TestVerifySSLRuntimeAndMaps` |
 | §7.6 maps | **Confirmed.** `opt@` is not part of the map name (runtime uses the plain path); `virt@acme_http01` works with `add map` and the `http-request return … lf-string` rule answers the challenge. | `TestVerifySSLRuntimeAndMaps` |
+| §7.4 domains on shared `sys_http` (ADR 0006) | **Confirmed.** Host routing via `use_backend … if { req.hdr(host),field(1,:),lower -m str … }` routes a known domain to its service backend; `http-request return status 404 … unless <hosts>` answers unknown hosts; ACME HTTP-01 answers precede it. | `TestVerifySSLRuntimeAndMaps`, `TestACMEHTTP01Pebble` |
+| §7.4 maintenance inside a backend | **Confirmed.** `http-request return status 503 … if { str(<S>),map(opt@maint.map) -m found }` in `be_<S>` (rendered when a domain routes to the service) answers 503 for domain traffic; the same map entry makes `fe_<S>` answer 503 on the service port. | `TestVerifySSLRuntimeAndMaps` |
 | §14.7 minimal capability set | **Confirmed.** `--user 0:0 --group-add 1500 --cap-drop ALL --cap-add NET_BIND_SERVICE,SETUID,SETGID,KILL,CHOWN` starts, binds :80 and reloads. | `TestVerifyMinimalCapabilities` |
 
 ## Other findings
 
-- **`master-worker` in `global` is deprecated since 3.3** (warning: "will be removed in 3.5"). Loxy relies on `-W` only and does not render the keyword (deviation from the §7.4 reference text).
+- **`master-worker` in `global` is deprecated since 3.3** (warning: "will be removed in 3.5"). Loxy relies on `-W` only and does not render the keyword (ADR 0004 §1).
 - **Global `maxconn 200000` requires a matching `nofile` ulimit** (≈ 2×maxconn). With a lower hard limit the worker exits ("Cannot raise FD limit"). Compose sets `nofile: 1048576`; the value is configurable (`LOXY_HAPROXY_MAXCONN`), tests use 4000.
 - Starting as root without `chroot` logs a warning recommending `chroot auto`; still off by default (§7.4), to be enabled after a dedicated test.
 - `server-state-file` missing on first start only logs a NOTICE.
@@ -37,4 +39,5 @@ All items below are covered by `test/integration` (`make test-integration`, real
 - `chroot auto` (§7.4) — not enabled.
 
 ## Retired
-- The cross-frontend connection cap (`track-sc0 … table lb<L>_cap`) was verified for the earlier load-balancer model and is no longer rendered: limits are per frontend (`maxconn`) since the frontend/backend rework (ADR 0005). Its test was removed.
+- The cross-frontend connection cap (`track-sc0 … table lb<L>_cap`) was verified for the earlier load-balancer model and is no longer rendered (ADR 0005). Its test was removed.
+- Per-frontend HTTP→HTTPS redirect listeners (`fe_<id>_rd`) and `sys_acme_fe<id>` are no longer rendered: since the projects model (ADR 0006) :80 is the shared `sys_http` frontend, which answers ACME HTTP-01 and redirects only domains. The verified building blocks (`virt@acme_http01`, crt-lists via `crt-base`, dynamic servers, maps) are unchanged; frontends/backends are now internal sections (`fe_<S>`/`be_<S>` per service) rather than user objects.

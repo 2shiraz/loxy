@@ -1,6 +1,6 @@
 # Loxy — notes for coding agents
 
-Loxy is a lightweight, self-hosted management panel for HAProxy 3.4 LTS (frontends, backends, servers, certificates, DNS).
+Loxy is a lightweight, self-hosted load-balancer panel for HAProxy 3.4 LTS (projects with targets, services and domains).
 
 **The full build spec is `INSTRUCTIONS.md`. Read all of it before writing code, and treat it as the source of truth.**
 

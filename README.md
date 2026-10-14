@@ -1,29 +1,39 @@
 # Loxy
 
-A lightweight, self-hosted management panel for
-[HAProxy 3.4 LTS](https://www.haproxy.org/) — a safer alternative to
-hand-editing `haproxy.cfg`.
+Simple, self-hosted load balancers on your own servers, powered by
+[HAProxy 3.4 LTS](https://www.haproxy.org/). One Go binary, SQLite and the
+official HAProxy image — no other services.
 
-Manage HAProxy's own building blocks from a small web UI or REST API:
+## How it works
 
-- **Frontends** — HTTP or TCP listeners on any addresses/ports (`*` = all),
-  TLS termination with certificates, HTTP→HTTPS redirect, a default backend
-  and host/path routing rules, timeouts, `maxconn`, forwarded headers,
-  one-click maintenance mode.
-- **Backends** — algorithm, health checks (TCP/HTTP/HTTPS), sticky sessions,
-  PROXY protocol, timeouts; shared by as many frontends as you like.
-- **Servers** — IPs, hosts from the inventory or label selectors; weight,
-  backup, drain/maintenance and graceful removal, applied at runtime.
-- **Hosts**, **certificates** (uploaded or Let's Encrypt via HTTP-01/DNS-01)
-  and **domains & DNS** (required records, live verification, DNS providers
-  via libdns).
-- **Observability** — per-server health, live and historical graphs per
-  frontend and backend, live logs, activity and audit log.
+A **project** is one load balancer. Create as many as you like. Each one has:
 
-Every change is rendered, validated with `haproxy -c`, stored as a numbered
-config revision (diff and rollback), and applied through the runtime API when
-possible or a hitless reload otherwise. One Go binary, SQLite, no other
-services.
+- **Targets** — where traffic goes: IP addresses (optionally `ip:port`), hosts
+  from your inventory, or a label selector such as `role=web`. Set weights,
+  mark backups, drain or pause a target; changes apply instantly without a
+  reload.
+- **Services** — the ports it listens on: `http`, `https` or `tcp`, listen
+  port → destination port, health checks, sticky sessions, PROXY protocol.
+  Every new project gets its own free port automatically (from 20000 up).
+- **Domains** — attach `app.example.com` and Loxy routes it to the project on
+  ports 80/443. HTTPS is automatic: as soon as the name points at your server,
+  Loxy gets a Let's Encrypt certificate and redirects HTTP to HTTPS. A DNS
+  provider (via libdns) can manage the records for you.
+
+Plus live and historical graphs per project and service, live logs, health per
+target, maintenance mode, certificates, users and roles, API tokens, 2FA,
+notifications and backups. Every change is validated with `haproxy -c`, stored
+as a config revision you can diff and roll back, and applied without dropping
+traffic.
+
+## Quick start
+
+1. **Create a project** — give it a name. It is reachable right away on its own
+   port, e.g. `http://<server-ip>:20001`.
+2. **Add targets** — paste the IPs of your app servers (or pick hosts / a label
+   selector). Loxy health-checks them and starts sending traffic.
+3. **Reach it** — use the project's port, or attach a domain: create the A/AAAA
+   records Loxy shows you, and HTTPS turns on by itself.
 
 > Status: under active development. The build spec is
 > [INSTRUCTIONS.md](INSTRUCTIONS.md).
@@ -99,8 +109,9 @@ Open `https://<host>:8443` and log in as `admin@loxy.local` (override with
 docker compose logs loxy | grep 'initial password'
 ```
 
-Restrict panel access with `LOXY_PANEL_ALLOW` or a firewall. Never expose
-ports 9090, 8405 or 5514. See [docs/operations.md](docs/operations.md) for
+Restrict panel access with `LOXY_PANEL_ALLOW` or a firewall. Open the project
+ports you use, plus 80/443 when you use domains. Never expose ports 9090, 8405
+or 5514. See [docs/operations.md](docs/operations.md) for
 upgrades, backup/restore and break-glass procedures.
 
 ## Configuration
@@ -113,7 +124,7 @@ All settings are environment variables in `.env`; see
 Prerequisites: Go (see `go.mod`), Node 22+, Docker.
 
 ```sh
-make dev               # haproxy + 3 whoami servers + Pebble ACME + loxy (dev mode)
+make dev               # haproxy + 3 whoami targets + Pebble ACME + loxy (dev mode)
 make gen               # OpenAPI -> Go + TS, sqlc
 make lint              # gofmt, go vet, golangci-lint, svelte-check
 make test              # unit tests
@@ -123,7 +134,7 @@ make build             # bin/loxy
 make image             # ghcr.io/2shiraz/loxy:<version>-haproxy<haproxy-version>
 ```
 
-In dev the whoami servers listen on `127.0.0.1:9001-9003` (loopback servers are
+In dev the whoami targets listen on `127.0.0.1:9001-9003` (loopback targets are
 accepted only when `LOXY_DEV=true`), Pebble on `https://127.0.0.1:14000/dir`;
 state is kept in `.dev/`.
 
