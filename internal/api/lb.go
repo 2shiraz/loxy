@@ -738,6 +738,9 @@ func (s *Server) buildService(lb *state.LB, existing *state.Service, in gen.Serv
 		if o.ID == lb.ID || !addrsOverlap(o, lb) {
 			continue
 		}
+		if (p.ListenPort == 80 || p.HttpRedirect != 0) && s.acmeOn80(o) {
+			fe.Add("listen_port", fmt.Sprintf(":80 is used for ACME challenges of load balancer %q on the same address", o.Name))
+		}
 		for _, os := range o.Services {
 			if os.ListenPort == p.ListenPort || (p.HttpRedirect != 0 && os.ListenPort == 80) || (os.HttpRedirect != 0 && p.ListenPort == 80) {
 				fe.Add("listen_port", fmt.Sprintf("port collides with load balancer %q on the same address", o.Name))
@@ -1195,4 +1198,28 @@ func (s *Server) StreamLoadBalancerMetrics(w http.ResponseWriter, r *http.Reques
 			fl.Flush()
 		}
 	}
+}
+
+// acmeOn80 reports whether an LB renders its own ACME :80 frontend (managed HTTP-01 certs
+// or attached domains, but no :80 service), which occupies :80 on its addresses.
+func (s *Server) acmeOn80(lb *state.LB) bool {
+	for _, sv := range lb.Services {
+		if (sv.ListenPort == 80 && sv.Protocol == "http") || (sv.Protocol == "https" && sv.HttpRedirect != 0) {
+			return false
+		}
+	}
+	snap := s.Snap.Get()
+	for _, d := range snap.Domains {
+		if d.LbID.Valid && d.LbID.Int64 == lb.ID {
+			return true
+		}
+	}
+	for _, sv := range lb.Services {
+		for _, cid := range sv.CertIDs {
+			if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
+				return true
+			}
+		}
+	}
+	return false
 }

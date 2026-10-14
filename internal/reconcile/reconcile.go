@@ -301,6 +301,13 @@ func (r *Reconciler) Apply(ctx context.Context, by string) error {
 				}
 				if prevLive > 0 {
 					_ = r.FS.Swap(prevLive)
+					if output != "" {
+						// Runtime ops were partially applied before this failed reload: reload the
+						// previous revision so HAProxy matches the live tree again (§3.3).
+						if rr, err := r.Node.Reload(ctx); err == nil && rr.Success {
+							msg += "\n(previous revision re-applied to discard partial runtime changes)"
+						}
+					}
 				}
 				return r.fail(ctx, snap, rev, desired, kind, msg, start, by)
 			}
