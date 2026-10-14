@@ -25,7 +25,7 @@
       return matchSelector(lb.labels, selector);
     });
     const s = [...list];
-    if (sort === 'name') s.sort((a, b) => a.name.localeCompare(b.name));
+    if (sort === 'name') s.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     if (sort === 'created') s.sort((a, b) => b.created_at - a.created_at);
     if (sort === 'connections') s.sort((a, b) => b.usage.open_connections - a.usage.open_connections);
     return s;
