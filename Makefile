@@ -68,10 +68,9 @@ image:
 seed:
 	@echo "seed: not implemented yet — create demo data through the UI or API (see README)"
 
-## e2e: Playwright (placeholder until test/e2e exists)
+## e2e: Playwright against a running Loxy (make dev or all-in-one); see test/e2e/playwright.config.ts for env vars
 e2e:
-	@echo "e2e: would run 'cd test/e2e && npx playwright test' against 'make dev'"
-	@echo "note: Playwright suite not implemented yet (later phase); exiting 0"
+	cd test/e2e && npm install --no-audit --no-fund && npx playwright test
 
 ## load: oha/k6 zero-downtime harness (placeholder until test/load exists)
 load:
