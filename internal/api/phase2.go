@@ -182,7 +182,7 @@ func (s *Server) TestChannel(w http.ResponseWriter, r *http.Request, id gen.Id) 
 func viewRule(rl db.AlertRule) map[string]any {
 	kinds := []string{}
 	_ = json.Unmarshal([]byte(rl.EventKinds), &kinds)
-	return map[string]any{"id": rl.ID, "event_kinds": kinds, "lb_filter": rl.LbFilter, "channel_id": rl.ChannelID, "min_severity": rl.MinSeverity, "cooldown_s": rl.CooldownS}
+	return map[string]any{"id": rl.ID, "event_kinds": kinds, "label_filter": rl.LabelFilter, "channel_id": rl.ChannelID, "min_severity": rl.MinSeverity, "cooldown_s": rl.CooldownS}
 }
 
 func (s *Server) ListAlertRules(w http.ResponseWriter, r *http.Request) {
@@ -215,11 +215,11 @@ func (s *Server) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	filter := ""
-	if in.LbFilter != nil {
-		filter = strings.TrimSpace(*in.LbFilter)
+	if in.LabelFilter != nil {
+		filter = strings.TrimSpace(*in.LabelFilter)
 		if filter != "" {
 			if _, err := model.ParseSelector(filter); err != nil {
-				fe.Add("lb_filter", err.Error())
+				fe.Add("label_filter", err.Error())
 			}
 		}
 	}
@@ -244,7 +244,7 @@ func (s *Server) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
 		fail(w, errInput(fe))
 		return
 	}
-	rl, err := s.Store.Q.CreateAlertRule(r.Context(), db.CreateAlertRuleParams{EventKinds: jsonStr(kinds), LbFilter: filter, ChannelID: in.ChannelId, MinSeverity: sev, CooldownS: cool})
+	rl, err := s.Store.Q.CreateAlertRule(r.Context(), db.CreateAlertRuleParams{EventKinds: jsonStr(kinds), LabelFilter: filter, ChannelID: in.ChannelId, MinSeverity: sev, CooldownS: cool})
 	if err != nil {
 		fail(w, err)
 		return

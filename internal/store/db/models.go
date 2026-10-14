@@ -19,7 +19,7 @@ type AcmeAccount struct {
 type AlertRule struct {
 	ID          int64
 	EventKinds  string
-	LbFilter    string
+	LabelFilter string
 	ChannelID   int64
 	MinSeverity string
 	CooldownS   int64
@@ -49,6 +49,51 @@ type AuditLog struct {
 	ResourceID   sql.NullInt64
 	Before       sql.NullString
 	After        sql.NullString
+}
+
+type Backend struct {
+	ID                    int64
+	ProjectID             int64
+	NodeID                int64
+	Name                  string
+	Description           string
+	Mode                  string
+	Algorithm             string
+	Port                  int64
+	StickyEnabled         int64
+	StickyCookieName      string
+	StickyCookieLifetimeS int64
+	ProxyProtocol         string
+	TimeoutServerS        int64
+	HcProtocol            string
+	HcPort                int64
+	HcIntervalS           int64
+	HcTimeoutS            int64
+	HcRetries             int64
+	HcDomain              string
+	HcPath                string
+	HcResponse            string
+	HcStatusCodes         string
+	HcTlsVerify           int64
+	Labels                string
+	Version               int64
+	CreatedAt             int64
+}
+
+type BackendServer struct {
+	ID            int64
+	BackendID     int64
+	Type          string
+	HostID        sql.NullInt64
+	LabelSelector string
+	Ip            string
+	Port          sql.NullInt64
+	UsePrivateIp  int64
+	Weight        int64
+	Backup        int64
+	AdminState    string
+	Removing      int64
+	CreatedAt     int64
 }
 
 type Certificate struct {
@@ -107,8 +152,7 @@ type Domain struct {
 	ID               int64
 	ProjectID        int64
 	Fqdn             string
-	LbID             sql.NullInt64
-	ServiceID        sql.NullInt64
+	FrontendID       sql.NullInt64
 	DnsProviderID    sql.NullInt64
 	Zone             string
 	AutoRecords      int64
@@ -124,59 +168,61 @@ type Domain struct {
 }
 
 type Event struct {
-	ID        int64
-	Ts        int64
-	ProjectID int64
-	LbID      sql.NullInt64
-	Kind      string
-	Severity  string
-	Message   string
-	Data      string
+	ID         int64
+	Ts         int64
+	ProjectID  int64
+	FrontendID sql.NullInt64
+	BackendID  sql.NullInt64
+	Kind       string
+	Severity   string
+	Message    string
+	Data       string
 }
 
-type IpAddress struct {
-	ID           int64
-	NodeID       int64
-	Address      string
-	Family       int64
-	Kind         string
-	NetworkID    sql.NullInt64
-	AssignedLbID sql.NullInt64
-	Rdns         string
+type Frontend struct {
+	ID               int64
+	ProjectID        int64
+	NodeID           int64
+	Name             string
+	Description      string
+	Mode             string
+	Tls              int64
+	Binds            string
+	HttpRedirect     int64
+	DefaultBackendID sql.NullInt64
+	TimeoutClientS   int64
+	Maxconn          int64
+	ForwardedHeaders int64
+	Enabled          int64
+	Maintenance      int64
+	Labels           string
+	Status           string
+	LastError        sql.NullString
+	Version          int64
+	CreatedAt        int64
+	UpdatedAt        int64
 }
 
-type LbNetwork struct {
-	LbID      int64
-	NetworkID int64
-	Ip        string
+type FrontendCertificate struct {
+	FrontendID    int64
+	CertificateID int64
+	Position      int64
 }
 
-type LoadBalancer struct {
-	ID              int64
-	ProjectID       int64
-	Name            string
-	PlanID          int64
-	NodeID          int64
-	Algorithm       string
-	PublicEnabled   int64
-	Ipv4ID          sql.NullInt64
-	Ipv6ID          sql.NullInt64
-	DeleteProtected int64
-	Maintenance     int64
-	Labels          string
-	Status          string
-	LastError       sql.NullString
-	Version         int64
-	CreatedAt       int64
-	UpdatedAt       int64
-}
-
-type Metrics1h struct {
+type Host struct {
+	ID          int64
+	ProjectID   int64
+	Name        string
+	Ipv4        string
+	Ipv6        string
+	PrivateIpv4 string
+	Labels      string
+	Notes       string
 }
 
 type Metrics1m struct {
-	LbID          int64
-	ServiceID     int64
+	Scope         string
+	ScopeID       int64
 	Ts            int64
 	OpenConnAvg   float64
 	OpenConnMax   float64
@@ -190,34 +236,28 @@ type Metrics1m struct {
 	Http4xx       float64
 	Http5xx       float64
 	Errors        float64
-}
-
-type Metrics5m struct {
-}
-
-type Network struct {
-	ID        int64
-	ProjectID int64
-	Name      string
-	Cidr      string
+	Queue         float64
 }
 
 type Node struct {
-	ID              int64
-	Name            string
-	Mode            string
-	Status          string
-	HaproxyVersion  string
-	LoxyVersion     string
-	Features        string
-	LocationCity    string
-	LocationCountry string
-	NetworkZone     string
-	Lat             float64
-	Lon             float64
-	LastSeenAt      sql.NullInt64
-	DesiredVersion  int64
-	AppliedVersion  int64
+	ID             int64
+	Name           string
+	Mode           string
+	Status         string
+	HaproxyVersion string
+	LoxyVersion    string
+	Features       string
+	LastSeenAt     sql.NullInt64
+	DesiredVersion int64
+	AppliedVersion int64
+}
+
+type NodeAddress struct {
+	ID      int64
+	NodeID  int64
+	Address string
+	Family  int64
+	Label   string
 }
 
 type NotificationChannel struct {
@@ -229,79 +269,27 @@ type NotificationChannel struct {
 	CreatedAt int64
 }
 
-type Plan struct {
-	ID                int64
-	Name              string
-	MaxConnections    int64
-	MaxServices       int64
-	MaxTargets        int64
-	MaxCertificates   int64
-	TrafficQuotaBytes int64
-	PriceMonthlyCents sql.NullInt64
-	Currency          string
-	EnforceLbCap      int64
-	Sort              int64
-	Active            int64
-}
-
 type Project struct {
 	ID        int64
 	Name      string
 	CreatedAt int64
 }
 
-type Server struct {
-	ID          int64
-	ProjectID   int64
-	Name        string
-	PublicIpv4  string
-	PublicIpv6  string
-	PrivateIpv4 string
-	Labels      string
-	Source      string
-	ExternalID  string
-	Notes       string
+type Route struct {
+	ID         int64
+	FrontendID int64
+	Position   int64
+	Hosts      string
+	PathPrefix string
+	BackendID  int64
 }
 
 type ServerSlot struct {
-	ID       int64
-	LbID     int64
-	TargetID int64
-	ServerID sql.NullInt64
-	Address  string
-}
-
-type Service struct {
-	ID                    int64
-	LbID                  int64
-	Protocol              string
-	ListenPort            int64
-	DestinationPort       int64
-	HttpRedirect          int64
-	StickyEnabled         int64
-	StickyCookieName      string
-	StickyCookieLifetimeS int64
-	ProxyProtocol         string
-	HttpTimeoutS          int64
-	HcProtocol            string
-	HcPort                int64
-	HcIntervalS           int64
-	HcTimeoutS            int64
-	HcRetries             int64
-	HcDomain              string
-	HcPath                string
-	HcResponse            string
-	HcStatusCodes         string
-	HcTlsVerify           int64
-	Options               string
-	Version               int64
-	CreatedAt             int64
-}
-
-type ServiceCertificate struct {
-	ServiceID     int64
-	CertificateID int64
-	Position      int64
+	ID        int64
+	BackendID int64
+	ServerID  int64
+	HostID    sql.NullInt64
+	Address   string
 }
 
 type Session struct {
@@ -317,28 +305,6 @@ type Session struct {
 type Setting struct {
 	Key   string
 	Value string
-}
-
-type Target struct {
-	ID            int64
-	LbID          int64
-	Type          string
-	ServerID      sql.NullInt64
-	LabelSelector string
-	Ip            string
-	UsePrivateIp  int64
-	Weight        int64
-	Backup        int64
-	AdminState    string
-	Removing      int64
-	CreatedAt     int64
-}
-
-type TrafficMonthly struct {
-	LbID     int64
-	Month    string
-	BytesIn  int64
-	BytesOut int64
 }
 
 type User struct {

@@ -17,20 +17,14 @@ import (
 	"github.com/2shiraz/loxy/internal/store/db"
 )
 
-type Plan = db.Plan
-
 type Node struct {
 	db.Node
-	Features []string
-	IPs      []*IP
+	Features  []string
+	Addresses []db.NodeAddress
 }
 
-type IP struct {
-	db.IpAddress
-}
-
-type Server struct {
-	db.Server
+type Host struct {
+	db.Host
 	Labels map[string]string
 }
 
@@ -54,66 +48,90 @@ func (c *Cert) PEM() string {
 	return strings.Join(parts, "\n") + "\n"
 }
 
-type Service struct {
-	db.Service
-	StatusCodes []string
-	CertIDs     []int64
-}
-
+// Slot is one resolved HAProxy server; ID is the stable server id.
 type Slot struct {
 	ID       int64
-	TargetID int64
-	ServerID int64 // 0 for IP targets
+	ServerID int64
+	HostID   int64 // 0 for IP servers
 	Address  string
 }
 
-type Target struct {
-	db.Target
+// Server is a configured backend server (IP, host or label selector) with its resolved slots.
+type Server struct {
+	db.BackendServer
 	Slots []*Slot
 }
 
-type LBNet struct {
-	NetworkID int64
-	IP        string
-}
-
-type LB struct {
-	db.LoadBalancer
-	Labels   map[string]string
-	Plan     *Plan
-	IPv4     string
-	IPv6     string
-	Networks []LBNet
-	Services []*Service
-	Targets  []*Target
-}
-
-// Slots returns all resolved backend servers of the LB, sorted by id.
-func (lb *LB) Slots() []*Slot {
-	var out []*Slot
-	for _, t := range lb.Targets {
-		out = append(out, t.Slots...)
+// Port returns the effective port of the server.
+func (s *Server) PortOr(def int64) int64 {
+	if s.Port.Valid && s.Port.Int64 > 0 {
+		return s.Port.Int64
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out
+	return def
 }
 
-func (lb *LB) Target(id int64) *Target {
-	for _, t := range lb.Targets {
-		if t.ID == id {
-			return t
-		}
-	}
-	return nil
+type Backend struct {
+	db.Backend
+	Labels      map[string]string
+	StatusCodes []string
+	Servers     []*Server
 }
 
-func (lb *LB) Service(id int64) *Service {
-	for _, s := range lb.Services {
+func (b *Backend) Server(id int64) *Server {
+	for _, s := range b.Servers {
 		if s.ID == id {
 			return s
 		}
 	}
 	return nil
+}
+
+// Slots returns all resolved servers sorted by id.
+func (b *Backend) Slots() []*Slot {
+	var out []*Slot
+	for _, s := range b.Servers {
+		out = append(out, s.Slots...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// Bind is one listening address of a frontend. Address "*" = all interfaces.
+type Bind struct {
+	Address string `json:"address"`
+	Port    int64  `json:"port"`
+}
+
+type Route struct {
+	ID         int64
+	Hosts      []string
+	PathPrefix string
+	BackendID  int64
+}
+
+type Frontend struct {
+	db.Frontend
+	Labels  map[string]string
+	Binds   []Bind
+	CertIDs []int64
+	Routes  []Route
+}
+
+// BackendIDs returns default + routed backend ids (deduplicated, ordered).
+func (f *Frontend) BackendIDs() []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	add := func(id int64) {
+		if id != 0 && !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	for _, r := range f.Routes {
+		add(r.BackendID)
+	}
+	add(f.DefaultBackendID.Int64)
+	return out
 }
 
 type Domain struct {
@@ -125,34 +143,57 @@ type Domain struct {
 }
 
 type Snapshot struct {
-	Plans        []*Plan
 	Nodes        []*Node
-	LBs          []*LB
-	Servers      []*Server
+	Frontends    []*Frontend
+	Backends     []*Backend
+	Hosts        []*Host
 	Certs        []*Cert
-	Networks     []db.Network
 	Domains      []*Domain
 	DNSProviders []db.DnsProvider
 
-	planByID   map[int64]*Plan
-	lbByID     map[int64]*LB
-	certByID   map[int64]*Cert
-	serverByID map[int64]*Server
-	nodeByID   map[int64]*Node
+	feByID   map[int64]*Frontend
+	beByID   map[int64]*Backend
+	certByID map[int64]*Cert
+	hostByID map[int64]*Host
+	nodeByID map[int64]*Node
 }
 
-func (s *Snapshot) LB(id int64) *LB         { return s.lbByID[id] }
-func (s *Snapshot) Plan(id int64) *Plan     { return s.planByID[id] }
-func (s *Snapshot) Cert(id int64) *Cert     { return s.certByID[id] }
-func (s *Snapshot) Server(id int64) *Server { return s.serverByID[id] }
-func (s *Snapshot) Node(id int64) *Node     { return s.nodeByID[id] }
+func (s *Snapshot) Frontend(id int64) *Frontend { return s.feByID[id] }
+func (s *Snapshot) Backend(id int64) *Backend   { return s.beByID[id] }
+func (s *Snapshot) Cert(id int64) *Cert         { return s.certByID[id] }
+func (s *Snapshot) Host(id int64) *Host         { return s.hostByID[id] }
+func (s *Snapshot) Node(id int64) *Node         { return s.nodeByID[id] }
 
-// LBsOnNode returns LBs placed on a node, sorted by id.
-func (s *Snapshot) LBsOnNode(nodeID int64) []*LB {
-	var out []*LB
-	for _, lb := range s.LBs {
-		if lb.NodeID == nodeID {
-			out = append(out, lb)
+// FrontendsOnNode / BackendsOnNode return the objects placed on a node, sorted by id.
+func (s *Snapshot) FrontendsOnNode(nodeID int64) []*Frontend {
+	var out []*Frontend
+	for _, f := range s.Frontends {
+		if f.NodeID == nodeID {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (s *Snapshot) BackendsOnNode(nodeID int64) []*Backend {
+	var out []*Backend
+	for _, b := range s.Backends {
+		if b.NodeID == nodeID {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// UsedBy returns ids of frontends that reference a backend.
+func (s *Snapshot) UsedBy(backendID int64) []int64 {
+	out := []int64{}
+	for _, f := range s.Frontends {
+		for _, id := range f.BackendIDs() {
+			if id == backendID {
+				out = append(out, f.ID)
+				break
+			}
 		}
 	}
 	return out
@@ -164,18 +205,13 @@ func labels(js string) map[string]string {
 	return m
 }
 
+func newSnapshot() *Snapshot {
+	return &Snapshot{feByID: map[int64]*Frontend{}, beByID: map[int64]*Backend{}, certByID: map[int64]*Cert{}, hostByID: map[int64]*Host{}, nodeByID: map[int64]*Node{}}
+}
+
 // Load reads the whole desired state. box may be nil (keys then stay empty).
 func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, error) {
-	s := &Snapshot{planByID: map[int64]*Plan{}, lbByID: map[int64]*LB{}, certByID: map[int64]*Cert{}, serverByID: map[int64]*Server{}, nodeByID: map[int64]*Node{}}
-	plans, err := q.ListPlans(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for i := range plans {
-		p := plans[i]
-		s.Plans = append(s.Plans, &p)
-		s.planByID[p.ID] = &p
-	}
+	s := newSnapshot()
 	nodes, err := q.ListNodes(ctx)
 	if err != nil {
 		return nil, err
@@ -186,26 +222,23 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		s.Nodes = append(s.Nodes, nn)
 		s.nodeByID[n.ID] = nn
 	}
-	ips, err := q.ListIPs(ctx)
+	addrs, err := q.ListNodeAddresses(ctx)
 	if err != nil {
 		return nil, err
 	}
-	ipByID := map[int64]*IP{}
-	for _, ip := range ips {
-		x := &IP{ip}
-		ipByID[ip.ID] = x
-		if n := s.nodeByID[ip.NodeID]; n != nil {
-			n.IPs = append(n.IPs, x)
+	for _, a := range addrs {
+		if n := s.nodeByID[a.NodeID]; n != nil {
+			n.Addresses = append(n.Addresses, a)
 		}
 	}
-	servers, err := q.ListServers(ctx)
+	hosts, err := q.ListHosts(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, sv := range servers {
-		x := &Server{Server: sv, Labels: labels(sv.Labels)}
-		s.Servers = append(s.Servers, x)
-		s.serverByID[sv.ID] = x
+	for _, h := range hosts {
+		x := &Host{Host: h, Labels: labels(h.Labels)}
+		s.Hosts = append(s.Hosts, x)
+		s.hostByID[h.ID] = x
 	}
 	certs, err := q.ListCertificates(ctx)
 	if err != nil {
@@ -222,68 +255,29 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		s.Certs = append(s.Certs, x)
 		s.certByID[c.ID] = x
 	}
-	if s.Networks, err = q.ListNetworks(ctx); err != nil {
-		return nil, err
-	}
 	if s.DNSProviders, err = q.ListDNSProviders(ctx); err != nil {
 		return nil, err
 	}
-	lbs, err := q.ListLoadBalancers(ctx)
+	bes, err := q.ListBackends(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, l := range lbs {
-		lb := &LB{LoadBalancer: l, Labels: labels(l.Labels), Plan: s.planByID[l.PlanID]}
-		if ip := ipByID[l.Ipv4ID.Int64]; l.Ipv4ID.Valid && ip != nil {
-			lb.IPv4 = ip.Address
-		}
-		if ip := ipByID[l.Ipv6ID.Int64]; l.Ipv6ID.Valid && ip != nil {
-			lb.IPv6 = ip.Address
-		}
-		s.LBs = append(s.LBs, lb)
-		s.lbByID[l.ID] = lb
+	for _, b := range bes {
+		x := &Backend{Backend: b, Labels: labels(b.Labels)}
+		_ = json.Unmarshal([]byte(b.HcStatusCodes), &x.StatusCodes)
+		s.Backends = append(s.Backends, x)
+		s.beByID[b.ID] = x
 	}
-	nets, err := q.ListLBNetworks(ctx)
+	srvs, err := q.ListBackendServers(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for _, n := range nets {
-		if lb := s.lbByID[n.LbID]; lb != nil {
-			lb.Networks = append(lb.Networks, LBNet{NetworkID: n.NetworkID, IP: n.Ip})
-		}
-	}
-	svcs, err := q.ListServices(ctx)
-	if err != nil {
-		return nil, err
-	}
-	svcByID := map[int64]*Service{}
-	for _, sv := range svcs {
-		x := &Service{Service: sv}
-		_ = json.Unmarshal([]byte(sv.HcStatusCodes), &x.StatusCodes)
-		svcByID[sv.ID] = x
-		if lb := s.lbByID[sv.LbID]; lb != nil {
-			lb.Services = append(lb.Services, x)
-		}
-	}
-	scs, err := q.ListServiceCertificates(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for _, sc := range scs {
-		if sv := svcByID[sc.ServiceID]; sv != nil {
-			sv.CertIDs = append(sv.CertIDs, sc.CertificateID)
-		}
-	}
-	targets, err := q.ListTargets(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tByID := map[int64]*Target{}
-	for _, t := range targets {
-		x := &Target{Target: t}
-		tByID[t.ID] = x
-		if lb := s.lbByID[t.LbID]; lb != nil {
-			lb.Targets = append(lb.Targets, x)
+	srvByID := map[int64]*Server{}
+	for _, sv := range srvs {
+		x := &Server{BackendServer: sv}
+		srvByID[sv.ID] = x
+		if b := s.beByID[sv.BackendID]; b != nil {
+			b.Servers = append(b.Servers, x)
 		}
 	}
 	slots, err := q.ListSlots(ctx)
@@ -291,8 +285,38 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		return nil, err
 	}
 	for _, sl := range slots {
-		if t := tByID[sl.TargetID]; t != nil {
-			t.Slots = append(t.Slots, &Slot{ID: sl.ID, TargetID: sl.TargetID, ServerID: sl.ServerID.Int64, Address: sl.Address})
+		if sv := srvByID[sl.ServerID]; sv != nil {
+			sv.Slots = append(sv.Slots, &Slot{ID: sl.ID, ServerID: sl.ServerID, HostID: sl.HostID.Int64, Address: sl.Address})
+		}
+	}
+	fes, err := q.ListFrontends(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range fes {
+		x := &Frontend{Frontend: f, Labels: labels(f.Labels)}
+		_ = json.Unmarshal([]byte(f.Binds), &x.Binds)
+		s.Frontends = append(s.Frontends, x)
+		s.feByID[f.ID] = x
+	}
+	routes, err := q.ListRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range routes {
+		if f := s.feByID[r.FrontendID]; f != nil {
+			rt := Route{ID: r.ID, PathPrefix: r.PathPrefix, BackendID: r.BackendID}
+			_ = json.Unmarshal([]byte(r.Hosts), &rt.Hosts)
+			f.Routes = append(f.Routes, rt)
+		}
+	}
+	fcs, err := q.ListFrontendCertificates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, fc := range fcs {
+		if f := s.feByID[fc.FrontendID]; f != nil {
+			f.CertIDs = append(f.CertIDs, fc.CertificateID)
 		}
 	}
 	doms, err := q.ListDomains(ctx)
@@ -307,66 +331,66 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 	return s, nil
 }
 
-// ResolveAddresses computes the concrete backend addresses for a target.
-// Key is (serverID, address); serverID is 0 for IP targets.
+// SlotKey identifies a resolved address of a server; HostID is 0 for IP servers.
 type SlotKey struct {
-	ServerID int64
-	Address  string
+	HostID  int64
+	Address string
 }
 
-func ResolveTarget(t db.Target, servers []db.Server) ([]SlotKey, error) {
-	addr := func(sv db.Server) string {
-		if t.UsePrivateIp != 0 && sv.PrivateIpv4 != "" {
-			return sv.PrivateIpv4
+// ResolveServer computes the concrete addresses of a backend server.
+func ResolveServer(sv db.BackendServer, hosts []db.Host) ([]SlotKey, error) {
+	addr := func(h db.Host) string {
+		if sv.UsePrivateIp != 0 && h.PrivateIpv4 != "" {
+			return h.PrivateIpv4
 		}
-		if sv.PublicIpv4 != "" {
-			return sv.PublicIpv4
+		if h.Ipv4 != "" {
+			return h.Ipv4
 		}
-		return sv.PublicIpv6
+		return h.Ipv6
 	}
-	switch t.Type {
+	switch sv.Type {
 	case "ip":
-		a, err := netip.ParseAddr(t.Ip)
+		a, err := netip.ParseAddr(sv.Ip)
 		if err != nil {
 			return nil, err
 		}
 		return []SlotKey{{0, a.String()}}, nil
-	case "server":
-		for _, sv := range servers {
-			if sv.ID == t.ServerID.Int64 {
-				if a := addr(sv); a != "" {
-					return []SlotKey{{sv.ID, a}}, nil
+	case "host":
+		for _, h := range hosts {
+			if h.ID == sv.HostID.Int64 {
+				if a := addr(h); a != "" {
+					return []SlotKey{{h.ID, a}}, nil
 				}
 				return nil, nil
 			}
 		}
 		return nil, nil
 	case "label_selector":
-		sel, err := model.ParseSelector(t.LabelSelector)
+		sel, err := model.ParseSelector(sv.LabelSelector)
 		if err != nil {
 			return nil, err
 		}
 		var out []SlotKey
-		for _, sv := range servers {
-			if sel.Matches(labels(sv.Labels)) {
-				if a := addr(sv); a != "" {
-					out = append(out, SlotKey{sv.ID, a})
+		for _, h := range hosts {
+			if sel.Matches(labels(h.Labels)) {
+				if a := addr(h); a != "" {
+					out = append(out, SlotKey{h.ID, a})
 				}
 			}
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("unknown target type %q", t.Type)
+	return nil, fmt.Errorf("unknown server type %q", sv.Type)
 }
 
-// SyncSlots reconciles server_slots rows of all targets with their resolution so that
+// SyncSlots reconciles server_slots with the resolution of every backend server so that
 // HAProxy server ids stay stable. Must run inside the write transaction.
 func SyncSlots(ctx context.Context, q *db.Queries) error {
-	targets, err := q.ListTargets(ctx)
+	srvs, err := q.ListBackendServers(ctx)
 	if err != nil {
 		return err
 	}
-	servers, err := q.ListServers(ctx)
+	hosts, err := q.ListHosts(ctx)
 	if err != nil {
 		return err
 	}
@@ -376,25 +400,25 @@ func SyncSlots(ctx context.Context, q *db.Queries) error {
 	}
 	existing := map[int64]map[SlotKey]int64{}
 	for _, sl := range slots {
-		m := existing[sl.TargetID]
+		m := existing[sl.ServerID]
 		if m == nil {
 			m = map[SlotKey]int64{}
-			existing[sl.TargetID] = m
+			existing[sl.ServerID] = m
 		}
-		m[SlotKey{sl.ServerID.Int64, sl.Address}] = sl.ID
+		m[SlotKey{sl.HostID.Int64, sl.Address}] = sl.ID
 	}
-	for _, t := range targets {
-		want, err := ResolveTarget(t, servers)
+	for _, sv := range srvs {
+		want, err := ResolveServer(sv, hosts)
 		if err != nil {
 			return err
 		}
-		have := existing[t.ID]
+		have := existing[sv.ID]
 		wantSet := map[SlotKey]bool{}
 		for _, k := range want {
 			wantSet[k] = true
 			if _, ok := have[k]; !ok {
-				sid := sql.NullInt64{Int64: k.ServerID, Valid: k.ServerID != 0}
-				if _, err := q.CreateSlot(ctx, db.CreateSlotParams{LbID: t.LbID, TargetID: t.ID, ServerID: sid, Address: k.Address}); err != nil {
+				hid := sql.NullInt64{Int64: k.HostID, Valid: k.HostID != 0}
+				if _, err := q.CreateSlot(ctx, db.CreateSlotParams{BackendID: sv.BackendID, ServerID: sv.ID, HostID: hid, Address: k.Address}); err != nil {
 					return err
 				}
 			}
@@ -430,11 +454,18 @@ func (h *Holder) Refresh(ctx context.Context, q *db.Queries, box *secrets.Box) (
 	return s, nil
 }
 
-// TestSnapshot builds an indexed snapshot from LBs (tests only).
-func TestSnapshot(lbs []*LB) *Snapshot {
-	s := &Snapshot{LBs: lbs, planByID: map[int64]*Plan{}, lbByID: map[int64]*LB{}, certByID: map[int64]*Cert{}, serverByID: map[int64]*Server{}, nodeByID: map[int64]*Node{}}
-	for _, lb := range lbs {
-		s.lbByID[lb.ID] = lb
+// TestSnapshot builds an indexed snapshot (tests only).
+func TestSnapshot(fes []*Frontend, bes []*Backend, certs ...*Cert) *Snapshot {
+	s := newSnapshot()
+	s.Frontends, s.Backends, s.Certs = fes, bes, certs
+	for _, f := range fes {
+		s.feByID[f.ID] = f
+	}
+	for _, b := range bes {
+		s.beByID[b.ID] = b
+	}
+	for _, c := range certs {
+		s.certByID[c.ID] = c
 	}
 	return s
 }

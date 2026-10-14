@@ -7,43 +7,42 @@ import (
 	"github.com/2shiraz/loxy/internal/store/db"
 )
 
-// fixture mirrors the reference rendering of spec §7.4: LB 7 with an HTTPS service
-// (redirect on, HTTP check with body match) and a TCP service with PROXY v2.
-func fixture(certPEM, keyPEM string) ([]*state.LB, func(int64) *state.Cert) {
-	plan := &state.Plan{ID: 1, Name: "lb11", MaxConnections: 10000, MaxServices: 5, MaxTargets: 25, MaxCertificates: 10, EnforceLbCap: 1}
+// fixture: an HTTPS frontend (redirect, host/path routes) and a TCP frontend with PROXY v2,
+// two HTTP backends and one TCP backend (spec §7.4 reference rendering).
+func fixture(certPEM, keyPEM string) ([]*state.Frontend, []*state.Backend, func(int64) *state.Cert) {
 	cert := &state.Cert{Certificate: db.Certificate{ID: 12, CertPem: certPEM}, KeyPEM: keyPEM}
-	lb := &state.LB{
-		LoadBalancer: db.LoadBalancer{ID: 7, Name: "load-balancer-1", PlanID: 1, NodeID: 1, Algorithm: "roundrobin", PublicEnabled: 1},
-		Plan:         plan, IPv4: "162.55.154.22", IPv6: "2a01:4f8:1c1f:696b::1",
+	app := &state.Backend{Backend: db.Backend{ID: 4, Name: "app", Mode: "http", Algorithm: "roundrobin", Port: 9000, ProxyProtocol: "none",
+		TimeoutServerS: 50, HcProtocol: "http", HcPort: 9000, HcIntervalS: 15, HcTimeoutS: 13, HcRetries: 3, HcDomain: "app.example.com",
+		HcPath: "/health", HcResponse: "OK", StickyCookieName: "LBSTICKY", StickyCookieLifetimeS: 300}, StatusCodes: []string{"2??", "3??"}}
+	app.Servers = []*state.Server{
+		{BackendServer: db.BackendServer{ID: 101, BackendID: 4, Type: "ip", Ip: "10.0.0.38", Weight: 100, AdminState: "ready"}, Slots: []*state.Slot{{ID: 101, ServerID: 101, Address: "10.0.0.38"}}},
+		{BackendServer: db.BackendServer{ID: 102, BackendID: 4, Type: "host", HostID: sql.NullInt64{Int64: 5, Valid: true}, Weight: 50, AdminState: "maint", Port: sql.NullInt64{Int64: 9001, Valid: true}},
+			Slots: []*state.Slot{{ID: 102, ServerID: 102, HostID: 5, Address: "2001:db8::5"}}},
 	}
-	https := &state.Service{Service: db.Service{
-		ID: 31, LbID: 7, Protocol: "https", ListenPort: 443, DestinationPort: 9000, HttpRedirect: 1,
-		ProxyProtocol: "none", HttpTimeoutS: 50, HcProtocol: "http", HcPort: 9000, HcIntervalS: 15, HcTimeoutS: 13, HcRetries: 3,
-		HcDomain: "app.example.com", HcPath: "/health", HcResponse: "OK", StickyCookieName: "LBSTICKY", StickyCookieLifetimeS: 300,
-	}, StatusCodes: []string{"2??", "3??"}, CertIDs: []int64{12}}
-	tcp := &state.Service{Service: db.Service{
-		ID: 32, LbID: 7, Protocol: "tcp", ListenPort: 8443, DestinationPort: 443, ProxyProtocol: "v2", HttpTimeoutS: 60,
-		HcProtocol: "tcp", HcPort: 443, HcIntervalS: 15, HcTimeoutS: 10, HcRetries: 3, HcPath: "/",
-	}, StatusCodes: []string{"2??"}}
-	lb.Services = []*state.Service{https, tcp}
-	lb.Targets = []*state.Target{
-		{Target: db.Target{ID: 101, LbID: 7, Type: "ip", Ip: "85.10.206.38", Weight: 100, AdminState: "ready"}, Slots: []*state.Slot{{ID: 101, TargetID: 101, Address: "85.10.206.38"}}},
-		{Target: db.Target{ID: 102, LbID: 7, Type: "server", ServerID: sql.NullInt64{Int64: 5, Valid: true}, Weight: 50, AdminState: "maint"}, Slots: []*state.Slot{{ID: 102, TargetID: 102, ServerID: 5, Address: "2a01:4f8::5"}}},
-	}
-	lb2 := &state.LB{
-		LoadBalancer: db.LoadBalancer{ID: 8, Name: "lb-2", PlanID: 1, NodeID: 1, Algorithm: "leastconn", PublicEnabled: 1, Maintenance: 1},
-		Plan:         plan,
-	}
-	lb2.Services = []*state.Service{{Service: db.Service{
-		ID: 40, LbID: 8, Protocol: "http", ListenPort: 80, DestinationPort: 8080, ProxyProtocol: "none", HttpTimeoutS: 60, StickyEnabled: 1,
-		StickyCookieName: "LBSTICKY", StickyCookieLifetimeS: 300, HcProtocol: "https", HcPort: 8443, HcIntervalS: 5, HcTimeoutS: 2, HcRetries: 2, HcPath: "/",
-	}, StatusCodes: []string{"200"}}}
-	lb2.Targets = []*state.Target{{Target: db.Target{ID: 103, LbID: 8, Type: "ip", Ip: "10.0.0.9", Weight: 100, Backup: 1, AdminState: "ready"}, Slots: []*state.Slot{{ID: 103, TargetID: 103, Address: "10.0.0.9"}}}}
+	api := &state.Backend{Backend: db.Backend{ID: 5, Name: "api", Mode: "http", Algorithm: "leastconn", Port: 8080, ProxyProtocol: "none",
+		TimeoutServerS: 60, StickyEnabled: 1, StickyCookieName: "SRV", StickyCookieLifetimeS: 600, HcProtocol: "https", HcPort: 8443,
+		HcIntervalS: 5, HcTimeoutS: 2, HcRetries: 2, HcPath: "/"}, StatusCodes: []string{"200"}}
+	api.Servers = []*state.Server{{BackendServer: db.BackendServer{ID: 103, BackendID: 5, Type: "ip", Ip: "10.0.0.9", Weight: 100, Backup: 1, AdminState: "ready"},
+		Slots: []*state.Slot{{ID: 103, ServerID: 103, Address: "10.0.0.9"}}}}
+	db5 := &state.Backend{Backend: db.Backend{ID: 6, Name: "postgres", Mode: "tcp", Algorithm: "source", Port: 5432, ProxyProtocol: "v2",
+		TimeoutServerS: 3600, HcProtocol: "tcp", HcIntervalS: 15, HcTimeoutS: 10, HcRetries: 3, HcPath: "/"}, StatusCodes: []string{"2??"}}
+	db5.Servers = []*state.Server{{BackendServer: db.BackendServer{ID: 104, BackendID: 6, Type: "ip", Ip: "10.0.1.1", Weight: 100, AdminState: "ready"},
+		Slots: []*state.Slot{{ID: 104, ServerID: 104, Address: "10.0.1.1"}}}}
+	web := &state.Frontend{Frontend: db.Frontend{ID: 3, Name: "web", Mode: "http", Tls: 1, HttpRedirect: 1, TimeoutClientS: 50, Maxconn: 10000,
+		ForwardedHeaders: 1, Enabled: 1, DefaultBackendID: sql.NullInt64{Int64: 4, Valid: true}},
+		Binds:   []state.Bind{{Address: "203.0.113.10", Port: 443}, {Address: "2001:db8::1", Port: 443}},
+		CertIDs: []int64{12},
+		Routes: []state.Route{
+			{Hosts: []string{"api.example.com", "*.api.example.com"}, PathPrefix: "/v1", BackendID: 5},
+			{PathPrefix: "/api", BackendID: 5},
+		}}
+	pg := &state.Frontend{Frontend: db.Frontend{ID: 7, Name: "postgres", Mode: "tcp", TimeoutClientS: 3600, Enabled: 1, Maintenance: 1,
+		DefaultBackendID: sql.NullInt64{Int64: 6, Valid: true}}, Binds: []state.Bind{{Address: "*", Port: 5432}}}
 	certs := func(id int64) *state.Cert {
 		if id == 12 {
 			return cert
 		}
 		return nil
 	}
-	return []*state.LB{lb, lb2}, certs
+	return []*state.Frontend{web, pg}, []*state.Backend{app, api, db5}, certs
 }

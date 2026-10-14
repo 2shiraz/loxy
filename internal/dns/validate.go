@@ -103,8 +103,8 @@ type Resolver interface {
 	LookupNetIP(ctx context.Context, network, host string) ([]netip.Addr, error)
 }
 
-// Verify resolves fqdn and compares with the LB's expected addresses.
-func Verify(ctx context.Context, res Resolver, fqdn, wantV4, wantV6 string) Verification {
+// Verify resolves fqdn and checks every returned address is one the frontend listens on.
+func Verify(ctx context.Context, res Resolver, fqdn string, wantV4, wantV6 []string) Verification {
 	if res == nil {
 		res = net.DefaultResolver
 	}
@@ -136,16 +136,20 @@ func Verify(ctx context.Context, res Resolver, fqdn, wantV4, wantV6 string) Veri
 	if err4 != nil && err6 != nil {
 		return Verification{Status: "error", Detail: err4.Error(), A: v.A, AAAA: v.AAAA}
 	}
-	check := func(fam, want string, got []string) (bad, missing string) {
-		if want == "" {
+	check := func(fam string, want, got []string) (bad, missing string) {
+		if len(want) == 0 {
 			return "", ""
 		}
 		if len(got) == 0 {
 			return "", fam + " record missing"
 		}
+		ok := map[string]bool{}
+		for _, w := range want {
+			ok[w] = true
+		}
 		for _, g := range got {
-			if g != want {
-				return fam + " points to " + strings.Join(got, ", ") + " (expected " + want + ")", ""
+			if !ok[g] {
+				return fam + " points to " + strings.Join(got, ", ") + " (expected " + strings.Join(want, ", ") + ")", ""
 			}
 		}
 		return "", ""
@@ -153,13 +157,13 @@ func Verify(ctx context.Context, res Resolver, fqdn, wantV4, wantV6 string) Veri
 	b4, m4 := check("A", wantV4, v.A)
 	b6, m6 := check("AAAA", wantV6, v.AAAA)
 	switch {
-	case wantV4 == "" && wantV6 == "":
-		v.Status, v.Detail = "error", "load balancer has no public IP"
+	case len(wantV4) == 0 && len(wantV6) == 0:
+		v.Status, v.Detail = "error", "frontend has no public address"
 	case b4 != "" || b6 != "":
 		v.Status, v.Detail = "wrong_ip", strings.TrimSpace(b4+" "+b6)
-	case m4 != "" && (m6 != "" || wantV6 == ""):
+	case m4 != "" && (m6 != "" || len(wantV6) == 0):
 		v.Status, v.Detail = "missing", strings.TrimSpace(m4+" "+m6)
-	case m4 == "" && m6 != "" && wantV4 == "":
+	case m4 == "" && m6 != "" && len(wantV4) == 0:
 		v.Status, v.Detail = "missing", m6
 	default:
 		v.Status = "ok"

@@ -170,3 +170,13 @@ func StatusCodesToHAProxy(items []string) (string, error) {
 	}
 	return strings.Join(out, ","), nil
 }
+
+var routePathRe = regexp.MustCompile(`^/[A-Za-z0-9._~!&()*+,;=:@%/-]{0,254}$`)
+
+// ValidRoutePath checks a routing path prefix (no query, spaces, quotes, #, $, \).
+func ValidRoutePath(s string) bool { return routePathRe.MatchString(s) }
+
+// ValidIdentifier checks object names that are shown in the UI (never rendered): 1–64 of [A-Za-z0-9._-].
+func ValidIdentifier(s string) bool { return identRe.MatchString(s) }
+
+var identRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)

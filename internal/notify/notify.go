@@ -71,18 +71,19 @@ var sevRank = map[string]int{"info": 1, "warning": 2, "error": 3}
 
 // Notifier subscribes to the event hub and dispatches matching events.
 type Notifier struct {
-	Q        *db.Queries
-	Box      *secrets.Box
-	Hub      *events.Hub
-	LBLabels func(lbID int64) map[string]string
-	HTTP     *http.Client
+	Q   *db.Queries
+	Box *secrets.Box
+	Hub *events.Hub
+	// Labels returns the labels of the frontend/backend an event refers to (for label filters).
+	Labels func(e events.Event) map[string]string
+	HTTP   *http.Client
 
 	mu   sync.Mutex
-	last map[string]time.Time // rule|lb|kind → last sent
+	last map[string]time.Time // rule|scope|kind → last sent
 }
 
-func New(q *db.Queries, box *secrets.Box, hub *events.Hub, lbLabels func(int64) map[string]string) *Notifier {
-	return &Notifier{Q: q, Box: box, Hub: hub, LBLabels: lbLabels, HTTP: &http.Client{Timeout: 10 * time.Second}, last: map[string]time.Time{}}
+func New(q *db.Queries, box *secrets.Box, hub *events.Hub, labels func(events.Event) map[string]string) *Notifier {
+	return &Notifier{Q: q, Box: box, Hub: hub, Labels: labels, HTTP: &http.Client{Timeout: 10 * time.Second}, last: map[string]time.Time{}}
 }
 
 func (n *Notifier) Run(ctx context.Context) {
@@ -102,7 +103,7 @@ func (n *Notifier) Run(ctx context.Context) {
 }
 
 // Matches reports whether a rule applies to an event (pure, tested).
-func Matches(r db.AlertRule, e events.Event, lbLabels map[string]string) bool {
+func Matches(r db.AlertRule, e events.Event, objLabels map[string]string) bool {
 	if sevRank[e.Severity] < sevRank[r.MinSeverity] {
 		return false
 	}
@@ -119,9 +120,9 @@ func Matches(r db.AlertRule, e events.Event, lbLabels map[string]string) bool {
 			return false
 		}
 	}
-	if r.LbFilter != "" {
-		sel, err := model.ParseSelector(r.LbFilter)
-		if err != nil || lbLabels == nil || !sel.Matches(lbLabels) {
+	if r.LabelFilter != "" {
+		sel, err := model.ParseSelector(r.LabelFilter)
+		if err != nil || objLabels == nil || !sel.Matches(objLabels) {
 			return false
 		}
 	}
@@ -134,18 +135,20 @@ func (n *Notifier) handle(ctx context.Context, e events.Event) {
 		return
 	}
 	var labels map[string]string
-	var lb int64
-	if e.LBID != nil {
-		lb = *e.LBID
-		if n.LBLabels != nil {
-			labels = n.LBLabels(lb)
-		}
+	var obj int64
+	if n.Labels != nil {
+		labels = n.Labels(e)
+	}
+	if e.FrontendID != nil {
+		obj = *e.FrontendID
+	} else if e.BackendID != nil {
+		obj = -*e.BackendID
 	}
 	for _, r := range rules {
 		if !Matches(r, e, labels) {
 			continue
 		}
-		key := fmt.Sprintf("%d|%d|%s", r.ID, lb, e.Kind)
+		key := fmt.Sprintf("%d|%d|%s", r.ID, obj, e.Kind)
 		n.mu.Lock()
 		if t, ok := n.last[key]; ok && time.Since(t) < time.Duration(r.CooldownS)*time.Second {
 			n.mu.Unlock()

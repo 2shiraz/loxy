@@ -262,13 +262,13 @@ func ToLibdns(r Record, existing []Record) (libdns.Record, error) {
 }
 
 // AddressRecords builds the A/AAAA records a domain needs.
-func AddressRecords(name string, ipv4, ipv6 string, ttl int) []Record {
+func AddressRecords(name string, ipv4, ipv6 []string, ttl int) []Record {
 	var out []Record
-	if ipv4 != "" {
-		out = append(out, Record{Type: "A", Name: name, Value: ipv4, TTL: ttl})
+	for _, a := range ipv4 {
+		out = append(out, Record{Type: "A", Name: name, Value: a, TTL: ttl})
 	}
-	if ipv6 != "" {
-		out = append(out, Record{Type: "AAAA", Name: name, Value: ipv6, TTL: ttl})
+	for _, a := range ipv6 {
+		out = append(out, Record{Type: "AAAA", Name: name, Value: a, TTL: ttl})
 	}
 	return out
 }

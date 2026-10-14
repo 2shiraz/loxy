@@ -1,4 +1,4 @@
-// Package health aggregates per-check status into target/service/LB health (spec §9).
+// Package health aggregates per-check status into server/backend/frontend health (spec §9).
 package health
 
 // Check status values: healthy | unhealthy | maintenance | draining | unknown.
@@ -16,7 +16,7 @@ type Summary struct {
 	Total   int
 }
 
-// Aggregate computes the LB status: Healthy if all checks healthy, Degraded if some
+// Aggregate computes the aggregate status: Healthy if all checks healthy, Degraded if some
 // unhealthy but every service has ≥1 healthy target, Unhealthy if any service has 0
 // healthy targets, Unknown without targets (or without observations yet).
 func Aggregate(services []Service) Summary {

@@ -119,28 +119,32 @@ func (r *Reconciler) Run(ctx context.Context) {
 	}
 }
 
-// Input builds the render input for a snapshot.
-func (r *Reconciler) Input(snap *state.Snapshot, root string, rev, desired int64) render.Input {
+// ACMEFrontends returns frontend ids that must answer HTTP-01 challenges on :80
+// (managed HTTP-01 certificates attached, or domains attached).
+func ACMEFrontends(snap *state.Snapshot) map[int64]bool {
 	acme := map[int64]bool{}
 	for _, d := range snap.Domains {
-		if d.LbID.Valid {
-			acme[d.LbID.Int64] = true
+		if d.FrontendID.Valid {
+			acme[d.FrontendID.Int64] = true
 		}
 	}
-	for _, lb := range snap.LBs {
-		for _, s := range lb.Services {
-			for _, cid := range s.CertIDs {
-				if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
-					acme[lb.ID] = true
-				}
+	for _, f := range snap.Frontends {
+		for _, cid := range f.CertIDs {
+			if c := snap.Cert(cid); c != nil && c.Type == "managed" && c.Challenge == "http01" {
+				acme[f.ID] = true
 			}
 		}
 	}
+	return acme
+}
+
+// Input builds the render input for a snapshot.
+func (r *Reconciler) Input(snap *state.Snapshot, root string, rev, desired int64) render.Input {
 	return render.Input{
 		Root: root, NodeID: r.Opt.NodeID, Revision: rev, DesiredVersion: desired,
 		PanelPort: r.Opt.PanelPort, PanelAllow: r.Opt.PanelAllow, LoxyAddr: r.Opt.LoxyAddr, Promex: r.promex,
 		StateFile: filepath.Join(r.Opt.StateDir, "server-state"), SocketPath: r.Opt.SocketPath, GlobalMaxConn: r.Opt.GlobalMaxConn,
-		LBs: snap.LBsOnNode(r.Opt.NodeID), Cert: snap.Cert, ACMEHTTP01: acme,
+		Frontends: snap.FrontendsOnNode(r.Opt.NodeID), Backends: snap.BackendsOnNode(r.Opt.NodeID), Cert: snap.Cert, ACMEHTTP01: ACMEFrontends(snap),
 		PanelPEM: r.Opt.PanelPEM, PlaceholderPEM: r.Opt.PlaceholderPEM,
 	}
 }
@@ -263,9 +267,7 @@ func (r *Reconciler) Apply(ctx context.Context, by string) error {
 	if msg, err := r.Val.Check(ctx, filepath.Join(r.FS.RevDir(rev), "haproxy.check.cfg")); err != nil {
 		return r.fail(ctx, snap, rev, desired, kind, strings.TrimSpace(msg+"\n"+err.Error()), start, by)
 	}
-	for _, lb := range snap.LBsOnNode(r.Opt.NodeID) {
-		r.Hub.Publish(events.Event{Kind: "lb.apply.started", LBID: events.I64(lb.ID), Ephemeral: true})
-	}
+	r.Hub.Publish(events.Event{Kind: "apply.started", Ephemeral: true})
 	prevLive := r.FS.Live()
 	output := ""
 	if kind == "runtime" {
@@ -351,11 +353,15 @@ func truncate(s string, n int) string {
 func (r *Reconciler) succeed(ctx context.Context, snap *state.Snapshot, desired int64) {
 	q := r.Store.Q
 	_ = q.SetAppliedVersion(ctx, db.SetAppliedVersionParams{AppliedVersion: desired, ID: r.Opt.NodeID})
-	for _, lb := range snap.LBsOnNode(r.Opt.NodeID) {
-		if lb.Status != "active" || lb.LastError.Valid {
-			_ = q.SetLoadBalancerStatus(ctx, db.SetLoadBalancerStatusParams{Status: "active", ID: lb.ID})
-			r.Hub.Publish(events.Event{Kind: "lb.apply.succeeded", LBID: events.I64(lb.ID), Ephemeral: true})
+	changed := false
+	for _, f := range snap.FrontendsOnNode(r.Opt.NodeID) {
+		if f.Status != "active" || f.LastError.Valid {
+			_ = q.SetFrontendStatus(ctx, db.SetFrontendStatusParams{Status: "active", ID: f.ID})
+			changed = true
 		}
+	}
+	if changed {
+		r.Hub.Publish(events.Event{Kind: "apply.succeeded", Ephemeral: true})
 	}
 }
 
@@ -366,10 +372,10 @@ func (r *Reconciler) fail(ctx context.Context, snap *state.Snapshot, rev, desire
 		StateJson: "{}", CreatedBy: by, CreatedAt: time.Now().UnixMilli()})
 	_ = os.RemoveAll(r.FS.RevDir(rev))
 	Stats.record(kind, "failed", time.Since(start).Milliseconds())
-	for _, lb := range snap.LBsOnNode(r.Opt.NodeID) {
-		_ = q.SetLoadBalancerStatus(ctx, db.SetLoadBalancerStatusParams{Status: "apply_error", LastError: sql.NullString{String: truncate(msg, 4000), Valid: true}, ID: lb.ID})
-		r.Hub.Publish(events.Event{Kind: "lb.apply.failed", LBID: events.I64(lb.ID), Severity: "error", Message: "Apply failed: " + firstLine(msg)})
+	for _, f := range snap.FrontendsOnNode(r.Opt.NodeID) {
+		_ = q.SetFrontendStatus(ctx, db.SetFrontendStatusParams{Status: "apply_error", LastError: sql.NullString{String: truncate(msg, 4000), Valid: true}, ID: f.ID})
 	}
+	r.Hub.Publish(events.Event{Kind: "apply.failed", Severity: "error", Message: "Apply failed: " + firstLine(msg)})
 	return fmt.Errorf("apply rev %d failed: %s", rev, firstLine(msg))
 }
 

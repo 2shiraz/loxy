@@ -256,18 +256,10 @@ func (s *Server) respondDomain(w http.ResponseWriter, status int, id int64) {
 	writeJSON(w, status, map[string]any{"domain": s.viewDomain(d)})
 }
 
-// domainRefs validates LB / service / provider references; returns the detected zone.
+// domainRefs validates frontend / provider references; returns the detected zone.
 func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors) string {
-	snap := s.Snap.Get()
-	if in.LbId != nil && *in.LbId != 0 {
-		lb := snap.LB(*in.LbId)
-		if lb == nil {
-			fe.Add("lb_id", "unknown load balancer")
-		} else if in.ServiceId != nil && *in.ServiceId != 0 && lb.Service(*in.ServiceId) == nil {
-			fe.Add("service_id", "service does not belong to this load balancer")
-		}
-	} else if in.ServiceId != nil && *in.ServiceId != 0 {
-		fe.Add("service_id", "requires a load balancer")
+	if in.FrontendId != nil && *in.FrontendId != 0 && s.Snap.Get().Frontend(*in.FrontendId) == nil {
+		fe.Add("frontend_id", "unknown frontend")
 	}
 	zone := ""
 	if in.DnsProviderId != nil && *in.DnsProviderId != 0 {
@@ -305,9 +297,6 @@ func (s *Server) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	if !model.ValidHostname(fqdn, hasProvider) || !strings.Contains(fqdn, ".") {
 		fe.Add("fqdn", "invalid hostname (wildcards need a DNS provider)")
 	}
-	if in.LbId == nil || *in.LbId == 0 {
-		fe.Add("lb_id", "required")
-	}
 	zone := ""
 	if fe.Empty() {
 		zone = s.domainRefs(r.Context(), fqdn, in, fe)
@@ -319,7 +308,7 @@ func (s *Server) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	var row db.Domain
 	if err := s.mutate(r, "domain.create", "domain", func() int64 { return row.ID }, in, func(q *db.Queries) error {
 		var err error
-		row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, LbID: i64(in.LbId), ServiceID: i64(in.ServiceId), DnsProviderID: i64(in.DnsProviderId),
+		row, err = q.CreateDomain(r.Context(), db.CreateDomainParams{Fqdn: fqdn, FrontendID: i64(in.FrontendId), DnsProviderID: i64(in.DnsProviderId),
 			Zone: zone, AutoRecords: b2i(in.AutoRecords != nil && *in.AutoRecords), CreatedAt: nowMs(), UpdatedAt: nowMs()})
 		return err
 	}); err != nil {
@@ -342,12 +331,9 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		fail(w, err)
 		return
 	}
-	merged := gen.DomainInput{LbId: nullI64(d.LbID), ServiceId: nullI64(d.ServiceID), DnsProviderId: nullI64(d.DnsProviderID), AutoRecords: ptr(d.AutoRecords != 0)}
-	if in.LbId != nil {
-		merged.LbId = in.LbId
-	}
-	if in.ServiceId != nil {
-		merged.ServiceId = in.ServiceId
+	merged := gen.DomainInput{FrontendId: nullI64(d.FrontendID), DnsProviderId: nullI64(d.DnsProviderID), AutoRecords: ptr(d.AutoRecords != 0)}
+	if in.FrontendId != nil {
+		merged.FrontendId = in.FrontendId
 	}
 	if in.DnsProviderId != nil {
 		merged.DnsProviderId = in.DnsProviderId
@@ -362,11 +348,11 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		return
 	}
 	turningOff := d.AutoRecords != 0 && (merged.AutoRecords == nil || !*merged.AutoRecords)
-	if turningOff || (merged.LbId == nil || *merged.LbId == 0) {
+	if turningOff || (merged.FrontendId == nil || *merged.FrontendId == 0) {
 		s.removeManagedRecords(r.Context(), d)
 	}
 	if err := s.mutate(r, "domain.update", "domain", func() int64 { return id }, in, func(q *db.Queries) error {
-		return q.UpdateDomain(r.Context(), db.UpdateDomainParams{LbID: i64(merged.LbId), ServiceID: i64(merged.ServiceId), DnsProviderID: i64(merged.DnsProviderId),
+		return q.UpdateDomain(r.Context(), db.UpdateDomainParams{FrontendID: i64(merged.FrontendId), DnsProviderID: i64(merged.DnsProviderId),
 			Zone: zone, AutoRecords: b2i(merged.AutoRecords != nil && *merged.AutoRecords), UpdatedAt: nowMs(), ID: id})
 	}); err != nil {
 		fail(w, err)
@@ -408,29 +394,24 @@ func (s *Server) VerifyDomainNow(ctx context.Context, id int64) {
 	if d == nil {
 		return
 	}
-	v4, v6 := "", ""
-	if d.LbID.Valid {
-		if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil {
-			v4, v6 = s.lbAddresses(lb)
-		}
-	}
+	v4, v6 := s.domainAddresses(d)
 	res := dns.Verify(ctx, nil, d.Fqdn, v4, v6)
-	if !d.LbID.Valid {
-		res.Status, res.Detail = "unknown", "not attached to a load balancer"
+	if !d.FrontendID.Valid {
+		res.Status, res.Detail = "unknown", "not attached to a frontend"
 	}
 	obs, _ := json.Marshal(map[string]any{"a": res.A, "aaaa": res.AAAA})
 	_ = s.Store.Q.SetDomainStatus(ctx, db.SetDomainStatusParams{Status: res.Status, StatusDetail: sql.NullString{String: res.Detail, Valid: res.Detail != ""},
 		Observed: string(obs), CheckedAt: sql.NullInt64{Int64: nowMs(), Valid: true}, ID: id})
 	if res.Status != d.Status {
-		var lb *int64
-		if d.LbID.Valid {
-			lb = events.I64(d.LbID.Int64)
+		var feID *int64
+		if d.FrontendID.Valid {
+			feID = events.I64(d.FrontendID.Int64)
 		}
 		sev := "info"
 		if res.Status != "ok" {
 			sev = "warning"
 		}
-		s.Hub.Publish(events.Event{Kind: "domain.status.changed", LBID: lb, Severity: sev, Message: fmt.Sprintf("%s: %s %s", d.Fqdn, res.Status, res.Detail),
+		s.Hub.Publish(events.Event{Kind: "domain.status.changed", FrontendID: feID, Severity: sev, Message: fmt.Sprintf("%s: %s %s", d.Fqdn, res.Status, res.Detail),
 			Data: map[string]any{"domain_id": id, "status": res.Status}})
 	}
 	_, _ = s.Snap.Refresh(ctx, s.Store.Q, s.Box)
@@ -442,18 +423,12 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 		fail(w, errNotFound("domain"))
 		return
 	}
-	if d.LbID.Valid && d.ServiceID.Valid {
-		if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil && lb.Plan != nil && int64(distinctCerts(lb)) >= lb.Plan.MaxCertificates {
-			fail(w, errQuota(fmt.Sprintf("plan %s allows %d certificates", lb.Plan.Name, lb.Plan.MaxCertificates)))
-			return
-		}
-	}
 	challenge := "http01"
 	var provider *int64
 	if d.DnsProviderID.Valid {
 		challenge, provider = "dns01", ptr(d.DnsProviderID.Int64)
 	} else if d.Status != "ok" {
-		fail(w, errField("status", "the domain must resolve to the load balancer first (or attach a DNS provider for DNS-01)"))
+		fail(w, errField("status", "the domain must resolve to the frontend first (or attach a DNS provider for DNS-01)"))
 		return
 	}
 	certID, err := s.createManaged(r, d.Fqdn, []string{d.Fqdn}, challenge, provider, "ecdsa256", map[string]string{})
@@ -462,14 +437,12 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	_ = s.Store.Q.SetDomainCertificate(r.Context(), db.SetDomainCertificateParams{CertificateID: sql.NullInt64{Int64: certID, Valid: true}, ID: id})
-	// Attach to the chosen https service, if any.
-	if d.LbID.Valid && d.ServiceID.Valid {
-		if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil {
-			if sv := lb.Service(d.ServiceID.Int64); sv != nil && sv.Protocol == "https" {
-				_ = s.mutate(r, "service.attach_certificate", "service", func() int64 { return sv.ID }, map[string]any{"certificate_id": certID}, func(q *db.Queries) error {
-					return q.AddServiceCertificate(r.Context(), db.AddServiceCertificateParams{ServiceID: sv.ID, CertificateID: certID, Position: int64(len(sv.CertIDs))})
-				})
-			}
+	// Attach to the domain's frontend when it terminates TLS.
+	if d.FrontendID.Valid {
+		if f := s.Snap.Get().Frontend(d.FrontendID.Int64); f != nil && f.Tls != 0 {
+			_ = s.mutate(r, "frontend.attach_certificate", "frontend", func() int64 { return f.ID }, map[string]any{"certificate_id": certID}, func(q *db.Queries) error {
+				return q.AddFrontendCertificate(r.Context(), db.AddFrontendCertificateParams{FrontendID: f.ID, CertificateID: certID, Position: int64(len(f.CertIDs))})
+			})
 		}
 	}
 	s.Changed(r.Context())
@@ -481,11 +454,10 @@ func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, 
 // Only records Loxy created are touched; pre-existing records are reported as a conflict.
 func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	d := s.domain(id)
-	if d == nil || d.AutoRecords == 0 || !d.DnsProviderID.Valid || !d.LbID.Valid || d.Zone == "" {
+	if d == nil || d.AutoRecords == 0 || !d.DnsProviderID.Valid || !d.FrontendID.Valid || d.Zone == "" {
 		return
 	}
-	lb := s.Snap.Get().LB(d.LbID.Int64)
-	if lb == nil {
+	if s.Snap.Get().Frontend(d.FrontendID.Int64) == nil {
 		return
 	}
 	p, err := s.DNSProvider(ctx, d.DnsProviderID.Int64)
@@ -499,7 +471,7 @@ func (s *Server) SyncDomain(ctx context.Context, id int64) {
 	if name == "" {
 		name = "@"
 	}
-	v4, v6 := s.lbAddresses(lb)
+	v4, v6 := s.domainAddresses(d)
 	want := dns.AddressRecords(name, v4, v6, int(d.Ttl))
 	var managed []string
 	_ = json.Unmarshal([]byte(d.ManagedRecordIds), &managed)
@@ -605,13 +577,8 @@ func (s *Server) RunDomainLoop(ctx context.Context) {
 		}
 		now := time.Now()
 		for _, d := range s.Snap.Get().Domains {
-			ips := ""
-			if d.LbID.Valid {
-				if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil {
-					a, b := s.lbAddresses(lb)
-					ips = a + "," + b
-				}
-			}
+			a, b := s.domainAddresses(d)
+			ips := strings.Join(a, ",") + "|" + strings.Join(b, ",")
 			changed := lastIPs[d.ID] != ips
 			lastIPs[d.ID] = ips
 			if changed && d.AutoRecords != 0 {
@@ -626,4 +593,16 @@ func (s *Server) RunDomainLoop(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// domainAddresses returns the addresses the domain should resolve to (its frontend's).
+func (s *Server) domainAddresses(d *state.Domain) (v4, v6 []string) {
+	if !d.FrontendID.Valid {
+		return nil, nil
+	}
+	f := s.Snap.Get().Frontend(d.FrontendID.Int64)
+	if f == nil {
+		return nil, nil
+	}
+	return s.frontendAddresses(f)
 }

@@ -10,72 +10,41 @@ import (
 	"database/sql"
 )
 
-const addServiceCertificate = `-- name: AddServiceCertificate :exec
-INSERT INTO service_certificates (service_id, certificate_id, position) VALUES (?, ?, ?)
+const addFrontendCertificate = `-- name: AddFrontendCertificate :exec
+INSERT INTO frontend_certificates (frontend_id, certificate_id, position) VALUES (?, ?, ?)
 `
 
-type AddServiceCertificateParams struct {
-	ServiceID     int64
+type AddFrontendCertificateParams struct {
+	FrontendID    int64
 	CertificateID int64
 	Position      int64
 }
 
-func (q *Queries) AddServiceCertificate(ctx context.Context, arg AddServiceCertificateParams) error {
-	_, err := q.db.ExecContext(ctx, addServiceCertificate, arg.ServiceID, arg.CertificateID, arg.Position)
+func (q *Queries) AddFrontendCertificate(ctx context.Context, arg AddFrontendCertificateParams) error {
+	_, err := q.db.ExecContext(ctx, addFrontendCertificate, arg.FrontendID, arg.CertificateID, arg.Position)
 	return err
 }
 
-const addTraffic = `-- name: AddTraffic :exec
-INSERT INTO traffic_monthly (lb_id, month, bytes_in, bytes_out) VALUES (?, ?, ?, ?)
-ON CONFLICT(lb_id, month) DO UPDATE SET bytes_in = bytes_in + excluded.bytes_in, bytes_out = bytes_out + excluded.bytes_out
+const addRoute = `-- name: AddRoute :exec
+INSERT INTO routes (frontend_id, position, hosts, path_prefix, backend_id) VALUES (?, ?, ?, ?, ?)
 `
 
-type AddTrafficParams struct {
-	LbID     int64
-	Month    string
-	BytesIn  int64
-	BytesOut int64
+type AddRouteParams struct {
+	FrontendID int64
+	Position   int64
+	Hosts      string
+	PathPrefix string
+	BackendID  int64
 }
 
-func (q *Queries) AddTraffic(ctx context.Context, arg AddTrafficParams) error {
-	_, err := q.db.ExecContext(ctx, addTraffic,
-		arg.LbID,
-		arg.Month,
-		arg.BytesIn,
-		arg.BytesOut,
+func (q *Queries) AddRoute(ctx context.Context, arg AddRouteParams) error {
+	_, err := q.db.ExecContext(ctx, addRoute,
+		arg.FrontendID,
+		arg.Position,
+		arg.Hosts,
+		arg.PathPrefix,
+		arg.BackendID,
 	)
-	return err
-}
-
-const assignIP = `-- name: AssignIP :execrows
-UPDATE ip_addresses SET assigned_lb_id = ? WHERE id = ? AND assigned_lb_id IS NULL
-`
-
-type AssignIPParams struct {
-	AssignedLbID sql.NullInt64
-	ID           int64
-}
-
-func (q *Queries) AssignIP(ctx context.Context, arg AssignIPParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, assignIP, arg.AssignedLbID, arg.ID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
-const attachLBNetwork = `-- name: AttachLBNetwork :exec
-INSERT INTO lb_networks (lb_id, network_id, ip) VALUES (?, ?, ?)
-`
-
-type AttachLBNetworkParams struct {
-	LbID      int64
-	NetworkID int64
-	Ip        string
-}
-
-func (q *Queries) AttachLBNetwork(ctx context.Context, arg AttachLBNetworkParams) error {
-	_, err := q.db.ExecContext(ctx, attachLBNetwork, arg.LbID, arg.NetworkID, arg.Ip)
 	return err
 }
 
@@ -90,30 +59,29 @@ func (q *Queries) BumpDesiredVersion(ctx context.Context, id int64) (int64, erro
 	return desired_version, err
 }
 
-const clearServiceCertificates = `-- name: ClearServiceCertificates :exec
-DELETE FROM service_certificates WHERE service_id = ?
+const clearFrontendCertificates = `-- name: ClearFrontendCertificates :exec
+DELETE FROM frontend_certificates WHERE frontend_id = ?
 `
 
-func (q *Queries) ClearServiceCertificates(ctx context.Context, serviceID int64) error {
-	_, err := q.db.ExecContext(ctx, clearServiceCertificates, serviceID)
+func (q *Queries) ClearFrontendCertificates(ctx context.Context, frontendID int64) error {
+	_, err := q.db.ExecContext(ctx, clearFrontendCertificates, frontendID)
 	return err
 }
 
-const countPlans = `-- name: CountPlans :one
-SELECT count(*) FROM plans
+const clearRoutes = `-- name: ClearRoutes :exec
+DELETE FROM routes WHERE frontend_id = ?
 `
 
-func (q *Queries) CountPlans(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countPlans)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
+func (q *Queries) ClearRoutes(ctx context.Context, frontendID int64) error {
+	_, err := q.db.ExecContext(ctx, clearRoutes, frontendID)
+	return err
 }
 
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) FROM users
 `
 
+// ===== users / sessions / tokens =====
 func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countUsers)
 	var count int64
@@ -140,6 +108,75 @@ func (q *Queries) CreateACMEAccount(ctx context.Context, arg CreateACMEAccountPa
 		arg.Registration,
 	)
 	return err
+}
+
+const createAPIToken = `-- name: CreateAPIToken :one
+INSERT INTO api_tokens (project_id, name, prefix, secret_hash, role, expires_at, created_at) VALUES (1, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, prefix, secret_hash, role, expires_at, last_used_at, created_at
+`
+
+type CreateAPITokenParams struct {
+	Name       string
+	Prefix     string
+	SecretHash string
+	Role       string
+	ExpiresAt  sql.NullInt64
+	CreatedAt  int64
+}
+
+func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, createAPIToken,
+		arg.Name,
+		arg.Prefix,
+		arg.SecretHash,
+		arg.Role,
+		arg.ExpiresAt,
+		arg.CreatedAt,
+	)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Prefix,
+		&i.SecretHash,
+		&i.Role,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createAlertRule = `-- name: CreateAlertRule :one
+INSERT INTO alert_rules (event_kinds, label_filter, channel_id, min_severity, cooldown_s) VALUES (?, ?, ?, ?, ?) RETURNING id, event_kinds, label_filter, channel_id, min_severity, cooldown_s
+`
+
+type CreateAlertRuleParams struct {
+	EventKinds  string
+	LabelFilter string
+	ChannelID   int64
+	MinSeverity string
+	CooldownS   int64
+}
+
+func (q *Queries) CreateAlertRule(ctx context.Context, arg CreateAlertRuleParams) (AlertRule, error) {
+	row := q.db.QueryRowContext(ctx, createAlertRule,
+		arg.EventKinds,
+		arg.LabelFilter,
+		arg.ChannelID,
+		arg.MinSeverity,
+		arg.CooldownS,
+	)
+	var i AlertRule
+	err := row.Scan(
+		&i.ID,
+		&i.EventKinds,
+		&i.LabelFilter,
+		&i.ChannelID,
+		&i.MinSeverity,
+		&i.CooldownS,
+	)
+	return i, err
 }
 
 const createAudit = `-- name: CreateAudit :exec
@@ -173,6 +210,145 @@ func (q *Queries) CreateAudit(ctx context.Context, arg CreateAuditParams) error 
 		arg.After,
 	)
 	return err
+}
+
+const createBackend = `-- name: CreateBackend :one
+INSERT INTO backends (project_id, name, description, mode, algorithm, port, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s,
+  proxy_protocol, timeout_server_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response,
+  hc_status_codes, hc_tls_verify, labels, created_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, node_id, name, description, mode, algorithm, port, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol, timeout_server_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes, hc_tls_verify, labels, version, created_at
+`
+
+type CreateBackendParams struct {
+	Name                  string
+	Description           string
+	Mode                  string
+	Algorithm             string
+	Port                  int64
+	StickyEnabled         int64
+	StickyCookieName      string
+	StickyCookieLifetimeS int64
+	ProxyProtocol         string
+	TimeoutServerS        int64
+	HcProtocol            string
+	HcPort                int64
+	HcIntervalS           int64
+	HcTimeoutS            int64
+	HcRetries             int64
+	HcDomain              string
+	HcPath                string
+	HcResponse            string
+	HcStatusCodes         string
+	HcTlsVerify           int64
+	Labels                string
+	CreatedAt             int64
+}
+
+func (q *Queries) CreateBackend(ctx context.Context, arg CreateBackendParams) (Backend, error) {
+	row := q.db.QueryRowContext(ctx, createBackend,
+		arg.Name,
+		arg.Description,
+		arg.Mode,
+		arg.Algorithm,
+		arg.Port,
+		arg.StickyEnabled,
+		arg.StickyCookieName,
+		arg.StickyCookieLifetimeS,
+		arg.ProxyProtocol,
+		arg.TimeoutServerS,
+		arg.HcProtocol,
+		arg.HcPort,
+		arg.HcIntervalS,
+		arg.HcTimeoutS,
+		arg.HcRetries,
+		arg.HcDomain,
+		arg.HcPath,
+		arg.HcResponse,
+		arg.HcStatusCodes,
+		arg.HcTlsVerify,
+		arg.Labels,
+		arg.CreatedAt,
+	)
+	var i Backend
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.NodeID,
+		&i.Name,
+		&i.Description,
+		&i.Mode,
+		&i.Algorithm,
+		&i.Port,
+		&i.StickyEnabled,
+		&i.StickyCookieName,
+		&i.StickyCookieLifetimeS,
+		&i.ProxyProtocol,
+		&i.TimeoutServerS,
+		&i.HcProtocol,
+		&i.HcPort,
+		&i.HcIntervalS,
+		&i.HcTimeoutS,
+		&i.HcRetries,
+		&i.HcDomain,
+		&i.HcPath,
+		&i.HcResponse,
+		&i.HcStatusCodes,
+		&i.HcTlsVerify,
+		&i.Labels,
+		&i.Version,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createBackendServer = `-- name: CreateBackendServer :one
+INSERT INTO backend_servers (backend_id, type, host_id, label_selector, ip, port, use_private_ip, weight, backup, created_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, backend_id, type, host_id, label_selector, ip, port, use_private_ip, weight, backup, admin_state, removing, created_at
+`
+
+type CreateBackendServerParams struct {
+	BackendID     int64
+	Type          string
+	HostID        sql.NullInt64
+	LabelSelector string
+	Ip            string
+	Port          sql.NullInt64
+	UsePrivateIp  int64
+	Weight        int64
+	Backup        int64
+	CreatedAt     int64
+}
+
+func (q *Queries) CreateBackendServer(ctx context.Context, arg CreateBackendServerParams) (BackendServer, error) {
+	row := q.db.QueryRowContext(ctx, createBackendServer,
+		arg.BackendID,
+		arg.Type,
+		arg.HostID,
+		arg.LabelSelector,
+		arg.Ip,
+		arg.Port,
+		arg.UsePrivateIp,
+		arg.Weight,
+		arg.Backup,
+		arg.CreatedAt,
+	)
+	var i BackendServer
+	err := row.Scan(
+		&i.ID,
+		&i.BackendID,
+		&i.Type,
+		&i.HostID,
+		&i.LabelSelector,
+		&i.Ip,
+		&i.Port,
+		&i.UsePrivateIp,
+		&i.Weight,
+		&i.Backup,
+		&i.AdminState,
+		&i.Removing,
+		&i.CreatedAt,
+	)
+	return i, err
 }
 
 const createCertificate = `-- name: CreateCertificate :one
@@ -248,6 +424,38 @@ func (q *Queries) CreateCertificate(ctx context.Context, arg CreateCertificatePa
 	return i, err
 }
 
+const createChannel = `-- name: CreateChannel :one
+INSERT INTO notification_channels (name, kind, config_enc, enabled, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id, name, kind, config_enc, enabled, created_at
+`
+
+type CreateChannelParams struct {
+	Name      string
+	Kind      string
+	ConfigEnc []byte
+	Enabled   int64
+	CreatedAt int64
+}
+
+func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (NotificationChannel, error) {
+	row := q.db.QueryRowContext(ctx, createChannel,
+		arg.Name,
+		arg.Kind,
+		arg.ConfigEnc,
+		arg.Enabled,
+		arg.CreatedAt,
+	)
+	var i NotificationChannel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.ConfigEnc,
+		&i.Enabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const createDNSProvider = `-- name: CreateDNSProvider :one
 INSERT INTO dns_providers (project_id, name, kind, credentials_enc, status, last_error, last_checked_at, created_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, kind, credentials_enc, status, last_error, last_checked_at, created_at
 `
@@ -288,13 +496,12 @@ func (q *Queries) CreateDNSProvider(ctx context.Context, arg CreateDNSProviderPa
 }
 
 const createDomain = `-- name: CreateDomain :one
-INSERT INTO domains (project_id, fqdn, lb_id, service_id, dns_provider_id, zone, auto_records, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, fqdn, lb_id, service_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at
+INSERT INTO domains (project_id, fqdn, frontend_id, dns_provider_id, zone, auto_records, created_at, updated_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, fqdn, frontend_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at
 `
 
 type CreateDomainParams struct {
 	Fqdn          string
-	LbID          sql.NullInt64
-	ServiceID     sql.NullInt64
+	FrontendID    sql.NullInt64
 	DnsProviderID sql.NullInt64
 	Zone          string
 	AutoRecords   int64
@@ -305,8 +512,7 @@ type CreateDomainParams struct {
 func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Domain, error) {
 	row := q.db.QueryRowContext(ctx, createDomain,
 		arg.Fqdn,
-		arg.LbID,
-		arg.ServiceID,
+		arg.FrontendID,
 		arg.DnsProviderID,
 		arg.Zone,
 		arg.AutoRecords,
@@ -318,8 +524,7 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Dom
 		&i.ID,
 		&i.ProjectID,
 		&i.Fqdn,
-		&i.LbID,
-		&i.ServiceID,
+		&i.FrontendID,
 		&i.DnsProviderID,
 		&i.Zone,
 		&i.AutoRecords,
@@ -337,22 +542,24 @@ func (q *Queries) CreateDomain(ctx context.Context, arg CreateDomainParams) (Dom
 }
 
 const createEvent = `-- name: CreateEvent :one
-INSERT INTO events (ts, lb_id, kind, severity, message, data) VALUES (?, ?, ?, ?, ?, ?) RETURNING id
+INSERT INTO events (ts, frontend_id, backend_id, kind, severity, message, data) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id
 `
 
 type CreateEventParams struct {
-	Ts       int64
-	LbID     sql.NullInt64
-	Kind     string
-	Severity string
-	Message  string
-	Data     string
+	Ts         int64
+	FrontendID sql.NullInt64
+	BackendID  sql.NullInt64
+	Kind       string
+	Severity   string
+	Message    string
+	Data       string
 }
 
 func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, createEvent,
 		arg.Ts,
-		arg.LbID,
+		arg.FrontendID,
+		arg.BackendID,
 		arg.Kind,
 		arg.Severity,
 		arg.Message,
@@ -363,81 +570,62 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (int64
 	return id, err
 }
 
-const createIP = `-- name: CreateIP :one
-INSERT INTO ip_addresses (node_id, address, family, kind) VALUES (?, ?, ?, ?) RETURNING id, node_id, address, family, kind, network_id, assigned_lb_id, rdns
+const createFrontend = `-- name: CreateFrontend :one
+INSERT INTO frontends (project_id, name, description, mode, tls, binds, http_redirect, default_backend_id, timeout_client_s, maxconn,
+  forwarded_headers, enabled, labels, status, created_at, updated_at)
+VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'applying', ?, ?) RETURNING id, project_id, node_id, name, description, mode, tls, binds, http_redirect, default_backend_id, timeout_client_s, maxconn, forwarded_headers, enabled, maintenance, labels, status, last_error, version, created_at, updated_at
 `
 
-type CreateIPParams struct {
-	NodeID  int64
-	Address string
-	Family  int64
-	Kind    string
+type CreateFrontendParams struct {
+	Name             string
+	Description      string
+	Mode             string
+	Tls              int64
+	Binds            string
+	HttpRedirect     int64
+	DefaultBackendID sql.NullInt64
+	TimeoutClientS   int64
+	Maxconn          int64
+	ForwardedHeaders int64
+	Enabled          int64
+	Labels           string
+	CreatedAt        int64
+	UpdatedAt        int64
 }
 
-func (q *Queries) CreateIP(ctx context.Context, arg CreateIPParams) (IpAddress, error) {
-	row := q.db.QueryRowContext(ctx, createIP,
-		arg.NodeID,
-		arg.Address,
-		arg.Family,
-		arg.Kind,
-	)
-	var i IpAddress
-	err := row.Scan(
-		&i.ID,
-		&i.NodeID,
-		&i.Address,
-		&i.Family,
-		&i.Kind,
-		&i.NetworkID,
-		&i.AssignedLbID,
-		&i.Rdns,
-	)
-	return i, err
-}
-
-const createLoadBalancer = `-- name: CreateLoadBalancer :one
-INSERT INTO load_balancers (project_id, name, plan_id, node_id, algorithm, public_enabled, ipv4_id, ipv6_id, labels, status, created_at, updated_at)
-VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 'applying', ?, ?) RETURNING id, project_id, name, plan_id, node_id, algorithm, public_enabled, ipv4_id, ipv6_id, delete_protected, maintenance, labels, status, last_error, version, created_at, updated_at
-`
-
-type CreateLoadBalancerParams struct {
-	Name          string
-	PlanID        int64
-	NodeID        int64
-	Algorithm     string
-	PublicEnabled int64
-	Ipv4ID        sql.NullInt64
-	Ipv6ID        sql.NullInt64
-	Labels        string
-	CreatedAt     int64
-	UpdatedAt     int64
-}
-
-func (q *Queries) CreateLoadBalancer(ctx context.Context, arg CreateLoadBalancerParams) (LoadBalancer, error) {
-	row := q.db.QueryRowContext(ctx, createLoadBalancer,
+func (q *Queries) CreateFrontend(ctx context.Context, arg CreateFrontendParams) (Frontend, error) {
+	row := q.db.QueryRowContext(ctx, createFrontend,
 		arg.Name,
-		arg.PlanID,
-		arg.NodeID,
-		arg.Algorithm,
-		arg.PublicEnabled,
-		arg.Ipv4ID,
-		arg.Ipv6ID,
+		arg.Description,
+		arg.Mode,
+		arg.Tls,
+		arg.Binds,
+		arg.HttpRedirect,
+		arg.DefaultBackendID,
+		arg.TimeoutClientS,
+		arg.Maxconn,
+		arg.ForwardedHeaders,
+		arg.Enabled,
 		arg.Labels,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i LoadBalancer
+	var i Frontend
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
-		&i.Name,
-		&i.PlanID,
 		&i.NodeID,
-		&i.Algorithm,
-		&i.PublicEnabled,
-		&i.Ipv4ID,
-		&i.Ipv6ID,
-		&i.DeleteProtected,
+		&i.Name,
+		&i.Description,
+		&i.Mode,
+		&i.Tls,
+		&i.Binds,
+		&i.HttpRedirect,
+		&i.DefaultBackendID,
+		&i.TimeoutClientS,
+		&i.Maxconn,
+		&i.ForwardedHeaders,
+		&i.Enabled,
 		&i.Maintenance,
 		&i.Labels,
 		&i.Status,
@@ -449,54 +637,69 @@ func (q *Queries) CreateLoadBalancer(ctx context.Context, arg CreateLoadBalancer
 	return i, err
 }
 
-const createNetwork = `-- name: CreateNetwork :one
-INSERT INTO networks (project_id, name, cidr) VALUES (1, ?, ?) RETURNING id, project_id, name, cidr
+const createHost = `-- name: CreateHost :one
+INSERT INTO hosts (project_id, name, ipv4, ipv6, private_ipv4, labels, notes) VALUES (1, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, ipv4, ipv6, private_ipv4, labels, notes
 `
 
-type CreateNetworkParams struct {
-	Name string
-	Cidr string
+type CreateHostParams struct {
+	Name        string
+	Ipv4        string
+	Ipv6        string
+	PrivateIpv4 string
+	Labels      string
+	Notes       string
 }
 
-func (q *Queries) CreateNetwork(ctx context.Context, arg CreateNetworkParams) (Network, error) {
-	row := q.db.QueryRowContext(ctx, createNetwork, arg.Name, arg.Cidr)
-	var i Network
+func (q *Queries) CreateHost(ctx context.Context, arg CreateHostParams) (Host, error) {
+	row := q.db.QueryRowContext(ctx, createHost,
+		arg.Name,
+		arg.Ipv4,
+		arg.Ipv6,
+		arg.PrivateIpv4,
+		arg.Labels,
+		arg.Notes,
+	)
+	var i Host
 	err := row.Scan(
 		&i.ID,
 		&i.ProjectID,
 		&i.Name,
-		&i.Cidr,
+		&i.Ipv4,
+		&i.Ipv6,
+		&i.PrivateIpv4,
+		&i.Labels,
+		&i.Notes,
 	)
 	return i, err
 }
 
-const createPlan = `-- name: CreatePlan :exec
-INSERT INTO plans (name, max_connections, max_services, max_targets, max_certificates, traffic_quota_bytes, price_monthly_cents, sort) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+const createNodeAddress = `-- name: CreateNodeAddress :one
+INSERT INTO node_addresses (node_id, address, family, label) VALUES (?, ?, ?, ?) RETURNING id, node_id, address, family, label
 `
 
-type CreatePlanParams struct {
-	Name              string
-	MaxConnections    int64
-	MaxServices       int64
-	MaxTargets        int64
-	MaxCertificates   int64
-	TrafficQuotaBytes int64
-	PriceMonthlyCents sql.NullInt64
-	Sort              int64
+type CreateNodeAddressParams struct {
+	NodeID  int64
+	Address string
+	Family  int64
+	Label   string
 }
 
-func (q *Queries) CreatePlan(ctx context.Context, arg CreatePlanParams) error {
-	_, err := q.db.ExecContext(ctx, createPlan,
-		arg.Name,
-		arg.MaxConnections,
-		arg.MaxServices,
-		arg.MaxTargets,
-		arg.MaxCertificates,
-		arg.TrafficQuotaBytes,
-		arg.PriceMonthlyCents,
-		arg.Sort,
+func (q *Queries) CreateNodeAddress(ctx context.Context, arg CreateNodeAddressParams) (NodeAddress, error) {
+	row := q.db.QueryRowContext(ctx, createNodeAddress,
+		arg.NodeID,
+		arg.Address,
+		arg.Family,
+		arg.Label,
 	)
-	return err
+	var i NodeAddress
+	err := row.Scan(
+		&i.ID,
+		&i.NodeID,
+		&i.Address,
+		&i.Family,
+		&i.Label,
+	)
+	return i, err
 }
 
 const createRevision = `-- name: CreateRevision :one
@@ -518,6 +721,7 @@ type CreateRevisionParams struct {
 	CreatedAt      int64
 }
 
+// ===== revisions / events / audit / settings / metrics =====
 func (q *Queries) CreateRevision(ctx context.Context, arg CreateRevisionParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, createRevision,
 		arg.NodeID,
@@ -535,128 +739,6 @@ func (q *Queries) CreateRevision(ctx context.Context, arg CreateRevisionParams) 
 	var id int64
 	err := row.Scan(&id)
 	return id, err
-}
-
-const createServer = `-- name: CreateServer :one
-INSERT INTO servers (project_id, name, public_ipv4, public_ipv6, private_ipv4, labels, notes) VALUES (1, ?, ?, ?, ?, ?, ?) RETURNING id, project_id, name, public_ipv4, public_ipv6, private_ipv4, labels, source, external_id, notes
-`
-
-type CreateServerParams struct {
-	Name        string
-	PublicIpv4  string
-	PublicIpv6  string
-	PrivateIpv4 string
-	Labels      string
-	Notes       string
-}
-
-func (q *Queries) CreateServer(ctx context.Context, arg CreateServerParams) (Server, error) {
-	row := q.db.QueryRowContext(ctx, createServer,
-		arg.Name,
-		arg.PublicIpv4,
-		arg.PublicIpv6,
-		arg.PrivateIpv4,
-		arg.Labels,
-		arg.Notes,
-	)
-	var i Server
-	err := row.Scan(
-		&i.ID,
-		&i.ProjectID,
-		&i.Name,
-		&i.PublicIpv4,
-		&i.PublicIpv6,
-		&i.PrivateIpv4,
-		&i.Labels,
-		&i.Source,
-		&i.ExternalID,
-		&i.Notes,
-	)
-	return i, err
-}
-
-const createService = `-- name: CreateService :one
-INSERT INTO services (lb_id, protocol, listen_port, destination_port, http_redirect, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s,
-  proxy_protocol, http_timeout_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes, hc_tls_verify, created_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, lb_id, protocol, listen_port, destination_port, http_redirect, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol, http_timeout_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes, hc_tls_verify, options, version, created_at
-`
-
-type CreateServiceParams struct {
-	LbID                  int64
-	Protocol              string
-	ListenPort            int64
-	DestinationPort       int64
-	HttpRedirect          int64
-	StickyEnabled         int64
-	StickyCookieName      string
-	StickyCookieLifetimeS int64
-	ProxyProtocol         string
-	HttpTimeoutS          int64
-	HcProtocol            string
-	HcPort                int64
-	HcIntervalS           int64
-	HcTimeoutS            int64
-	HcRetries             int64
-	HcDomain              string
-	HcPath                string
-	HcResponse            string
-	HcStatusCodes         string
-	HcTlsVerify           int64
-	CreatedAt             int64
-}
-
-func (q *Queries) CreateService(ctx context.Context, arg CreateServiceParams) (Service, error) {
-	row := q.db.QueryRowContext(ctx, createService,
-		arg.LbID,
-		arg.Protocol,
-		arg.ListenPort,
-		arg.DestinationPort,
-		arg.HttpRedirect,
-		arg.StickyEnabled,
-		arg.StickyCookieName,
-		arg.StickyCookieLifetimeS,
-		arg.ProxyProtocol,
-		arg.HttpTimeoutS,
-		arg.HcProtocol,
-		arg.HcPort,
-		arg.HcIntervalS,
-		arg.HcTimeoutS,
-		arg.HcRetries,
-		arg.HcDomain,
-		arg.HcPath,
-		arg.HcResponse,
-		arg.HcStatusCodes,
-		arg.HcTlsVerify,
-		arg.CreatedAt,
-	)
-	var i Service
-	err := row.Scan(
-		&i.ID,
-		&i.LbID,
-		&i.Protocol,
-		&i.ListenPort,
-		&i.DestinationPort,
-		&i.HttpRedirect,
-		&i.StickyEnabled,
-		&i.StickyCookieName,
-		&i.StickyCookieLifetimeS,
-		&i.ProxyProtocol,
-		&i.HttpTimeoutS,
-		&i.HcProtocol,
-		&i.HcPort,
-		&i.HcIntervalS,
-		&i.HcTimeoutS,
-		&i.HcRetries,
-		&i.HcDomain,
-		&i.HcPath,
-		&i.HcResponse,
-		&i.HcStatusCodes,
-		&i.HcTlsVerify,
-		&i.Options,
-		&i.Version,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const createSession = `-- name: CreateSession :exec
@@ -687,72 +769,26 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 }
 
 const createSlot = `-- name: CreateSlot :one
-INSERT INTO server_slots (lb_id, target_id, server_id, address) VALUES (?, ?, ?, ?) RETURNING id
+INSERT INTO server_slots (backend_id, server_id, host_id, address) VALUES (?, ?, ?, ?) RETURNING id
 `
 
 type CreateSlotParams struct {
-	LbID     int64
-	TargetID int64
-	ServerID sql.NullInt64
-	Address  string
+	BackendID int64
+	ServerID  int64
+	HostID    sql.NullInt64
+	Address   string
 }
 
 func (q *Queries) CreateSlot(ctx context.Context, arg CreateSlotParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, createSlot,
-		arg.LbID,
-		arg.TargetID,
+		arg.BackendID,
 		arg.ServerID,
+		arg.HostID,
 		arg.Address,
 	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
-}
-
-const createTarget = `-- name: CreateTarget :one
-INSERT INTO targets (lb_id, type, server_id, label_selector, ip, use_private_ip, weight, backup, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id, lb_id, type, server_id, label_selector, ip, use_private_ip, weight, backup, admin_state, removing, created_at
-`
-
-type CreateTargetParams struct {
-	LbID          int64
-	Type          string
-	ServerID      sql.NullInt64
-	LabelSelector string
-	Ip            string
-	UsePrivateIp  int64
-	Weight        int64
-	Backup        int64
-	CreatedAt     int64
-}
-
-func (q *Queries) CreateTarget(ctx context.Context, arg CreateTargetParams) (Target, error) {
-	row := q.db.QueryRowContext(ctx, createTarget,
-		arg.LbID,
-		arg.Type,
-		arg.ServerID,
-		arg.LabelSelector,
-		arg.Ip,
-		arg.UsePrivateIp,
-		arg.Weight,
-		arg.Backup,
-		arg.CreatedAt,
-	)
-	var i Target
-	err := row.Scan(
-		&i.ID,
-		&i.LbID,
-		&i.Type,
-		&i.ServerID,
-		&i.LabelSelector,
-		&i.Ip,
-		&i.UsePrivateIp,
-		&i.Weight,
-		&i.Backup,
-		&i.AdminState,
-		&i.Removing,
-		&i.CreatedAt,
-	)
-	return i, err
 }
 
 const createUser = `-- name: CreateUser :one
@@ -787,12 +823,57 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const deleteAPIToken = `-- name: DeleteAPIToken :exec
+DELETE FROM api_tokens WHERE id = ?
+`
+
+func (q *Queries) DeleteAPIToken(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteAPIToken, id)
+	return err
+}
+
+const deleteAlertRule = `-- name: DeleteAlertRule :exec
+DELETE FROM alert_rules WHERE id = ?
+`
+
+func (q *Queries) DeleteAlertRule(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteAlertRule, id)
+	return err
+}
+
+const deleteBackend = `-- name: DeleteBackend :exec
+DELETE FROM backends WHERE id = ?
+`
+
+func (q *Queries) DeleteBackend(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteBackend, id)
+	return err
+}
+
+const deleteBackendServer = `-- name: DeleteBackendServer :exec
+DELETE FROM backend_servers WHERE id = ?
+`
+
+func (q *Queries) DeleteBackendServer(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteBackendServer, id)
+	return err
+}
+
 const deleteCertificate = `-- name: DeleteCertificate :exec
 DELETE FROM certificates WHERE id = ?
 `
 
 func (q *Queries) DeleteCertificate(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteCertificate, id)
+	return err
+}
+
+const deleteChannel = `-- name: DeleteChannel :exec
+DELETE FROM notification_channels WHERE id = ?
+`
+
+func (q *Queries) DeleteChannel(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteChannel, id)
 	return err
 }
 
@@ -823,53 +904,35 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context, expiresAt int64) er
 	return err
 }
 
-const deleteIP = `-- name: DeleteIP :exec
-DELETE FROM ip_addresses WHERE id = ? AND node_id = ? AND assigned_lb_id IS NULL
+const deleteFrontend = `-- name: DeleteFrontend :exec
+DELETE FROM frontends WHERE id = ?
 `
 
-type DeleteIPParams struct {
+func (q *Queries) DeleteFrontend(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteFrontend, id)
+	return err
+}
+
+const deleteHost = `-- name: DeleteHost :exec
+DELETE FROM hosts WHERE id = ?
+`
+
+func (q *Queries) DeleteHost(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteHost, id)
+	return err
+}
+
+const deleteNodeAddress = `-- name: DeleteNodeAddress :exec
+DELETE FROM node_addresses WHERE id = ? AND node_id = ?
+`
+
+type DeleteNodeAddressParams struct {
 	ID     int64
 	NodeID int64
 }
 
-func (q *Queries) DeleteIP(ctx context.Context, arg DeleteIPParams) error {
-	_, err := q.db.ExecContext(ctx, deleteIP, arg.ID, arg.NodeID)
-	return err
-}
-
-const deleteLoadBalancer = `-- name: DeleteLoadBalancer :exec
-DELETE FROM load_balancers WHERE id = ?
-`
-
-func (q *Queries) DeleteLoadBalancer(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteLoadBalancer, id)
-	return err
-}
-
-const deleteNetwork = `-- name: DeleteNetwork :exec
-DELETE FROM networks WHERE id = ?
-`
-
-func (q *Queries) DeleteNetwork(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteNetwork, id)
-	return err
-}
-
-const deleteServer = `-- name: DeleteServer :exec
-DELETE FROM servers WHERE id = ?
-`
-
-func (q *Queries) DeleteServer(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteServer, id)
-	return err
-}
-
-const deleteService = `-- name: DeleteService :exec
-DELETE FROM services WHERE id = ?
-`
-
-func (q *Queries) DeleteService(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteService, id)
+func (q *Queries) DeleteNodeAddress(ctx context.Context, arg DeleteNodeAddressParams) error {
+	_, err := q.db.ExecContext(ctx, deleteNodeAddress, arg.ID, arg.NodeID)
 	return err
 }
 
@@ -891,15 +954,6 @@ func (q *Queries) DeleteSlot(ctx context.Context, id int64) error {
 	return err
 }
 
-const deleteTarget = `-- name: DeleteTarget :exec
-DELETE FROM targets WHERE id = ?
-`
-
-func (q *Queries) DeleteTarget(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteTarget, id)
-	return err
-}
-
 const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users WHERE id = ? AND role != 'owner'
 `
@@ -918,20 +972,6 @@ func (q *Queries) DeleteUserSessions(ctx context.Context, userID int64) error {
 	return err
 }
 
-const detachLBNetwork = `-- name: DetachLBNetwork :exec
-DELETE FROM lb_networks WHERE lb_id = ? AND network_id = ?
-`
-
-type DetachLBNetworkParams struct {
-	LbID      int64
-	NetworkID int64
-}
-
-func (q *Queries) DetachLBNetwork(ctx context.Context, arg DetachLBNetworkParams) error {
-	_, err := q.db.ExecContext(ctx, detachLBNetwork, arg.LbID, arg.NetworkID)
-	return err
-}
-
 const ensureLocalNode = `-- name: EnsureLocalNode :exec
 INSERT OR IGNORE INTO nodes (id, name, mode) VALUES (1, 'local', 'local')
 `
@@ -945,6 +985,7 @@ const ensureProject = `-- name: EnsureProject :exec
 INSERT OR IGNORE INTO projects (id, name, created_at) VALUES (1, 'default', ?)
 `
 
+// ===== project / node =====
 func (q *Queries) EnsureProject(ctx context.Context, createdAt int64) error {
 	_, err := q.db.ExecContext(ctx, ensureProject, createdAt)
 	return err
@@ -963,6 +1004,27 @@ func (q *Queries) GetACMEAccount(ctx context.Context, directoryUrl string) (Acme
 		&i.Email,
 		&i.KeyPemEnc,
 		&i.Registration,
+	)
+	return i, err
+}
+
+const getAPITokenByPrefix = `-- name: GetAPITokenByPrefix :one
+SELECT id, project_id, name, prefix, secret_hash, role, expires_at, last_used_at, created_at FROM api_tokens WHERE prefix = ?
+`
+
+func (q *Queries) GetAPITokenByPrefix(ctx context.Context, prefix string) (ApiToken, error) {
+	row := q.db.QueryRowContext(ctx, getAPITokenByPrefix, prefix)
+	var i ApiToken
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectID,
+		&i.Name,
+		&i.Prefix,
+		&i.SecretHash,
+		&i.Role,
+		&i.ExpiresAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -1000,6 +1062,24 @@ func (q *Queries) GetCertificate(ctx context.Context, id int64) (Certificate, er
 	return i, err
 }
 
+const getChannel = `-- name: GetChannel :one
+SELECT id, name, kind, config_enc, enabled, created_at FROM notification_channels WHERE id = ?
+`
+
+func (q *Queries) GetChannel(ctx context.Context, id int64) (NotificationChannel, error) {
+	row := q.db.QueryRowContext(ctx, getChannel, id)
+	var i NotificationChannel
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.ConfigEnc,
+		&i.Enabled,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getDNSProvider = `-- name: GetDNSProvider :one
 SELECT id, project_id, name, kind, credentials_enc, status, last_error, last_checked_at, created_at FROM dns_providers WHERE id = ?
 `
@@ -1022,7 +1102,7 @@ func (q *Queries) GetDNSProvider(ctx context.Context, id int64) (DnsProvider, er
 }
 
 const getDomain = `-- name: GetDomain :one
-SELECT id, project_id, fqdn, lb_id, service_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at FROM domains WHERE id = ?
+SELECT id, project_id, fqdn, frontend_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at FROM domains WHERE id = ?
 `
 
 func (q *Queries) GetDomain(ctx context.Context, id int64) (Domain, error) {
@@ -1032,8 +1112,7 @@ func (q *Queries) GetDomain(ctx context.Context, id int64) (Domain, error) {
 		&i.ID,
 		&i.ProjectID,
 		&i.Fqdn,
-		&i.LbID,
-		&i.ServiceID,
+		&i.FrontendID,
 		&i.DnsProviderID,
 		&i.Zone,
 		&i.AutoRecords,
@@ -1051,7 +1130,7 @@ func (q *Queries) GetDomain(ctx context.Context, id int64) (Domain, error) {
 }
 
 const getNode = `-- name: GetNode :one
-SELECT id, name, mode, status, haproxy_version, loxy_version, features, location_city, location_country, network_zone, lat, lon, last_seen_at, desired_version, applied_version FROM nodes WHERE id = ?
+SELECT id, name, mode, status, haproxy_version, loxy_version, features, last_seen_at, desired_version, applied_version FROM nodes WHERE id = ?
 `
 
 func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
@@ -1065,11 +1144,6 @@ func (q *Queries) GetNode(ctx context.Context, id int64) (Node, error) {
 		&i.HaproxyVersion,
 		&i.LoxyVersion,
 		&i.Features,
-		&i.LocationCity,
-		&i.LocationCountry,
-		&i.NetworkZone,
-		&i.Lat,
-		&i.Lon,
 		&i.LastSeenAt,
 		&i.DesiredVersion,
 		&i.AppliedVersion,
@@ -1093,36 +1167,6 @@ func (q *Queries) GetOwner(ctx context.Context) (User, error) {
 		&i.Disabled,
 		&i.CreatedAt,
 		&i.LastLoginAt,
-	)
-	return i, err
-}
-
-const getRevision = `-- name: GetRevision :one
-SELECT id, node_id, revision, desired_version, sha256, kind, result, duration_ms, haproxy_output, state_json, created_by, created_at, pinned FROM config_revisions WHERE node_id = ? AND revision = ?
-`
-
-type GetRevisionParams struct {
-	NodeID   int64
-	Revision int64
-}
-
-func (q *Queries) GetRevision(ctx context.Context, arg GetRevisionParams) (ConfigRevision, error) {
-	row := q.db.QueryRowContext(ctx, getRevision, arg.NodeID, arg.Revision)
-	var i ConfigRevision
-	err := row.Scan(
-		&i.ID,
-		&i.NodeID,
-		&i.Revision,
-		&i.DesiredVersion,
-		&i.Sha256,
-		&i.Kind,
-		&i.Result,
-		&i.DurationMs,
-		&i.HaproxyOutput,
-		&i.StateJson,
-		&i.CreatedBy,
-		&i.CreatedAt,
-		&i.Pinned,
 	)
 	return i, err
 }
@@ -1198,13 +1242,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const insertMetric1m = `-- name: InsertMetric1m :exec
-INSERT OR REPLACE INTO metrics_1m (lb_id, service_id, ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT OR REPLACE INTO metrics_1m (scope, scope_id, ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors, queue)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertMetric1mParams struct {
-	LbID          int64
-	ServiceID     int64
+	Scope         string
+	ScopeID       int64
 	Ts            int64
 	OpenConnAvg   float64
 	OpenConnMax   float64
@@ -1218,12 +1262,13 @@ type InsertMetric1mParams struct {
 	Http4xx       float64
 	Http5xx       float64
 	Errors        float64
+	Queue         float64
 }
 
 func (q *Queries) InsertMetric1m(ctx context.Context, arg InsertMetric1mParams) error {
 	_, err := q.db.ExecContext(ctx, insertMetric1m,
-		arg.LbID,
-		arg.ServiceID,
+		arg.Scope,
+		arg.ScopeID,
 		arg.Ts,
 		arg.OpenConnAvg,
 		arg.OpenConnMax,
@@ -1237,8 +1282,80 @@ func (q *Queries) InsertMetric1m(ctx context.Context, arg InsertMetric1mParams) 
 		arg.Http4xx,
 		arg.Http5xx,
 		arg.Errors,
+		arg.Queue,
 	)
 	return err
+}
+
+const listAPITokens = `-- name: ListAPITokens :many
+SELECT id, project_id, name, prefix, secret_hash, role, expires_at, last_used_at, created_at FROM api_tokens ORDER BY id
+`
+
+func (q *Queries) ListAPITokens(ctx context.Context) ([]ApiToken, error) {
+	rows, err := q.db.QueryContext(ctx, listAPITokens)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ApiToken{}
+	for rows.Next() {
+		var i ApiToken
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.Name,
+			&i.Prefix,
+			&i.SecretHash,
+			&i.Role,
+			&i.ExpiresAt,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listAlertRules = `-- name: ListAlertRules :many
+SELECT id, event_kinds, label_filter, channel_id, min_severity, cooldown_s FROM alert_rules ORDER BY id
+`
+
+func (q *Queries) ListAlertRules(ctx context.Context) ([]AlertRule, error) {
+	rows, err := q.db.QueryContext(ctx, listAlertRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AlertRule{}
+	for rows.Next() {
+		var i AlertRule
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventKinds,
+			&i.LabelFilter,
+			&i.ChannelID,
+			&i.MinSeverity,
+			&i.CooldownS,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAudit = `-- name: ListAudit :many
@@ -1280,10 +1397,107 @@ func (q *Queries) ListAudit(ctx context.Context, limit int64) ([]AuditLog, error
 	return items, nil
 }
 
+const listBackendServers = `-- name: ListBackendServers :many
+SELECT id, backend_id, type, host_id, label_selector, ip, port, use_private_ip, weight, backup, admin_state, removing, created_at FROM backend_servers ORDER BY id
+`
+
+func (q *Queries) ListBackendServers(ctx context.Context) ([]BackendServer, error) {
+	rows, err := q.db.QueryContext(ctx, listBackendServers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BackendServer{}
+	for rows.Next() {
+		var i BackendServer
+		if err := rows.Scan(
+			&i.ID,
+			&i.BackendID,
+			&i.Type,
+			&i.HostID,
+			&i.LabelSelector,
+			&i.Ip,
+			&i.Port,
+			&i.UsePrivateIp,
+			&i.Weight,
+			&i.Backup,
+			&i.AdminState,
+			&i.Removing,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listBackends = `-- name: ListBackends :many
+SELECT id, project_id, node_id, name, description, mode, algorithm, port, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol, timeout_server_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes, hc_tls_verify, labels, version, created_at FROM backends ORDER BY id
+`
+
+// ===== backends =====
+func (q *Queries) ListBackends(ctx context.Context) ([]Backend, error) {
+	rows, err := q.db.QueryContext(ctx, listBackends)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Backend{}
+	for rows.Next() {
+		var i Backend
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.NodeID,
+			&i.Name,
+			&i.Description,
+			&i.Mode,
+			&i.Algorithm,
+			&i.Port,
+			&i.StickyEnabled,
+			&i.StickyCookieName,
+			&i.StickyCookieLifetimeS,
+			&i.ProxyProtocol,
+			&i.TimeoutServerS,
+			&i.HcProtocol,
+			&i.HcPort,
+			&i.HcIntervalS,
+			&i.HcTimeoutS,
+			&i.HcRetries,
+			&i.HcDomain,
+			&i.HcPath,
+			&i.HcResponse,
+			&i.HcStatusCodes,
+			&i.HcTlsVerify,
+			&i.Labels,
+			&i.Version,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCertificates = `-- name: ListCertificates :many
 SELECT id, project_id, name, type, domains, key_type, challenge, dns_provider_id, cert_pem, chain_pem, key_pem_enc, issuer, serial, fingerprint_sha256, not_before, not_after, status, last_error, renew_after, labels, created_at FROM certificates ORDER BY id
 `
 
+// ===== certificates / acme / dns / domains =====
 func (q *Queries) ListCertificates(ctx context.Context) ([]Certificate, error) {
 	rows, err := q.db.QueryContext(ctx, listCertificates)
 	if err != nil {
@@ -1314,6 +1528,41 @@ func (q *Queries) ListCertificates(ctx context.Context) ([]Certificate, error) {
 			&i.LastError,
 			&i.RenewAfter,
 			&i.Labels,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listChannels = `-- name: ListChannels :many
+SELECT id, name, kind, config_enc, enabled, created_at FROM notification_channels ORDER BY id
+`
+
+// ===== notifications =====
+func (q *Queries) ListChannels(ctx context.Context) ([]NotificationChannel, error) {
+	rows, err := q.db.QueryContext(ctx, listChannels)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotificationChannel{}
+	for rows.Next() {
+		var i NotificationChannel
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Kind,
+			&i.ConfigEnc,
+			&i.Enabled,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -1367,7 +1616,7 @@ func (q *Queries) ListDNSProviders(ctx context.Context) ([]DnsProvider, error) {
 }
 
 const listDomains = `-- name: ListDomains :many
-SELECT id, project_id, fqdn, lb_id, service_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at FROM domains ORDER BY fqdn
+SELECT id, project_id, fqdn, frontend_id, dns_provider_id, zone, auto_records, ttl, status, status_detail, observed, checked_at, certificate_id, managed_record_ids, created_at, updated_at FROM domains ORDER BY fqdn
 `
 
 func (q *Queries) ListDomains(ctx context.Context) ([]Domain, error) {
@@ -1383,8 +1632,7 @@ func (q *Queries) ListDomains(ctx context.Context) ([]Domain, error) {
 			&i.ID,
 			&i.ProjectID,
 			&i.Fqdn,
-			&i.LbID,
-			&i.ServiceID,
+			&i.FrontendID,
 			&i.DnsProviderID,
 			&i.Zone,
 			&i.AutoRecords,
@@ -1412,18 +1660,26 @@ func (q *Queries) ListDomains(ctx context.Context) ([]Domain, error) {
 }
 
 const listEvents = `-- name: ListEvents :many
-SELECT id, ts, project_id, lb_id, kind, severity, message, data FROM events WHERE (?1 IS NULL OR lb_id = ?1) AND (?2 IS NULL OR kind = ?2)
-ORDER BY id DESC LIMIT ?3
+SELECT id, ts, project_id, frontend_id, backend_id, kind, severity, message, data FROM events WHERE (?1 IS NULL OR frontend_id = ?1)
+  AND (?2 IS NULL OR backend_id = ?2)
+  AND (?3 IS NULL OR kind = ?3)
+ORDER BY id DESC LIMIT ?4
 `
 
 type ListEventsParams struct {
-	LbID    interface{}
-	Kind    interface{}
-	MaxRows int64
+	FrontendID interface{}
+	BackendID  interface{}
+	Kind       interface{}
+	MaxRows    int64
 }
 
 func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event, error) {
-	rows, err := q.db.QueryContext(ctx, listEvents, arg.LbID, arg.Kind, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listEvents,
+		arg.FrontendID,
+		arg.BackendID,
+		arg.Kind,
+		arg.MaxRows,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1435,7 +1691,8 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 			&i.ID,
 			&i.Ts,
 			&i.ProjectID,
-			&i.LbID,
+			&i.FrontendID,
+			&i.BackendID,
 			&i.Kind,
 			&i.Severity,
 			&i.Message,
@@ -1454,29 +1711,20 @@ func (q *Queries) ListEvents(ctx context.Context, arg ListEventsParams) ([]Event
 	return items, nil
 }
 
-const listIPs = `-- name: ListIPs :many
-SELECT id, node_id, address, family, kind, network_id, assigned_lb_id, rdns FROM ip_addresses ORDER BY id
+const listFrontendCertificates = `-- name: ListFrontendCertificates :many
+SELECT frontend_id, certificate_id, position FROM frontend_certificates ORDER BY frontend_id, position
 `
 
-func (q *Queries) ListIPs(ctx context.Context) ([]IpAddress, error) {
-	rows, err := q.db.QueryContext(ctx, listIPs)
+func (q *Queries) ListFrontendCertificates(ctx context.Context) ([]FrontendCertificate, error) {
+	rows, err := q.db.QueryContext(ctx, listFrontendCertificates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []IpAddress{}
+	items := []FrontendCertificate{}
 	for rows.Next() {
-		var i IpAddress
-		if err := rows.Scan(
-			&i.ID,
-			&i.NodeID,
-			&i.Address,
-			&i.Family,
-			&i.Kind,
-			&i.NetworkID,
-			&i.AssignedLbID,
-			&i.Rdns,
-		); err != nil {
+		var i FrontendCertificate
+		if err := rows.Scan(&i.FrontendID, &i.CertificateID, &i.Position); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -1490,57 +1738,35 @@ func (q *Queries) ListIPs(ctx context.Context) ([]IpAddress, error) {
 	return items, nil
 }
 
-const listLBNetworks = `-- name: ListLBNetworks :many
-SELECT lb_id, network_id, ip FROM lb_networks ORDER BY lb_id, network_id
+const listFrontends = `-- name: ListFrontends :many
+SELECT id, project_id, node_id, name, description, mode, tls, binds, http_redirect, default_backend_id, timeout_client_s, maxconn, forwarded_headers, enabled, maintenance, labels, status, last_error, version, created_at, updated_at FROM frontends ORDER BY id
 `
 
-func (q *Queries) ListLBNetworks(ctx context.Context) ([]LbNetwork, error) {
-	rows, err := q.db.QueryContext(ctx, listLBNetworks)
+// ===== frontends =====
+func (q *Queries) ListFrontends(ctx context.Context) ([]Frontend, error) {
+	rows, err := q.db.QueryContext(ctx, listFrontends)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []LbNetwork{}
+	items := []Frontend{}
 	for rows.Next() {
-		var i LbNetwork
-		if err := rows.Scan(&i.LbID, &i.NetworkID, &i.Ip); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listLoadBalancers = `-- name: ListLoadBalancers :many
-SELECT id, project_id, name, plan_id, node_id, algorithm, public_enabled, ipv4_id, ipv6_id, delete_protected, maintenance, labels, status, last_error, version, created_at, updated_at FROM load_balancers ORDER BY id
-`
-
-func (q *Queries) ListLoadBalancers(ctx context.Context) ([]LoadBalancer, error) {
-	rows, err := q.db.QueryContext(ctx, listLoadBalancers)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []LoadBalancer{}
-	for rows.Next() {
-		var i LoadBalancer
+		var i Frontend
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
-			&i.Name,
-			&i.PlanID,
 			&i.NodeID,
-			&i.Algorithm,
-			&i.PublicEnabled,
-			&i.Ipv4ID,
-			&i.Ipv6ID,
-			&i.DeleteProtected,
+			&i.Name,
+			&i.Description,
+			&i.Mode,
+			&i.Tls,
+			&i.Binds,
+			&i.HttpRedirect,
+			&i.DefaultBackendID,
+			&i.TimeoutClientS,
+			&i.Maxconn,
+			&i.ForwardedHeaders,
+			&i.Enabled,
 			&i.Maintenance,
 			&i.Labels,
 			&i.Status,
@@ -1562,24 +1788,62 @@ func (q *Queries) ListLoadBalancers(ctx context.Context) ([]LoadBalancer, error)
 	return items, nil
 }
 
-const listNetworks = `-- name: ListNetworks :many
-SELECT id, project_id, name, cidr FROM networks ORDER BY id
+const listHosts = `-- name: ListHosts :many
+SELECT id, project_id, name, ipv4, ipv6, private_ipv4, labels, notes FROM hosts ORDER BY id
 `
 
-func (q *Queries) ListNetworks(ctx context.Context) ([]Network, error) {
-	rows, err := q.db.QueryContext(ctx, listNetworks)
+// ===== hosts =====
+func (q *Queries) ListHosts(ctx context.Context) ([]Host, error) {
+	rows, err := q.db.QueryContext(ctx, listHosts)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Network{}
+	items := []Host{}
 	for rows.Next() {
-		var i Network
+		var i Host
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
 			&i.Name,
-			&i.Cidr,
+			&i.Ipv4,
+			&i.Ipv6,
+			&i.PrivateIpv4,
+			&i.Labels,
+			&i.Notes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNodeAddresses = `-- name: ListNodeAddresses :many
+SELECT id, node_id, address, family, label FROM node_addresses ORDER BY id
+`
+
+func (q *Queries) ListNodeAddresses(ctx context.Context) ([]NodeAddress, error) {
+	rows, err := q.db.QueryContext(ctx, listNodeAddresses)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NodeAddress{}
+	for rows.Next() {
+		var i NodeAddress
+		if err := rows.Scan(
+			&i.ID,
+			&i.NodeID,
+			&i.Address,
+			&i.Family,
+			&i.Label,
 		); err != nil {
 			return nil, err
 		}
@@ -1595,7 +1859,7 @@ func (q *Queries) ListNetworks(ctx context.Context) ([]Network, error) {
 }
 
 const listNodes = `-- name: ListNodes :many
-SELECT id, name, mode, status, haproxy_version, loxy_version, features, location_city, location_country, network_zone, lat, lon, last_seen_at, desired_version, applied_version FROM nodes ORDER BY id
+SELECT id, name, mode, status, haproxy_version, loxy_version, features, last_seen_at, desired_version, applied_version FROM nodes ORDER BY id
 `
 
 func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
@@ -1615,54 +1879,9 @@ func (q *Queries) ListNodes(ctx context.Context) ([]Node, error) {
 			&i.HaproxyVersion,
 			&i.LoxyVersion,
 			&i.Features,
-			&i.LocationCity,
-			&i.LocationCountry,
-			&i.NetworkZone,
-			&i.Lat,
-			&i.Lon,
 			&i.LastSeenAt,
 			&i.DesiredVersion,
 			&i.AppliedVersion,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPlans = `-- name: ListPlans :many
-SELECT id, name, max_connections, max_services, max_targets, max_certificates, traffic_quota_bytes, price_monthly_cents, currency, enforce_lb_cap, sort, active FROM plans WHERE active = 1 ORDER BY sort, id
-`
-
-func (q *Queries) ListPlans(ctx context.Context) ([]Plan, error) {
-	rows, err := q.db.QueryContext(ctx, listPlans)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Plan{}
-	for rows.Next() {
-		var i Plan
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.MaxConnections,
-			&i.MaxServices,
-			&i.MaxTargets,
-			&i.MaxCertificates,
-			&i.TrafficQuotaBytes,
-			&i.PriceMonthlyCents,
-			&i.Currency,
-			&i.EnforceLbCap,
-			&i.Sort,
-			&i.Active,
 		); err != nil {
 			return nil, err
 		}
@@ -1733,109 +1952,26 @@ func (q *Queries) ListRevisions(ctx context.Context, nodeID int64) ([]ListRevisi
 	return items, nil
 }
 
-const listServers = `-- name: ListServers :many
-SELECT id, project_id, name, public_ipv4, public_ipv6, private_ipv4, labels, source, external_id, notes FROM servers ORDER BY id
+const listRoutes = `-- name: ListRoutes :many
+SELECT id, frontend_id, position, hosts, path_prefix, backend_id FROM routes ORDER BY frontend_id, position
 `
 
-func (q *Queries) ListServers(ctx context.Context) ([]Server, error) {
-	rows, err := q.db.QueryContext(ctx, listServers)
+func (q *Queries) ListRoutes(ctx context.Context) ([]Route, error) {
+	rows, err := q.db.QueryContext(ctx, listRoutes)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Server{}
+	items := []Route{}
 	for rows.Next() {
-		var i Server
+		var i Route
 		if err := rows.Scan(
 			&i.ID,
-			&i.ProjectID,
-			&i.Name,
-			&i.PublicIpv4,
-			&i.PublicIpv6,
-			&i.PrivateIpv4,
-			&i.Labels,
-			&i.Source,
-			&i.ExternalID,
-			&i.Notes,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listServiceCertificates = `-- name: ListServiceCertificates :many
-SELECT service_id, certificate_id, position FROM service_certificates ORDER BY service_id, position
-`
-
-func (q *Queries) ListServiceCertificates(ctx context.Context) ([]ServiceCertificate, error) {
-	rows, err := q.db.QueryContext(ctx, listServiceCertificates)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ServiceCertificate{}
-	for rows.Next() {
-		var i ServiceCertificate
-		if err := rows.Scan(&i.ServiceID, &i.CertificateID, &i.Position); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listServices = `-- name: ListServices :many
-SELECT id, lb_id, protocol, listen_port, destination_port, http_redirect, sticky_enabled, sticky_cookie_name, sticky_cookie_lifetime_s, proxy_protocol, http_timeout_s, hc_protocol, hc_port, hc_interval_s, hc_timeout_s, hc_retries, hc_domain, hc_path, hc_response, hc_status_codes, hc_tls_verify, options, version, created_at FROM services ORDER BY id
-`
-
-func (q *Queries) ListServices(ctx context.Context) ([]Service, error) {
-	rows, err := q.db.QueryContext(ctx, listServices)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Service{}
-	for rows.Next() {
-		var i Service
-		if err := rows.Scan(
-			&i.ID,
-			&i.LbID,
-			&i.Protocol,
-			&i.ListenPort,
-			&i.DestinationPort,
-			&i.HttpRedirect,
-			&i.StickyEnabled,
-			&i.StickyCookieName,
-			&i.StickyCookieLifetimeS,
-			&i.ProxyProtocol,
-			&i.HttpTimeoutS,
-			&i.HcProtocol,
-			&i.HcPort,
-			&i.HcIntervalS,
-			&i.HcTimeoutS,
-			&i.HcRetries,
-			&i.HcDomain,
-			&i.HcPath,
-			&i.HcResponse,
-			&i.HcStatusCodes,
-			&i.HcTlsVerify,
-			&i.Options,
-			&i.Version,
-			&i.CreatedAt,
+			&i.FrontendID,
+			&i.Position,
+			&i.Hosts,
+			&i.PathPrefix,
+			&i.BackendID,
 		); err != nil {
 			return nil, err
 		}
@@ -1851,7 +1987,7 @@ func (q *Queries) ListServices(ctx context.Context) ([]Service, error) {
 }
 
 const listSlots = `-- name: ListSlots :many
-SELECT id, lb_id, target_id, server_id, address FROM server_slots ORDER BY id
+SELECT id, backend_id, server_id, host_id, address FROM server_slots ORDER BY id
 `
 
 func (q *Queries) ListSlots(ctx context.Context) ([]ServerSlot, error) {
@@ -1865,82 +2001,10 @@ func (q *Queries) ListSlots(ctx context.Context) ([]ServerSlot, error) {
 		var i ServerSlot
 		if err := rows.Scan(
 			&i.ID,
-			&i.LbID,
-			&i.TargetID,
+			&i.BackendID,
 			&i.ServerID,
+			&i.HostID,
 			&i.Address,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTargets = `-- name: ListTargets :many
-SELECT id, lb_id, type, server_id, label_selector, ip, use_private_ip, weight, backup, admin_state, removing, created_at FROM targets ORDER BY id
-`
-
-func (q *Queries) ListTargets(ctx context.Context) ([]Target, error) {
-	rows, err := q.db.QueryContext(ctx, listTargets)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Target{}
-	for rows.Next() {
-		var i Target
-		if err := rows.Scan(
-			&i.ID,
-			&i.LbID,
-			&i.Type,
-			&i.ServerID,
-			&i.LabelSelector,
-			&i.Ip,
-			&i.UsePrivateIp,
-			&i.Weight,
-			&i.Backup,
-			&i.AdminState,
-			&i.Removing,
-			&i.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listTrafficMonth = `-- name: ListTrafficMonth :many
-SELECT lb_id, month, bytes_in, bytes_out FROM traffic_monthly WHERE month = ?
-`
-
-func (q *Queries) ListTrafficMonth(ctx context.Context, month string) ([]TrafficMonthly, error) {
-	rows, err := q.db.QueryContext(ctx, listTrafficMonth, month)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []TrafficMonthly{}
-	for rows.Next() {
-		var i TrafficMonthly
-		if err := rows.Scan(
-			&i.LbID,
-			&i.Month,
-			&i.BytesIn,
-			&i.BytesOut,
 		); err != nil {
 			return nil, err
 		}
@@ -1991,12 +2055,12 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
-const markTargetRemoving = `-- name: MarkTargetRemoving :exec
-UPDATE targets SET removing = 1 WHERE id = ?
+const markBackendServerRemoving = `-- name: MarkBackendServerRemoving :exec
+UPDATE backend_servers SET removing = 1 WHERE id = ?
 `
 
-func (q *Queries) MarkTargetRemoving(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, markTargetRemoving, id)
+func (q *Queries) MarkBackendServerRemoving(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, markBackendServerRemoving, id)
 	return err
 }
 
@@ -2035,20 +2099,20 @@ func (q *Queries) PutSetting(ctx context.Context, arg PutSettingParams) error {
 }
 
 const queryMetrics1m = `-- name: QueryMetrics1m :many
-SELECT lb_id, service_id, ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors FROM metrics_1m WHERE lb_id = ? AND service_id = ? AND ts >= ? AND ts <= ? ORDER BY ts
+SELECT scope, scope_id, ts, open_conn_avg, open_conn_max, cps, rps, bytes_in, bytes_out, resp_time_ms_avg, http_2xx, http_3xx, http_4xx, http_5xx, errors, queue FROM metrics_1m WHERE scope = ? AND scope_id = ? AND ts >= ? AND ts <= ? ORDER BY ts
 `
 
 type QueryMetrics1mParams struct {
-	LbID      int64
-	ServiceID int64
-	Ts        int64
-	Ts_2      int64
+	Scope   string
+	ScopeID int64
+	Ts      int64
+	Ts_2    int64
 }
 
 func (q *Queries) QueryMetrics1m(ctx context.Context, arg QueryMetrics1mParams) ([]Metrics1m, error) {
 	rows, err := q.db.QueryContext(ctx, queryMetrics1m,
-		arg.LbID,
-		arg.ServiceID,
+		arg.Scope,
+		arg.ScopeID,
 		arg.Ts,
 		arg.Ts_2,
 	)
@@ -2060,8 +2124,8 @@ func (q *Queries) QueryMetrics1m(ctx context.Context, arg QueryMetrics1mParams) 
 	for rows.Next() {
 		var i Metrics1m
 		if err := rows.Scan(
-			&i.LbID,
-			&i.ServiceID,
+			&i.Scope,
+			&i.ScopeID,
 			&i.Ts,
 			&i.OpenConnAvg,
 			&i.OpenConnMax,
@@ -2075,6 +2139,7 @@ func (q *Queries) QueryMetrics1m(ctx context.Context, arg QueryMetrics1mParams) 
 			&i.Http4xx,
 			&i.Http5xx,
 			&i.Errors,
+			&i.Queue,
 		); err != nil {
 			return nil, err
 		}
@@ -2089,12 +2154,17 @@ func (q *Queries) QueryMetrics1m(ctx context.Context, arg QueryMetrics1mParams) 
 	return items, nil
 }
 
-const releaseLBIPs = `-- name: ReleaseLBIPs :exec
-UPDATE ip_addresses SET assigned_lb_id = NULL WHERE assigned_lb_id = ?
+const renameNode = `-- name: RenameNode :exec
+UPDATE nodes SET name = ? WHERE id = ?
 `
 
-func (q *Queries) ReleaseLBIPs(ctx context.Context, assignedLbID sql.NullInt64) error {
-	_, err := q.db.ExecContext(ctx, releaseLBIPs, assignedLbID)
+type RenameNodeParams struct {
+	Name string
+	ID   int64
+}
+
+func (q *Queries) RenameNode(ctx context.Context, arg RenameNodeParams) error {
+	_, err := q.db.ExecContext(ctx, renameNode, arg.Name, arg.ID)
 	return err
 }
 
@@ -2212,33 +2282,18 @@ func (q *Queries) SetDomainStatus(ctx context.Context, arg SetDomainStatusParams
 	return err
 }
 
-const setLoadBalancerStatus = `-- name: SetLoadBalancerStatus :exec
-UPDATE load_balancers SET status = ?, last_error = ? WHERE id = ?
+const setFrontendStatus = `-- name: SetFrontendStatus :exec
+UPDATE frontends SET status = ?, last_error = ? WHERE id = ?
 `
 
-type SetLoadBalancerStatusParams struct {
+type SetFrontendStatusParams struct {
 	Status    string
 	LastError sql.NullString
 	ID        int64
 }
 
-func (q *Queries) SetLoadBalancerStatus(ctx context.Context, arg SetLoadBalancerStatusParams) error {
-	_, err := q.db.ExecContext(ctx, setLoadBalancerStatus, arg.Status, arg.LastError, arg.ID)
-	return err
-}
-
-const setLoadBalancersStatusByNode = `-- name: SetLoadBalancersStatusByNode :exec
-UPDATE load_balancers SET status = ?, last_error = ? WHERE node_id = ?
-`
-
-type SetLoadBalancersStatusByNodeParams struct {
-	Status    string
-	LastError sql.NullString
-	NodeID    int64
-}
-
-func (q *Queries) SetLoadBalancersStatusByNode(ctx context.Context, arg SetLoadBalancersStatusByNodeParams) error {
-	_, err := q.db.ExecContext(ctx, setLoadBalancersStatusByNode, arg.Status, arg.LastError, arg.NodeID)
+func (q *Queries) SetFrontendStatus(ctx context.Context, arg SetFrontendStatusParams) error {
+	_, err := q.db.ExecContext(ctx, setFrontendStatus, arg.Status, arg.LastError, arg.ID)
 	return err
 }
 
@@ -2253,6 +2308,34 @@ type SetUserPasswordParams struct {
 
 func (q *Queries) SetUserPassword(ctx context.Context, arg SetUserPasswordParams) error {
 	_, err := q.db.ExecContext(ctx, setUserPassword, arg.PasswordHash, arg.ID)
+	return err
+}
+
+const setUserTOTP = `-- name: SetUserTOTP :exec
+UPDATE users SET totp_secret_enc = ? WHERE id = ?
+`
+
+type SetUserTOTPParams struct {
+	TotpSecretEnc []byte
+	ID            int64
+}
+
+func (q *Queries) SetUserTOTP(ctx context.Context, arg SetUserTOTPParams) error {
+	_, err := q.db.ExecContext(ctx, setUserTOTP, arg.TotpSecretEnc, arg.ID)
+	return err
+}
+
+const touchAPIToken = `-- name: TouchAPIToken :exec
+UPDATE api_tokens SET last_used_at = ? WHERE id = ?
+`
+
+type TouchAPITokenParams struct {
+	LastUsedAt sql.NullInt64
+	ID         int64
+}
+
+func (q *Queries) TouchAPIToken(ctx context.Context, arg TouchAPITokenParams) error {
+	_, err := q.db.ExecContext(ctx, touchAPIToken, arg.LastUsedAt, arg.ID)
 	return err
 }
 
@@ -2284,6 +2367,86 @@ func (q *Queries) TouchUserLogin(ctx context.Context, arg TouchUserLoginParams) 
 	return err
 }
 
+const updateBackend = `-- name: UpdateBackend :exec
+UPDATE backends SET name = ?, description = ?, mode = ?, algorithm = ?, port = ?, sticky_enabled = ?, sticky_cookie_name = ?, sticky_cookie_lifetime_s = ?,
+  proxy_protocol = ?, timeout_server_s = ?, hc_protocol = ?, hc_port = ?, hc_interval_s = ?, hc_timeout_s = ?, hc_retries = ?, hc_domain = ?,
+  hc_path = ?, hc_response = ?, hc_status_codes = ?, hc_tls_verify = ?, labels = ?, version = version + 1 WHERE id = ?
+`
+
+type UpdateBackendParams struct {
+	Name                  string
+	Description           string
+	Mode                  string
+	Algorithm             string
+	Port                  int64
+	StickyEnabled         int64
+	StickyCookieName      string
+	StickyCookieLifetimeS int64
+	ProxyProtocol         string
+	TimeoutServerS        int64
+	HcProtocol            string
+	HcPort                int64
+	HcIntervalS           int64
+	HcTimeoutS            int64
+	HcRetries             int64
+	HcDomain              string
+	HcPath                string
+	HcResponse            string
+	HcStatusCodes         string
+	HcTlsVerify           int64
+	Labels                string
+	ID                    int64
+}
+
+func (q *Queries) UpdateBackend(ctx context.Context, arg UpdateBackendParams) error {
+	_, err := q.db.ExecContext(ctx, updateBackend,
+		arg.Name,
+		arg.Description,
+		arg.Mode,
+		arg.Algorithm,
+		arg.Port,
+		arg.StickyEnabled,
+		arg.StickyCookieName,
+		arg.StickyCookieLifetimeS,
+		arg.ProxyProtocol,
+		arg.TimeoutServerS,
+		arg.HcProtocol,
+		arg.HcPort,
+		arg.HcIntervalS,
+		arg.HcTimeoutS,
+		arg.HcRetries,
+		arg.HcDomain,
+		arg.HcPath,
+		arg.HcResponse,
+		arg.HcStatusCodes,
+		arg.HcTlsVerify,
+		arg.Labels,
+		arg.ID,
+	)
+	return err
+}
+
+const updateBackendServer = `-- name: UpdateBackendServer :exec
+UPDATE backend_servers SET weight = ?, backup = ?, admin_state = ? WHERE id = ?
+`
+
+type UpdateBackendServerParams struct {
+	Weight     int64
+	Backup     int64
+	AdminState string
+	ID         int64
+}
+
+func (q *Queries) UpdateBackendServer(ctx context.Context, arg UpdateBackendServerParams) error {
+	_, err := q.db.ExecContext(ctx, updateBackendServer,
+		arg.Weight,
+		arg.Backup,
+		arg.AdminState,
+		arg.ID,
+	)
+	return err
+}
+
 const updateCertificateMeta = `-- name: UpdateCertificateMeta :exec
 UPDATE certificates SET name = ?, labels = ? WHERE id = ?
 `
@@ -2300,12 +2463,11 @@ func (q *Queries) UpdateCertificateMeta(ctx context.Context, arg UpdateCertifica
 }
 
 const updateDomain = `-- name: UpdateDomain :exec
-UPDATE domains SET lb_id = ?, service_id = ?, dns_provider_id = ?, zone = ?, auto_records = ?, updated_at = ? WHERE id = ?
+UPDATE domains SET frontend_id = ?, dns_provider_id = ?, zone = ?, auto_records = ?, updated_at = ? WHERE id = ?
 `
 
 type UpdateDomainParams struct {
-	LbID          sql.NullInt64
-	ServiceID     sql.NullInt64
+	FrontendID    sql.NullInt64
 	DnsProviderID sql.NullInt64
 	Zone          string
 	AutoRecords   int64
@@ -2315,8 +2477,7 @@ type UpdateDomainParams struct {
 
 func (q *Queries) UpdateDomain(ctx context.Context, arg UpdateDomainParams) error {
 	_, err := q.db.ExecContext(ctx, updateDomain,
-		arg.LbID,
-		arg.ServiceID,
+		arg.FrontendID,
 		arg.DnsProviderID,
 		arg.Zone,
 		arg.AutoRecords,
@@ -2326,32 +2487,72 @@ func (q *Queries) UpdateDomain(ctx context.Context, arg UpdateDomainParams) erro
 	return err
 }
 
-const updateLoadBalancer = `-- name: UpdateLoadBalancer :exec
-UPDATE load_balancers SET name = ?, plan_id = ?, algorithm = ?, public_enabled = ?, delete_protected = ?, maintenance = ?, labels = ?, version = version + 1, updated_at = ? WHERE id = ?
+const updateFrontend = `-- name: UpdateFrontend :exec
+UPDATE frontends SET name = ?, description = ?, mode = ?, tls = ?, binds = ?, http_redirect = ?, default_backend_id = ?, timeout_client_s = ?,
+  maxconn = ?, forwarded_headers = ?, enabled = ?, maintenance = ?, labels = ?, version = version + 1, updated_at = ? WHERE id = ?
 `
 
-type UpdateLoadBalancerParams struct {
-	Name            string
-	PlanID          int64
-	Algorithm       string
-	PublicEnabled   int64
-	DeleteProtected int64
-	Maintenance     int64
-	Labels          string
-	UpdatedAt       int64
-	ID              int64
+type UpdateFrontendParams struct {
+	Name             string
+	Description      string
+	Mode             string
+	Tls              int64
+	Binds            string
+	HttpRedirect     int64
+	DefaultBackendID sql.NullInt64
+	TimeoutClientS   int64
+	Maxconn          int64
+	ForwardedHeaders int64
+	Enabled          int64
+	Maintenance      int64
+	Labels           string
+	UpdatedAt        int64
+	ID               int64
 }
 
-func (q *Queries) UpdateLoadBalancer(ctx context.Context, arg UpdateLoadBalancerParams) error {
-	_, err := q.db.ExecContext(ctx, updateLoadBalancer,
+func (q *Queries) UpdateFrontend(ctx context.Context, arg UpdateFrontendParams) error {
+	_, err := q.db.ExecContext(ctx, updateFrontend,
 		arg.Name,
-		arg.PlanID,
-		arg.Algorithm,
-		arg.PublicEnabled,
-		arg.DeleteProtected,
+		arg.Description,
+		arg.Mode,
+		arg.Tls,
+		arg.Binds,
+		arg.HttpRedirect,
+		arg.DefaultBackendID,
+		arg.TimeoutClientS,
+		arg.Maxconn,
+		arg.ForwardedHeaders,
+		arg.Enabled,
 		arg.Maintenance,
 		arg.Labels,
 		arg.UpdatedAt,
+		arg.ID,
+	)
+	return err
+}
+
+const updateHost = `-- name: UpdateHost :exec
+UPDATE hosts SET name = ?, ipv4 = ?, ipv6 = ?, private_ipv4 = ?, labels = ?, notes = ? WHERE id = ?
+`
+
+type UpdateHostParams struct {
+	Name        string
+	Ipv4        string
+	Ipv6        string
+	PrivateIpv4 string
+	Labels      string
+	Notes       string
+	ID          int64
+}
+
+func (q *Queries) UpdateHost(ctx context.Context, arg UpdateHostParams) error {
+	_, err := q.db.ExecContext(ctx, updateHost,
+		arg.Name,
+		arg.Ipv4,
+		arg.Ipv6,
+		arg.PrivateIpv4,
+		arg.Labels,
+		arg.Notes,
 		arg.ID,
 	)
 	return err
@@ -2377,136 +2578,6 @@ func (q *Queries) UpdateNodeInfo(ctx context.Context, arg UpdateNodeInfoParams) 
 		arg.LoxyVersion,
 		arg.Features,
 		arg.LastSeenAt,
-		arg.ID,
-	)
-	return err
-}
-
-const updateNodeLocation = `-- name: UpdateNodeLocation :exec
-UPDATE nodes SET name = ?, location_city = ?, location_country = ?, network_zone = ?, lat = ?, lon = ? WHERE id = ?
-`
-
-type UpdateNodeLocationParams struct {
-	Name            string
-	LocationCity    string
-	LocationCountry string
-	NetworkZone     string
-	Lat             float64
-	Lon             float64
-	ID              int64
-}
-
-func (q *Queries) UpdateNodeLocation(ctx context.Context, arg UpdateNodeLocationParams) error {
-	_, err := q.db.ExecContext(ctx, updateNodeLocation,
-		arg.Name,
-		arg.LocationCity,
-		arg.LocationCountry,
-		arg.NetworkZone,
-		arg.Lat,
-		arg.Lon,
-		arg.ID,
-	)
-	return err
-}
-
-const updateServer = `-- name: UpdateServer :exec
-UPDATE servers SET name = ?, public_ipv4 = ?, public_ipv6 = ?, private_ipv4 = ?, labels = ?, notes = ? WHERE id = ?
-`
-
-type UpdateServerParams struct {
-	Name        string
-	PublicIpv4  string
-	PublicIpv6  string
-	PrivateIpv4 string
-	Labels      string
-	Notes       string
-	ID          int64
-}
-
-func (q *Queries) UpdateServer(ctx context.Context, arg UpdateServerParams) error {
-	_, err := q.db.ExecContext(ctx, updateServer,
-		arg.Name,
-		arg.PublicIpv4,
-		arg.PublicIpv6,
-		arg.PrivateIpv4,
-		arg.Labels,
-		arg.Notes,
-		arg.ID,
-	)
-	return err
-}
-
-const updateService = `-- name: UpdateService :exec
-UPDATE services SET protocol = ?, listen_port = ?, destination_port = ?, http_redirect = ?, sticky_enabled = ?, sticky_cookie_name = ?, sticky_cookie_lifetime_s = ?,
-  proxy_protocol = ?, http_timeout_s = ?, hc_protocol = ?, hc_port = ?, hc_interval_s = ?, hc_timeout_s = ?, hc_retries = ?, hc_domain = ?, hc_path = ?, hc_response = ?,
-  hc_status_codes = ?, hc_tls_verify = ?, version = version + 1 WHERE id = ?
-`
-
-type UpdateServiceParams struct {
-	Protocol              string
-	ListenPort            int64
-	DestinationPort       int64
-	HttpRedirect          int64
-	StickyEnabled         int64
-	StickyCookieName      string
-	StickyCookieLifetimeS int64
-	ProxyProtocol         string
-	HttpTimeoutS          int64
-	HcProtocol            string
-	HcPort                int64
-	HcIntervalS           int64
-	HcTimeoutS            int64
-	HcRetries             int64
-	HcDomain              string
-	HcPath                string
-	HcResponse            string
-	HcStatusCodes         string
-	HcTlsVerify           int64
-	ID                    int64
-}
-
-func (q *Queries) UpdateService(ctx context.Context, arg UpdateServiceParams) error {
-	_, err := q.db.ExecContext(ctx, updateService,
-		arg.Protocol,
-		arg.ListenPort,
-		arg.DestinationPort,
-		arg.HttpRedirect,
-		arg.StickyEnabled,
-		arg.StickyCookieName,
-		arg.StickyCookieLifetimeS,
-		arg.ProxyProtocol,
-		arg.HttpTimeoutS,
-		arg.HcProtocol,
-		arg.HcPort,
-		arg.HcIntervalS,
-		arg.HcTimeoutS,
-		arg.HcRetries,
-		arg.HcDomain,
-		arg.HcPath,
-		arg.HcResponse,
-		arg.HcStatusCodes,
-		arg.HcTlsVerify,
-		arg.ID,
-	)
-	return err
-}
-
-const updateTarget = `-- name: UpdateTarget :exec
-UPDATE targets SET weight = ?, backup = ?, admin_state = ? WHERE id = ?
-`
-
-type UpdateTargetParams struct {
-	Weight     int64
-	Backup     int64
-	AdminState string
-	ID         int64
-}
-
-func (q *Queries) UpdateTarget(ctx context.Context, arg UpdateTargetParams) error {
-	_, err := q.db.ExecContext(ctx, updateTarget,
-		arg.Weight,
-		arg.Backup,
-		arg.AdminState,
 		arg.ID,
 	)
 	return err

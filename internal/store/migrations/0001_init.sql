@@ -1,4 +1,4 @@
--- Loxy initial schema (spec §6). Timestamps are unix milliseconds.
+-- Loxy schema (spec §6). Timestamps are unix milliseconds.
 CREATE TABLE projects (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL,
@@ -35,7 +35,8 @@ CREATE TABLE api_tokens (
   secret_hash TEXT NOT NULL,
   role TEXT NOT NULL,
   expires_at INTEGER,
-  last_used_at INTEGER
+  last_used_at INTEGER,
+  created_at INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE nodes (
@@ -46,62 +47,76 @@ CREATE TABLE nodes (
   haproxy_version TEXT NOT NULL DEFAULT '',
   loxy_version TEXT NOT NULL DEFAULT '',
   features TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(features)),
-  location_city TEXT NOT NULL DEFAULT '',
-  location_country TEXT NOT NULL DEFAULT '',
-  network_zone TEXT NOT NULL DEFAULT '',
-  lat REAL NOT NULL DEFAULT 0,
-  lon REAL NOT NULL DEFAULT 0,
   last_seen_at INTEGER,
   desired_version INTEGER NOT NULL DEFAULT 0,
   applied_version INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE networks (
-  id INTEGER PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  cidr TEXT NOT NULL
-);
-
-CREATE TABLE ip_addresses (
+-- Addresses of the node (informational: bind suggestions, DNS required records for "*" binds).
+CREATE TABLE node_addresses (
   id INTEGER PRIMARY KEY,
   node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
   address TEXT NOT NULL UNIQUE,
   family INTEGER NOT NULL CHECK (family IN (4,6)),
-  kind TEXT NOT NULL DEFAULT 'additional' CHECK (kind IN ('primary','additional','failover','private')),
-  network_id INTEGER REFERENCES networks(id) ON DELETE SET NULL,
-  assigned_lb_id INTEGER REFERENCES load_balancers(id) ON DELETE SET NULL,
-  rdns TEXT NOT NULL DEFAULT ''
-);
-CREATE INDEX ip_addresses_node ON ip_addresses(node_id);
-CREATE INDEX ip_addresses_lb ON ip_addresses(assigned_lb_id);
-
-CREATE TABLE plans (
-  id INTEGER PRIMARY KEY,
-  name TEXT NOT NULL UNIQUE,
-  max_connections INTEGER NOT NULL,
-  max_services INTEGER NOT NULL,
-  max_targets INTEGER NOT NULL,
-  max_certificates INTEGER NOT NULL,
-  traffic_quota_bytes INTEGER NOT NULL,
-  price_monthly_cents INTEGER,
-  currency TEXT NOT NULL DEFAULT 'EUR',
-  enforce_lb_cap INTEGER NOT NULL DEFAULT 1,
-  sort INTEGER NOT NULL DEFAULT 0,
-  active INTEGER NOT NULL DEFAULT 1
+  label TEXT NOT NULL DEFAULT ''
 );
 
-CREATE TABLE load_balancers (
+CREATE TABLE hosts (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
-  plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE RESTRICT,
-  node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE RESTRICT,
+  ipv4 TEXT NOT NULL DEFAULT '',
+  ipv6 TEXT NOT NULL DEFAULT '',
+  private_ipv4 TEXT NOT NULL DEFAULT '',
+  labels TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(labels)),
+  notes TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE backends (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  node_id INTEGER NOT NULL DEFAULT 1 REFERENCES nodes(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL CHECK (mode IN ('http','tcp')),
   algorithm TEXT NOT NULL DEFAULT 'roundrobin' CHECK (algorithm IN ('roundrobin','leastconn','source','random')),
-  public_enabled INTEGER NOT NULL DEFAULT 1,
-  ipv4_id INTEGER REFERENCES ip_addresses(id) ON DELETE SET NULL,
-  ipv6_id INTEGER REFERENCES ip_addresses(id) ON DELETE SET NULL,
-  delete_protected INTEGER NOT NULL DEFAULT 0,
+  port INTEGER NOT NULL,
+  sticky_enabled INTEGER NOT NULL DEFAULT 0,
+  sticky_cookie_name TEXT NOT NULL DEFAULT 'LBSTICKY',
+  sticky_cookie_lifetime_s INTEGER NOT NULL DEFAULT 300,
+  proxy_protocol TEXT NOT NULL DEFAULT 'none' CHECK (proxy_protocol IN ('none','v1','v2')),
+  timeout_server_s INTEGER NOT NULL DEFAULT 60,
+  hc_protocol TEXT NOT NULL DEFAULT 'tcp',
+  hc_port INTEGER NOT NULL DEFAULT 0,
+  hc_interval_s INTEGER NOT NULL DEFAULT 15,
+  hc_timeout_s INTEGER NOT NULL DEFAULT 10,
+  hc_retries INTEGER NOT NULL DEFAULT 3,
+  hc_domain TEXT NOT NULL DEFAULT '',
+  hc_path TEXT NOT NULL DEFAULT '/',
+  hc_response TEXT NOT NULL DEFAULT '',
+  hc_status_codes TEXT NOT NULL DEFAULT '["2??","3??"]' CHECK (json_valid(hc_status_codes)),
+  hc_tls_verify INTEGER NOT NULL DEFAULT 0,
+  labels TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(labels)),
+  version INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  UNIQUE (project_id, name)
+);
+
+CREATE TABLE frontends (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  node_id INTEGER NOT NULL DEFAULT 1 REFERENCES nodes(id),
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  mode TEXT NOT NULL CHECK (mode IN ('http','tcp')),
+  tls INTEGER NOT NULL DEFAULT 0,
+  binds TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(binds)),
+  http_redirect INTEGER NOT NULL DEFAULT 0,
+  default_backend_id INTEGER REFERENCES backends(id) ON DELETE RESTRICT,
+  timeout_client_s INTEGER NOT NULL DEFAULT 60,
+  maxconn INTEGER NOT NULL DEFAULT 0,
+  forwarded_headers INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
   maintenance INTEGER NOT NULL DEFAULT 0,
   labels TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(labels)),
   status TEXT NOT NULL DEFAULT 'applying',
@@ -111,64 +126,27 @@ CREATE TABLE load_balancers (
   updated_at INTEGER NOT NULL,
   UNIQUE (project_id, name)
 );
-CREATE INDEX load_balancers_node ON load_balancers(node_id);
+CREATE INDEX frontends_default_backend ON frontends(default_backend_id);
 
-CREATE TABLE lb_networks (
-  lb_id INTEGER NOT NULL REFERENCES load_balancers(id) ON DELETE CASCADE,
-  network_id INTEGER NOT NULL REFERENCES networks(id) ON DELETE RESTRICT,
-  ip TEXT NOT NULL,
-  PRIMARY KEY (lb_id, network_id)
-);
-
-CREATE TABLE services (
+CREATE TABLE routes (
   id INTEGER PRIMARY KEY,
-  lb_id INTEGER NOT NULL REFERENCES load_balancers(id) ON DELETE CASCADE,
-  protocol TEXT NOT NULL CHECK (protocol IN ('tcp','http','https')),
-  listen_port INTEGER NOT NULL,
-  destination_port INTEGER NOT NULL,
-  http_redirect INTEGER NOT NULL DEFAULT 0,
-  sticky_enabled INTEGER NOT NULL DEFAULT 0,
-  sticky_cookie_name TEXT NOT NULL DEFAULT 'LBSTICKY',
-  sticky_cookie_lifetime_s INTEGER NOT NULL DEFAULT 300,
-  proxy_protocol TEXT NOT NULL DEFAULT 'none' CHECK (proxy_protocol IN ('none','v1','v2')),
-  http_timeout_s INTEGER NOT NULL DEFAULT 60,
-  hc_protocol TEXT NOT NULL DEFAULT 'tcp',
-  hc_port INTEGER NOT NULL,
-  hc_interval_s INTEGER NOT NULL DEFAULT 15,
-  hc_timeout_s INTEGER NOT NULL DEFAULT 10,
-  hc_retries INTEGER NOT NULL DEFAULT 3,
-  hc_domain TEXT NOT NULL DEFAULT '',
-  hc_path TEXT NOT NULL DEFAULT '/',
-  hc_response TEXT NOT NULL DEFAULT '',
-  hc_status_codes TEXT NOT NULL DEFAULT '["2??","3??"]' CHECK (json_valid(hc_status_codes)),
-  hc_tls_verify INTEGER NOT NULL DEFAULT 0,
-  options TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(options)),
-  version INTEGER NOT NULL DEFAULT 1,
-  created_at INTEGER NOT NULL,
-  UNIQUE (lb_id, listen_port)
+  frontend_id INTEGER NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
+  position INTEGER NOT NULL,
+  hosts TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(hosts)),
+  path_prefix TEXT NOT NULL DEFAULT '',
+  backend_id INTEGER NOT NULL REFERENCES backends(id) ON DELETE RESTRICT
 );
-CREATE INDEX services_lb ON services(lb_id);
+CREATE INDEX routes_frontend ON routes(frontend_id);
+CREATE INDEX routes_backend ON routes(backend_id);
 
-CREATE TABLE servers (
+CREATE TABLE backend_servers (
   id INTEGER PRIMARY KEY,
-  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  name TEXT NOT NULL,
-  public_ipv4 TEXT NOT NULL DEFAULT '',
-  public_ipv6 TEXT NOT NULL DEFAULT '',
-  private_ipv4 TEXT NOT NULL DEFAULT '',
-  labels TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(labels)),
-  source TEXT NOT NULL DEFAULT 'manual',
-  external_id TEXT NOT NULL DEFAULT '',
-  notes TEXT NOT NULL DEFAULT ''
-);
-
-CREATE TABLE targets (
-  id INTEGER PRIMARY KEY,
-  lb_id INTEGER NOT NULL REFERENCES load_balancers(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('server','label_selector','ip')),
-  server_id INTEGER REFERENCES servers(id) ON DELETE CASCADE,
+  backend_id INTEGER NOT NULL REFERENCES backends(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('host','label_selector','ip')),
+  host_id INTEGER REFERENCES hosts(id) ON DELETE CASCADE,
   label_selector TEXT NOT NULL DEFAULT '',
   ip TEXT NOT NULL DEFAULT '',
+  port INTEGER,
   use_private_ip INTEGER NOT NULL DEFAULT 0,
   weight INTEGER NOT NULL DEFAULT 100,
   backup INTEGER NOT NULL DEFAULT 0,
@@ -176,19 +154,19 @@ CREATE TABLE targets (
   removing INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
-CREATE INDEX targets_lb ON targets(lb_id);
-CREATE INDEX targets_server ON targets(server_id);
+CREATE INDEX backend_servers_backend ON backend_servers(backend_id);
+CREATE INDEX backend_servers_host ON backend_servers(host_id);
 
--- One row per resolved backend server; id is the stable HAProxy server id.
+-- One row per resolved server; id is the stable HAProxy server id.
 CREATE TABLE server_slots (
   id INTEGER PRIMARY KEY,
-  lb_id INTEGER NOT NULL REFERENCES load_balancers(id) ON DELETE CASCADE,
-  target_id INTEGER NOT NULL REFERENCES targets(id) ON DELETE CASCADE,
-  server_id INTEGER,
+  backend_id INTEGER NOT NULL REFERENCES backends(id) ON DELETE CASCADE,
+  server_id INTEGER NOT NULL REFERENCES backend_servers(id) ON DELETE CASCADE,
+  host_id INTEGER,
   address TEXT NOT NULL,
-  UNIQUE (target_id, server_id, address)
+  UNIQUE (server_id, host_id, address)
 );
-CREATE INDEX server_slots_lb ON server_slots(lb_id);
+CREATE INDEX server_slots_backend ON server_slots(backend_id);
 
 CREATE TABLE dns_providers (
   id INTEGER PRIMARY KEY,
@@ -226,20 +204,19 @@ CREATE TABLE certificates (
   created_at INTEGER NOT NULL
 );
 
-CREATE TABLE service_certificates (
-  service_id INTEGER NOT NULL REFERENCES services(id) ON DELETE CASCADE,
+CREATE TABLE frontend_certificates (
+  frontend_id INTEGER NOT NULL REFERENCES frontends(id) ON DELETE CASCADE,
   certificate_id INTEGER NOT NULL REFERENCES certificates(id) ON DELETE RESTRICT,
   position INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (service_id, certificate_id)
+  PRIMARY KEY (frontend_id, certificate_id)
 );
-CREATE INDEX service_certificates_cert ON service_certificates(certificate_id);
+CREATE INDEX frontend_certificates_cert ON frontend_certificates(certificate_id);
 
 CREATE TABLE domains (
   id INTEGER PRIMARY KEY,
   project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   fqdn TEXT NOT NULL,
-  lb_id INTEGER REFERENCES load_balancers(id) ON DELETE SET NULL,
-  service_id INTEGER REFERENCES services(id) ON DELETE SET NULL,
+  frontend_id INTEGER REFERENCES frontends(id) ON DELETE SET NULL,
   dns_provider_id INTEGER REFERENCES dns_providers(id) ON DELETE SET NULL,
   zone TEXT NOT NULL DEFAULT '',
   auto_records INTEGER NOT NULL DEFAULT 0,
@@ -280,31 +257,22 @@ CREATE TABLE config_revisions (
   UNIQUE (node_id, revision)
 );
 
+-- scope: 'fe' (frontend) or 'be' (backend); scope_id 0 = node total.
 CREATE TABLE metrics_1m (
-  lb_id INTEGER NOT NULL, service_id INTEGER NOT NULL, ts INTEGER NOT NULL,
+  scope TEXT NOT NULL, scope_id INTEGER NOT NULL, ts INTEGER NOT NULL,
   open_conn_avg REAL NOT NULL, open_conn_max REAL NOT NULL, cps REAL NOT NULL, rps REAL NOT NULL,
   bytes_in REAL NOT NULL, bytes_out REAL NOT NULL, resp_time_ms_avg REAL NOT NULL,
   http_2xx REAL NOT NULL, http_3xx REAL NOT NULL, http_4xx REAL NOT NULL, http_5xx REAL NOT NULL, errors REAL NOT NULL,
-  PRIMARY KEY (lb_id, service_id, ts)
+  queue REAL NOT NULL DEFAULT 0,
+  PRIMARY KEY (scope, scope_id, ts)
 ) WITHOUT ROWID;
-CREATE TABLE metrics_5m AS SELECT * FROM metrics_1m WHERE 0;
-CREATE UNIQUE INDEX metrics_5m_pk ON metrics_5m(lb_id, service_id, ts);
-CREATE TABLE metrics_1h AS SELECT * FROM metrics_1m WHERE 0;
-CREATE UNIQUE INDEX metrics_1h_pk ON metrics_1h(lb_id, service_id, ts);
-
-CREATE TABLE traffic_monthly (
-  lb_id INTEGER NOT NULL,
-  month TEXT NOT NULL,
-  bytes_in INTEGER NOT NULL DEFAULT 0,
-  bytes_out INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (lb_id, month)
-);
 
 CREATE TABLE events (
   id INTEGER PRIMARY KEY,
   ts INTEGER NOT NULL,
   project_id INTEGER NOT NULL DEFAULT 1,
-  lb_id INTEGER,
+  frontend_id INTEGER,
+  backend_id INTEGER,
   kind TEXT NOT NULL,
   severity TEXT NOT NULL,
   message TEXT NOT NULL,
@@ -326,6 +294,25 @@ CREATE TABLE audit_log (
   after TEXT CHECK (after IS NULL OR json_valid(after))
 );
 CREATE INDEX audit_log_ts ON audit_log(ts);
+
+CREATE TABLE notification_channels (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('webhook','email','telegram','slack')),
+  config_enc BLOB NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE alert_rules (
+  id INTEGER PRIMARY KEY,
+  event_kinds TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(event_kinds)),
+  label_filter TEXT NOT NULL DEFAULT '',
+  channel_id INTEGER NOT NULL REFERENCES notification_channels(id) ON DELETE CASCADE,
+  min_severity TEXT NOT NULL DEFAULT 'warning',
+  cooldown_s INTEGER NOT NULL DEFAULT 60
+);
+CREATE INDEX alert_rules_channel ON alert_rules(channel_id);
 
 CREATE TABLE settings (
   key TEXT PRIMARY KEY,

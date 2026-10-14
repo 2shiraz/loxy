@@ -40,14 +40,6 @@ func (s *Server) Readyz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "ready", "version": s.Version})
 }
 
-func (s *Server) ListPlans(w http.ResponseWriter, r *http.Request) {
-	out := []planView{}
-	for _, p := range s.Snap.Get().Plans {
-		out = append(out, viewPlan(p))
-	}
-	writeJSON(w, 200, map[string]any{"plans": out})
-}
-
 // ---------- auth ----------
 
 func viewUser(u db.User) map[string]any {
@@ -456,27 +448,42 @@ func (s *Server) RenewCertificate(w http.ResponseWriter, r *http.Request, id gen
 
 // ---------- inventory ----------
 
-func viewServer(sv *state.Server) map[string]any {
-	return map[string]any{"id": sv.ID, "name": sv.Name, "public_ipv4": nullStr(sv.PublicIpv4), "public_ipv6": nullStr(sv.PublicIpv6),
-		"private_ipv4": nullStr(sv.PrivateIpv4), "labels": sv.Labels, "notes": sv.Notes, "source": sv.Source}
-}
-
-func (s *Server) ListServers(w http.ResponseWriter, r *http.Request) {
-	out := []map[string]any{}
-	for _, sv := range s.Snap.Get().Servers {
-		out = append(out, viewServer(sv))
+func (s *Server) viewHost(h *state.Host) map[string]any {
+	used := []int64{}
+	for _, b := range s.Snap.Get().Backends {
+		for _, sv := range b.Servers {
+			hit := false
+			for _, sl := range sv.Slots {
+				if sl.HostID == h.ID {
+					hit = true
+				}
+			}
+			if hit {
+				used = append(used, b.ID)
+				break
+			}
+		}
 	}
-	writeJSON(w, 200, map[string]any{"servers": out})
+	return map[string]any{"id": h.ID, "name": h.Name, "ipv4": nullStr(h.Ipv4), "ipv6": nullStr(h.Ipv6),
+		"private_ipv4": nullStr(h.PrivateIpv4), "labels": h.Labels, "notes": h.Notes, "used_by": used}
 }
 
-func serverParams(in gen.ServerInput, base *state.Server) (db.CreateServerParams, error) {
-	p := db.CreateServerParams{Labels: "{}"}
+func (s *Server) ListHosts(w http.ResponseWriter, r *http.Request) {
+	out := []map[string]any{}
+	for _, h := range s.Snap.Get().Hosts {
+		out = append(out, s.viewHost(h))
+	}
+	writeJSON(w, 200, map[string]any{"hosts": out})
+}
+
+func hostParams(in gen.HostInput, base *state.Host) (db.CreateHostParams, error) {
+	p := db.CreateHostParams{Labels: "{}"}
 	if base != nil {
-		p = db.CreateServerParams{Name: base.Name, PublicIpv4: base.PublicIpv4, PublicIpv6: base.PublicIpv6, PrivateIpv4: base.PrivateIpv4, Labels: jsonStr(base.Labels), Notes: base.Notes}
+		p = db.CreateHostParams{Name: base.Name, Ipv4: base.Ipv4, Ipv6: base.Ipv6, PrivateIpv4: base.PrivateIpv4, Labels: jsonStr(base.Labels), Notes: base.Notes}
 	}
 	fe := model.FieldErrors{}
 	if in.Name != nil {
-		p.Name = *in.Name
+		p.Name = strings.TrimSpace(*in.Name)
 	}
 	if !model.ValidName(p.Name) {
 		fe.Add("name", "1–64 printable characters")
@@ -499,8 +506,8 @@ func serverParams(in gen.ServerInput, base *state.Server) (db.CreateServerParams
 		}
 		*dst = a.String()
 	}
-	ip("public_ipv4", in.PublicIpv4, 4, &p.PublicIpv4)
-	ip("public_ipv6", in.PublicIpv6, 6, &p.PublicIpv6)
+	ip("ipv4", in.Ipv4, 4, &p.Ipv4)
+	ip("ipv6", in.Ipv6, 6, &p.Ipv6)
 	ip("private_ipv4", in.PrivateIpv4, 4, &p.PrivateIpv4)
 	if in.Labels != nil {
 		model.ValidateLabels(fe, "labels", *in.Labels)
@@ -512,8 +519,8 @@ func serverParams(in gen.ServerInput, base *state.Server) (db.CreateServerParams
 			fe.Add("notes", "too long")
 		}
 	}
-	if p.PublicIpv4 == "" && p.PublicIpv6 == "" && p.PrivateIpv4 == "" {
-		fe.Add("public_ipv4", "at least one address is required")
+	if p.Ipv4 == "" && p.Ipv6 == "" && p.PrivateIpv4 == "" {
+		fe.Add("ipv4", "at least one address is required")
 	}
 	if !fe.Empty() {
 		return p, errInput(fe)
@@ -521,66 +528,75 @@ func serverParams(in gen.ServerInput, base *state.Server) (db.CreateServerParams
 	return p, nil
 }
 
-func (s *Server) CreateServer(w http.ResponseWriter, r *http.Request) {
-	var in gen.ServerInput
+func (s *Server) respondHost(w http.ResponseWriter, status int, id int64) {
+	h := s.Snap.Get().Host(id)
+	if h == nil {
+		w.WriteHeader(204)
+		return
+	}
+	writeJSON(w, status, map[string]any{"host": s.viewHost(h)})
+}
+
+func (s *Server) CreateHost(w http.ResponseWriter, r *http.Request) {
+	var in gen.HostInput
 	if err := decode(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	p, err := serverParams(in, nil)
+	p, err := hostParams(in, nil)
 	if err != nil {
 		fail(w, err)
 		return
 	}
 	var id int64
-	if err := s.mutate(r, "server.create", "server", func() int64 { return id }, in, func(q *db.Queries) error {
-		sv, err := q.CreateServer(r.Context(), p)
-		id = sv.ID
+	if err := s.mutate(r, "host.create", "host", func() int64 { return id }, in, func(q *db.Queries) error {
+		h, err := q.CreateHost(r.Context(), p)
+		id = h.ID
 		return err
 	}); err != nil {
 		fail(w, err)
 		return
 	}
-	s.respondServer(w, 201, id)
+	s.respondHost(w, 201, id)
 }
 
-func (s *Server) UpdateServer(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	base := s.Snap.Get().Server(id)
+func (s *Server) UpdateHost(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	base := s.Snap.Get().Host(id)
 	if base == nil {
-		fail(w, errNotFound("server"))
+		fail(w, errNotFound("host"))
 		return
 	}
-	var in gen.ServerInput
+	var in gen.HostInput
 	if err := decode(r, &in); err != nil {
 		fail(w, err)
 		return
 	}
-	p, err := serverParams(in, base)
+	p, err := hostParams(in, base)
 	if err != nil {
 		fail(w, err)
 		return
 	}
-	if err := s.mutate(r, "server.update", "server", func() int64 { return id }, in, func(q *db.Queries) error {
-		return q.UpdateServer(r.Context(), db.UpdateServerParams{Name: p.Name, PublicIpv4: p.PublicIpv4, PublicIpv6: p.PublicIpv6, PrivateIpv4: p.PrivateIpv4,
+	if err := s.mutate(r, "host.update", "host", func() int64 { return id }, in, func(q *db.Queries) error {
+		return q.UpdateHost(r.Context(), db.UpdateHostParams{Name: p.Name, Ipv4: p.Ipv4, Ipv6: p.Ipv6, PrivateIpv4: p.PrivateIpv4,
 			Labels: p.Labels, Notes: p.Notes, ID: id})
 	}); err != nil {
 		fail(w, err)
 		return
 	}
-	s.respondServer(w, 200, id)
+	s.respondHost(w, 200, id)
 }
 
-func (s *Server) DeleteServer(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	for _, lb := range s.Snap.Get().LBs {
-		for _, t := range lb.Targets {
-			if t.Type == "server" && t.ServerID.Int64 == id {
-				fail(w, errConflict(fmt.Sprintf("server is a target of load balancer %q", lb.Name)))
+func (s *Server) DeleteHost(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	for _, b := range s.Snap.Get().Backends {
+		for _, sv := range b.Servers {
+			if sv.Type == "host" && sv.HostID.Int64 == id {
+				fail(w, errConflict(fmt.Sprintf("host is a server of backend %q", b.Name)))
 				return
 			}
 		}
 	}
-	if err := s.mutate(r, "server.delete", "server", func() int64 { return id }, nil, func(q *db.Queries) error {
-		return q.DeleteServer(r.Context(), id)
+	if err := s.mutate(r, "host.delete", "host", func() int64 { return id }, nil, func(q *db.Queries) error {
+		return q.DeleteHost(r.Context(), id)
 	}); err != nil {
 		fail(w, err)
 		return
@@ -588,60 +604,27 @@ func (s *Server) DeleteServer(w http.ResponseWriter, r *http.Request, id gen.Id)
 	w.WriteHeader(204)
 }
 
-func (s *Server) ListNetworks(w http.ResponseWriter, r *http.Request) {
-	out := []map[string]any{}
-	for _, n := range s.Snap.Get().Networks {
-		out = append(out, map[string]any{"id": n.ID, "name": n.Name, "cidr": n.Cidr})
-	}
-	writeJSON(w, 200, map[string]any{"networks": out})
-}
-
-func (s *Server) CreateNetwork(w http.ResponseWriter, r *http.Request) {
-	var in gen.CreateNetworkJSONBody
-	if err := decode(r, &in); err != nil {
-		fail(w, err)
-		return
-	}
-	fe := model.FieldErrors{}
-	if !model.ValidName(in.Name) {
-		fe.Add("name", "1–64 printable characters")
-	}
-	pf, err := netip.ParsePrefix(strings.TrimSpace(in.Cidr))
+func (s *Server) PreviewLabelSelector(w http.ResponseWriter, r *http.Request, p gen.PreviewLabelSelectorParams) {
+	sel, err := model.ParseSelector(p.Selector)
 	if err != nil {
-		fe.Add("cidr", "invalid CIDR")
-	}
-	if !fe.Empty() {
-		fail(w, errInput(fe))
+		fail(w, errField("selector", err.Error()))
 		return
 	}
-	var n db.Network
-	if err := s.mutate(r, "network.create", "network", func() int64 { return n.ID }, in, func(q *db.Queries) error {
-		var err error
-		n, err = q.CreateNetwork(r.Context(), db.CreateNetworkParams{Name: in.Name, Cidr: pf.Masked().String()})
-		return err
-	}); err != nil {
-		fail(w, err)
-		return
+	out := []map[string]any{}
+	for _, h := range s.Snap.Get().Hosts {
+		if sel.Matches(h.Labels) {
+			out = append(out, s.viewHost(h))
+		}
 	}
-	writeJSON(w, 201, map[string]any{"network": map[string]any{"id": n.ID, "name": n.Name, "cidr": n.Cidr}})
-}
-
-func (s *Server) DeleteNetwork(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	if err := s.mutate(r, "network.delete", "network", func() int64 { return id }, nil, func(q *db.Queries) error {
-		return q.DeleteNetwork(r.Context(), id)
-	}); err != nil {
-		fail(w, err)
-		return
-	}
-	w.WriteHeader(204)
+	writeJSON(w, 200, map[string]any{"hosts": out})
 }
 
 // ---------- nodes & revisions ----------
 
 func (s *Server) viewNode(n *state.Node) map[string]any {
 	ips := []map[string]any{}
-	for _, ip := range n.IPs {
-		ips = append(ips, map[string]any{"id": ip.ID, "address": ip.Address, "family": ip.Family, "kind": ip.Kind, "assigned_lb_id": nullI64(ip.AssignedLbID)})
+	for _, a := range n.Addresses {
+		ips = append(ips, map[string]any{"id": a.ID, "address": a.Address, "family": a.Family, "label": a.Label})
 	}
 	var running string
 	var uptime int64
@@ -666,8 +649,7 @@ func (s *Server) viewNode(n *state.Node) map[string]any {
 	}
 	return map[string]any{"id": n.ID, "name": n.Name, "status": status, "haproxy_version": ver, "haproxy_running_version": running,
 		"loxy_version": s.Version, "features": feats, "uptime_s": uptime, "reloads": reloads,
-		"location": map[string]any{"city": n.LocationCity, "country": n.LocationCountry, "network_zone": n.NetworkZone, "lat": n.Lat, "lon": n.Lon},
-		"ips":      ips, "desired_version": n.DesiredVersion, "applied_version": n.AppliedVersion}
+		"ips": ips, "desired_version": n.DesiredVersion, "applied_version": n.AppliedVersion}
 }
 
 func (s *Server) ListNodes(w http.ResponseWriter, r *http.Request) {
@@ -687,8 +669,7 @@ func (s *Server) node(id int64) (*state.Node, error) {
 }
 
 func (s *Server) UpdateNode(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	n, err := s.node(id)
-	if err != nil {
+	if _, err := s.node(id); err != nil {
 		fail(w, err)
 		return
 	}
@@ -697,40 +678,22 @@ func (s *Server) UpdateNode(w http.ResponseWriter, r *http.Request, id gen.Id) {
 		fail(w, err)
 		return
 	}
-	p := db.UpdateNodeLocationParams{Name: n.Name, LocationCity: n.LocationCity, LocationCountry: n.LocationCountry, NetworkZone: n.NetworkZone, Lat: n.Lat, Lon: n.Lon, ID: id}
 	if in.Name != nil {
 		if !model.ValidName(*in.Name) {
 			fail(w, errField("name", "1–64 printable characters"))
 			return
 		}
-		p.Name = *in.Name
-	}
-	if l := in.Location; l != nil {
-		if l.City != nil {
-			p.LocationCity = *l.City
+		if err := s.Store.Q.RenameNode(r.Context(), db.RenameNodeParams{Name: *in.Name, ID: id}); err != nil {
+			fail(w, err)
+			return
 		}
-		if l.Country != nil {
-			p.LocationCountry = strings.ToUpper(*l.Country)
-		}
-		if l.NetworkZone != nil {
-			p.NetworkZone = *l.NetworkZone
-		}
-		if l.Lat != nil {
-			p.Lat = float64(*l.Lat)
-		}
-		if l.Lon != nil {
-			p.Lon = float64(*l.Lon)
-		}
-	}
-	if err := s.Store.Q.UpdateNodeLocation(r.Context(), p); err != nil {
-		fail(w, err)
-		return
 	}
 	s.audit(r, "node.update", "node", id, in)
 	_, _ = s.Snap.Refresh(r.Context(), s.Store.Q, s.Box)
 	writeJSON(w, 200, map[string]any{"node": s.viewNode(s.Snap.Get().Node(id))})
 }
 
+// AddNodeIP records an address of the node (bind suggestions, DNS records for "*" binds).
 func (s *Server) AddNodeIP(w http.ResponseWriter, r *http.Request, id gen.Id) {
 	if _, err := s.node(id); err != nil {
 		fail(w, err)
@@ -746,40 +709,37 @@ func (s *Server) AddNodeIP(w http.ResponseWriter, r *http.Request, id gen.Id) {
 		fail(w, errField("address", "invalid address"))
 		return
 	}
-	kind := "additional"
-	if in.Kind != nil {
-		kind = string(*in.Kind)
+	label := ""
+	if in.Label != nil {
+		label = strings.TrimSpace(*in.Label)
+		if len(label) > 64 {
+			fail(w, errField("label", "at most 64 characters"))
+			return
+		}
 	}
 	fam := int64(6)
 	if a.Is4() {
 		fam = 4
 	}
-	if _, err := s.Store.Q.CreateIP(r.Context(), db.CreateIPParams{NodeID: id, Address: a.String(), Family: fam, Kind: kind}); err != nil {
+	if _, err := s.Store.Q.CreateNodeAddress(r.Context(), db.CreateNodeAddressParams{NodeID: id, Address: a.String(), Family: fam, Label: label}); err != nil {
 		fail(w, err)
 		return
 	}
-	s.audit(r, "node.ip.add", "node", id, in)
+	s.audit(r, "node.address.add", "node", id, in)
 	_, _ = s.Snap.Refresh(r.Context(), s.Store.Q, s.Box)
 	writeJSON(w, 201, map[string]any{"node": s.viewNode(s.Snap.Get().Node(id))})
 }
 
 func (s *Server) DeleteNodeIP(w http.ResponseWriter, r *http.Request, id gen.Id, ipid int64) {
-	n, err := s.node(id)
-	if err != nil {
+	if _, err := s.node(id); err != nil {
 		fail(w, err)
 		return
 	}
-	for _, ip := range n.IPs {
-		if ip.ID == ipid && ip.AssignedLbID.Valid {
-			fail(w, errConflict("address is assigned to a load balancer"))
-			return
-		}
-	}
-	if err := s.Store.Q.DeleteIP(r.Context(), db.DeleteIPParams{ID: ipid, NodeID: id}); err != nil {
+	if err := s.Store.Q.DeleteNodeAddress(r.Context(), db.DeleteNodeAddressParams{ID: ipid, NodeID: id}); err != nil {
 		fail(w, err)
 		return
 	}
-	s.audit(r, "node.ip.delete", "node", id, map[string]any{"ip_id": ipid})
+	s.audit(r, "node.address.delete", "node", id, map[string]any{"address_id": ipid})
 	_, _ = s.Snap.Refresh(r.Context(), s.Store.Q, s.Box)
 	w.WriteHeader(204)
 }
@@ -833,8 +793,11 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request, p gen.ListEv
 		lim = int64(*p.Limit)
 	}
 	arg := db.ListEventsParams{MaxRows: lim}
-	if p.LbId != nil {
-		arg.LbID = *p.LbId
+	if p.FrontendId != nil {
+		arg.FrontendID = *p.FrontendId
+	}
+	if p.BackendId != nil {
+		arg.BackendID = *p.BackendId
 	}
 	if p.Kind != nil && *p.Kind != "" {
 		arg.Kind = *p.Kind
@@ -848,7 +811,7 @@ func (s *Server) ListEvents(w http.ResponseWriter, r *http.Request, p gen.ListEv
 	for _, e := range evs {
 		var data map[string]any
 		_ = json.Unmarshal([]byte(e.Data), &data)
-		out = append(out, map[string]any{"id": e.ID, "ts": e.Ts, "lb_id": nullI64(e.LbID), "kind": e.Kind, "severity": e.Severity, "message": e.Message, "data": data})
+		out = append(out, map[string]any{"id": e.ID, "ts": e.Ts, "frontend_id": nullI64(e.FrontendID), "backend_id": nullI64(e.BackendID), "kind": e.Kind, "severity": e.Severity, "message": e.Message, "data": data})
 	}
 	writeJSON(w, 200, map[string]any{"events": out})
 }
@@ -915,9 +878,9 @@ func (s *Server) StreamEvents(w http.ResponseWriter, r *http.Request) {
 
 var _ = context.Background
 
-// StreamLoadBalancerLogs streams sampled HAProxy log lines of one LB (§20 live logs).
-func (s *Server) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, id gen.Id) {
-	if _, err := s.lb(id); err != nil {
+// StreamFrontendLogs streams sampled HAProxy log lines of one frontend (§20 live logs).
+func (s *Server) StreamFrontendLogs(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	if _, err := s.frontend(id); err != nil {
 		fail(w, err)
 		return
 	}
@@ -955,13 +918,4 @@ func (s *Server) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, 
 			fl.Flush()
 		}
 	}
-}
-
-func (s *Server) respondServer(w http.ResponseWriter, status int, id int64) {
-	sv := s.Snap.Get().Server(id)
-	if sv == nil {
-		w.WriteHeader(204)
-		return
-	}
-	writeJSON(w, status, map[string]any{"server": viewServer(sv)})
 }

@@ -1,6 +1,6 @@
-// Package metrics polls HAProxy every second, derives per-LB/per-service series with reset-safe
-// deltas, keeps 1 h of 1 s points in memory, rolls up to SQLite per minute and tracks health
-// (spec §9, §10).
+// Package metrics polls HAProxy every second, derives per-frontend and per-backend series with
+// reset-safe deltas, keeps recent 1 s points in memory, rolls up to SQLite per minute and tracks
+// server health (spec §9, §10).
 package metrics
 
 import (
@@ -30,10 +30,10 @@ type Point struct {
 	Queue                  float32
 }
 
-// LB series keep 60 min of 1 s points, per-service series 15 min (§10.4).
+// Frontend series and the node total keep 60 min of 1 s points, backend series 15 min (§10.4).
 const (
-	lbRing  = 3600
-	svcRing = 900
+	feRing = 3600
+	beRing = 900
 )
 
 type ring struct {
@@ -67,7 +67,18 @@ func (r *ring) since(ts int64) []Point {
 	return out
 }
 
-type key struct{ lb, svc int64 }
+// Scope of a series: frontend ("fe") or backend ("be"); id 0 with scope "fe" = node total.
+type Scope string
+
+const (
+	FE Scope = "fe"
+	BE Scope = "be"
+)
+
+type key struct {
+	scope Scope
+	id    int64
+}
 
 type counters struct {
 	connTot, reqTot, bin, bout, h2, h3, h4, h5, errs float64
@@ -75,14 +86,14 @@ type counters struct {
 
 // Check is the observed health of one server in one backend.
 type Check struct {
-	LBID, ServiceID, SlotID int64
-	Status                  string // healthy|unhealthy|maintenance|draining|unknown
-	Raw                     string
-	Detail                  string // e.g. L7OK/200 in 3ms
-	Scur                    int64
+	BackendID, SlotID int64
+	Status            string // healthy|unhealthy|maintenance|draining|unknown
+	Raw               string
+	Detail            string // e.g. L7OK/200 in 3ms
+	Scur              int64
 }
 
-type checkKey struct{ lb, svc, slot int64 }
+type checkKey struct{ be, slot int64 }
 
 type Collector struct {
 	Node     agent.NodeTransport
@@ -123,19 +134,14 @@ func (c *Collector) Run(ctx context.Context) {
 	}
 }
 
-// parseName extracts lb and service ids from lb<L>_s<S>_fe|be.
-func parseName(px, suffix string) (int64, int64, bool) {
-	if !strings.HasPrefix(px, "lb") || !strings.HasSuffix(px, suffix) {
-		return 0, 0, false
+// parseName extracts the id from fe_<id> / be_<id> (redirect "fe_<id>_rd" counts toward its frontend).
+func parseName(px, prefix string) (int64, bool) {
+	if !strings.HasPrefix(px, prefix) {
+		return 0, false
 	}
-	mid := strings.TrimSuffix(strings.TrimPrefix(px, "lb"), suffix)
-	l, s, ok := strings.Cut(mid, "_s")
-	if !ok {
-		return 0, 0, false
-	}
-	lb, e1 := strconv.ParseInt(l, 10, 64)
-	sv, e2 := strconv.ParseInt(s, 10, 64)
-	return lb, sv, e1 == nil && e2 == nil
+	rest := strings.TrimSuffix(px[len(prefix):], "_rd")
+	id, err := strconv.ParseInt(rest, 10, 64)
+	return id, err == nil
 }
 
 func healthOf(status string) string {
@@ -155,7 +161,7 @@ func healthOf(status string) string {
 
 func (c *Collector) poll(ctx context.Context, now time.Time) error {
 	// Frontend/backend counters every tick (graphs); server rows (health) every 2nd tick:
-	// they are ~90% of the CSV with 1 000 targets (§1.4 CPU budget).
+	// they are ~90% of the CSV with 1 000 servers (§1.4 CPU budget).
 	c.tick++
 	withServers := c.tick%2 == 1
 	rows, info, err := c.Node.Stat(ctx, withServers)
@@ -177,30 +183,41 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 	for _, r := range rows {
 		switch r.Type {
 		case 0:
-			lb, sv, ok := parseName(r.PxName, "_fe")
+			id, ok := parseName(r.PxName, "fe_")
 			if !ok {
 				continue
 			}
-			k := key{lb, sv}
-			cur[k] = counters{connTot: float64(r.Int("conn_tot")), reqTot: float64(r.Int("req_tot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
+			k := key{FE, id}
+			cc := counters{connTot: float64(r.Int("conn_tot")), reqTot: float64(r.Int("req_tot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
 				h2: float64(r.Int("hrsp_2xx")), h3: float64(r.Int("hrsp_3xx")), h4: float64(r.Int("hrsp_4xx")), h5: float64(r.Int("hrsp_5xx")),
 				errs: float64(r.Int("ereq") + r.Int("dreq"))}
-			get(k).Open = float32(r.Int("scur"))
+			// fe_<id> and its redirect fe_<id>_rd add up into one series
+			if prev, ok := cur[k]; ok {
+				cc = counters{connTot: prev.connTot + cc.connTot, reqTot: prev.reqTot + cc.reqTot, bin: prev.bin + cc.bin, bout: prev.bout + cc.bout,
+					h2: prev.h2 + cc.h2, h3: prev.h3 + cc.h3, h4: prev.h4 + cc.h4, h5: prev.h5 + cc.h5, errs: prev.errs + cc.errs}
+			}
+			cur[k] = cc
+			get(k).Open += float32(r.Int("scur"))
 		case 1:
-			lb, sv, ok := parseName(r.PxName, "_be")
+			id, ok := parseName(r.PxName, "be_")
 			if !ok {
 				continue
 			}
-			p := get(key{lb, sv})
+			k := key{BE, id}
+			cur[k] = counters{connTot: float64(r.Int("stot")), reqTot: float64(r.Int("stot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
+				h2: float64(r.Int("hrsp_2xx")), h3: float64(r.Int("hrsp_3xx")), h4: float64(r.Int("hrsp_4xx")), h5: float64(r.Int("hrsp_5xx")),
+				errs: float64(r.Int("econ") + r.Int("eresp"))}
+			p := get(k)
+			p.Open = float32(r.Int("scur"))
 			p.RespMS = float32(r.Int("rtime"))
 			p.Queue = float32(r.Int("qcur"))
 		case 2:
-			lb, sv, ok := parseName(r.PxName, "_be")
+			id, ok := parseName(r.PxName, "be_")
 			if !ok {
 				continue
 			}
 			sid := r.Int("sid")
-			ch := &Check{LBID: lb, ServiceID: sv, SlotID: sid, Raw: r.Str("status"), Status: healthOf(r.Str("status")), Scur: r.Int("scur")}
+			ch := &Check{BackendID: id, SlotID: sid, Raw: r.Str("status"), Status: healthOf(r.Str("status")), Scur: r.Int("scur")}
 			if cs := r.Str("check_status"); cs != "" {
 				ch.Detail = strings.TrimPrefix(cs, "* ")
 				if code := r.Str("check_code"); code != "" {
@@ -213,7 +230,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 					ch.Detail += " · " + desc
 				}
 			}
-			newChecks[checkKey{lb, sv, sid}] = ch
+			newChecks[checkKey{id, sid}] = ch
 		}
 	}
 	c.mu.Lock()
@@ -231,9 +248,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		}
 		return float32((cur - prev) / dt)
 	}
-	lbSum := map[int64]*Point{}
-	month := now.UTC().Format("2006-01")
-	traffic := map[int64][2]float64{}
+	total := &Point{TS: ts}
 	for k, p := range pts {
 		if cc, ok := cur[k]; ok {
 			if pv, ok := c.prev[k]; ok {
@@ -241,53 +256,41 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 				p.In, p.Out = d(cc.bin, pv.bin), d(cc.bout, pv.bout)
 				p.H2, p.H3, p.H4, p.H5 = d(cc.h2, pv.h2), d(cc.h3, pv.h3), d(cc.h4, pv.h4), d(cc.h5, pv.h5)
 				p.Errors = d(cc.errs, pv.errs)
-				tr := traffic[k.lb]
-				traffic[k.lb] = [2]float64{tr[0] + float64(p.In)*dt, tr[1] + float64(p.Out)*dt}
 			}
 			c.prev[k] = cc
 		}
-		s := lbSum[k.lb]
-		if s == nil {
-			s = &Point{TS: ts}
-			lbSum[k.lb] = s
+		if k.scope == FE {
+			total.Open += p.Open
+			total.CPS += p.CPS
+			total.RPS += p.RPS
+			total.In += p.In
+			total.Out += p.Out
+			total.H2 += p.H2
+			total.H3 += p.H3
+			total.H4 += p.H4
+			total.H5 += p.H5
+			total.Errors += p.Errors
 		}
-		s.Open += p.Open
-		s.CPS += p.CPS
-		s.RPS += p.RPS
-		s.In += p.In
-		s.Out += p.Out
-		s.H2 += p.H2
-		s.H3 += p.H3
-		s.H4 += p.H4
-		s.H5 += p.H5
-		s.Errors += p.Errors
-		s.Queue += p.Queue
-		s.RespMS = max(s.RespMS, p.RespMS)
 		c.addPoint(k, *p)
-	}
-	for lb, p := range lbSum {
-		c.addPoint(key{lb, 0}, *p)
-		for ch := range c.subs[lb] {
-			select {
-			case ch <- *p:
-			default:
+		if k.scope == FE {
+			for ch := range c.subs[k.id] {
+				select {
+				case ch <- *p:
+				default:
+				}
 			}
 		}
 	}
-	// health transitions
+	c.addPoint(key{FE, 0}, *total)
 	var transitions []*Check
-	if !withServers {
-		newChecks = nil
-	}
-	for id, ch := range newChecks {
-		if old, ok := c.checks[id]; ok && old.Status != ch.Status && (ch.Status == "healthy" || ch.Status == "unhealthy") {
-			transitions = append(transitions, ch)
-		}
-	}
 	if withServers {
+		for id, ch := range newChecks {
+			if old, ok := c.checks[id]; ok && old.Status != ch.Status && (ch.Status == "healthy" || ch.Status == "unhealthy") {
+				transitions = append(transitions, ch)
+			}
+		}
 		c.checks = newChecks
 	}
-	// minute rollup
 	var flush map[key][]Point
 	if now.Second() == 0 || (len(c.minute) > 0 && anyOld(c.minute, ts-60)) {
 		flush = c.minute
@@ -300,14 +303,9 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		if ch.Status == "unhealthy" {
 			sev, msg = "warning", "is unhealthy: "+ch.Detail
 		}
-		c.Hub.Publish(events.Event{Kind: "target.health.changed", LBID: events.I64(ch.LBID), Severity: sev,
-			Message: fmt.Sprintf("Target slot %d on service %d %s", ch.SlotID, ch.ServiceID, msg),
-			Data:    map[string]any{"service_id": ch.ServiceID, "slot_id": ch.SlotID, "status": ch.Status}})
-	}
-	for lb, tr := range traffic {
-		if c.Q != nil && (tr[0] > 0 || tr[1] > 0) {
-			_ = c.Q.AddTraffic(ctx, db.AddTrafficParams{LbID: lb, Month: month, BytesIn: int64(tr[0]), BytesOut: int64(tr[1])})
-		}
+		c.Hub.Publish(events.Event{Kind: "server.health.changed", BackendID: events.I64(ch.BackendID), Severity: sev,
+			Message: fmt.Sprintf("Server %d of backend %d %s", ch.SlotID, ch.BackendID, msg),
+			Data:    map[string]any{"backend_id": ch.BackendID, "slot_id": ch.SlotID, "status": ch.Status}})
 	}
 	if flush != nil && c.Q != nil {
 		c.rollup(ctx, flush)
@@ -327,9 +325,9 @@ func anyOld(m map[key][]Point, before int64) bool {
 func (c *Collector) addPoint(k key, p Point) {
 	r := c.rings[k]
 	if r == nil {
-		size := svcRing
-		if k.svc == 0 {
-			size = lbRing
+		size := feRing
+		if k.scope == BE {
+			size = beRing
 		}
 		r = newRing(size)
 		c.rings[k] = r
@@ -358,65 +356,66 @@ func (c *Collector) rollup(ctx context.Context, m map[key][]Point) {
 			a.H4 += p.H4
 			a.H5 += p.H5
 			a.Errors += p.Errors
+			a.Queue += p.Queue
 		}
 		n := float32(len(ps))
 		f := func(v float32) float64 { return float64(v / n) }
-		_ = c.Q.InsertMetric1m(ctx, db.InsertMetric1mParams{LbID: k.lb, ServiceID: k.svc, Ts: (ps[0].TS / 60) * 60,
+		_ = c.Q.InsertMetric1m(ctx, db.InsertMetric1mParams{Scope: string(k.scope), ScopeID: k.id, Ts: (ps[0].TS / 60) * 60,
 			OpenConnAvg: f(a.Open), OpenConnMax: float64(mx), Cps: f(a.CPS), Rps: f(a.RPS), BytesIn: f(a.In), BytesOut: f(a.Out),
-			RespTimeMsAvg: f(a.RespMS), Http2xx: f(a.H2), Http3xx: f(a.H3), Http4xx: f(a.H4), Http5xx: f(a.H5), Errors: f(a.Errors)})
+			RespTimeMsAvg: f(a.RespMS), Http2xx: f(a.H2), Http3xx: f(a.H3), Http4xx: f(a.H4), Http5xx: f(a.H5), Errors: f(a.Errors), Queue: f(a.Queue)})
 	}
 	_ = c.Q.PurgeMetrics1m(ctx, time.Now().Add(-35*24*time.Hour).Unix())
 }
 
-// Subscribe streams LB-level points (1 s) for SSE.
-func (c *Collector) Subscribe(lb int64) (<-chan Point, func()) {
+// Subscribe streams frontend-level points (1 s) for SSE.
+func (c *Collector) Subscribe(fe int64) (<-chan Point, func()) {
 	ch := make(chan Point, 16)
 	c.mu.Lock()
-	if c.subs[lb] == nil {
-		c.subs[lb] = map[chan Point]struct{}{}
+	if c.subs[fe] == nil {
+		c.subs[fe] = map[chan Point]struct{}{}
 	}
-	c.subs[lb][ch] = struct{}{}
+	c.subs[fe][ch] = struct{}{}
 	c.mu.Unlock()
 	return ch, func() {
 		c.mu.Lock()
-		delete(c.subs[lb], ch)
+		delete(c.subs[fe], ch)
 		c.mu.Unlock()
 	}
 }
 
-// Checks returns a copy of the current checks of one LB.
-func (c *Collector) Checks(lb int64) map[string]Check {
+// Check returns the observed check of a server slot in a backend.
+func (c *Collector) Check(be, slot int64) (Check, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	out := map[string]Check{}
-	for k, v := range c.checks {
-		if k.lb == lb {
-			out[fmt.Sprintf("%d/%d/%d", k.lb, k.svc, k.slot)] = *v
-		}
-	}
-	return out
-}
-
-// Check returns the observed check for (lb, service, slot).
-func (c *Collector) Check(lb, svc, slot int64) (Check, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	ch, ok := c.checks[checkKey{lb, svc, slot}]
+	ch, ok := c.checks[checkKey{be, slot}]
 	if !ok {
 		return Check{}, false
 	}
 	return *ch, true
 }
 
-// OpenConnections returns the latest LB-level open connections.
-func (c *Collector) OpenConnections(lb int64) int64 {
+// Checks returns all observed checks of a backend keyed by slot id.
+func (c *Collector) Checks(be int64) map[int64]Check {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	r := c.rings[key{lb, 0}]
-	if r == nil || r.n == 0 {
-		return 0
+	out := map[int64]Check{}
+	for k, v := range c.checks {
+		if k.be == be {
+			out[k.slot] = *v
+		}
 	}
-	return int64(r.last().Open)
+	return out
+}
+
+// Latest returns the most recent point of a scope (zero if none).
+func (c *Collector) Latest(scope Scope, id int64) Point {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	r := c.rings[key{scope, id}]
+	if r == nil || r.n == 0 {
+		return Point{}
+	}
+	return r.last()
 }
 
 func (c *Collector) Info() (map[string]string, int, time.Time) {
@@ -434,7 +433,7 @@ type Series struct {
 }
 
 var allTypes = []string{"open_connections", "connections_per_second", "requests_per_second", "bandwidth.in", "bandwidth.out",
-	"response_time_ms", "http_2xx", "http_3xx", "http_4xx", "http_5xx", "errors_per_second"}
+	"response_time_ms", "http_2xx", "http_3xx", "http_4xx", "http_5xx", "errors_per_second", "queue"}
 
 func pick(p Point, t string) float64 { return float64(pick32(p, t)) }
 
@@ -462,13 +461,15 @@ func pick32(p Point, t string) float32 {
 		return p.H5
 	case "errors_per_second":
 		return p.Errors
+	case "queue":
+		return p.Queue
 	}
 	return 0
 }
 
 // Query returns a range with resolution chosen per §10.4 (memory for ≤1 h, else 1 m rollups
 // aggregated to 5 m / 1 h on read).
-func (c *Collector) Query(ctx context.Context, lb, svc, start, end, step int64, types []string) (*Series, error) {
+func (c *Collector) Query(ctx context.Context, scope Scope, id, start, end, step int64, types []string) (*Series, error) {
 	now := time.Now().Unix()
 	if end <= 0 || end > now+60 {
 		end = now
@@ -519,18 +520,19 @@ func (c *Collector) Query(ctx context.Context, lb, svc, start, end, step int64, 
 	var pts []Point
 	if time.Now().Unix()-start <= 3600 && step < 60 {
 		c.mu.RLock()
-		if r := c.rings[key{lb, svc}]; r != nil {
+		if r := c.rings[key{scope, id}]; r != nil {
 			pts = r.since(start)
 		}
 		c.mu.RUnlock()
 	} else {
-		rows, err := c.Q.QueryMetrics1m(ctx, db.QueryMetrics1mParams{LbID: lb, ServiceID: svc, Ts: start, Ts_2: end})
+		rows, err := c.Q.QueryMetrics1m(ctx, db.QueryMetrics1mParams{Scope: string(scope), ScopeID: id, Ts: start, Ts_2: end})
 		if err != nil {
 			return nil, err
 		}
 		for _, r := range rows {
 			pts = append(pts, Point{TS: r.Ts, Open: float32(r.OpenConnAvg), CPS: float32(r.Cps), RPS: float32(r.Rps), In: float32(r.BytesIn), Out: float32(r.BytesOut),
-				RespMS: float32(r.RespTimeMsAvg), H2: float32(r.Http2xx), H3: float32(r.Http3xx), H4: float32(r.Http4xx), H5: float32(r.Http5xx), Errors: float32(r.Errors)})
+				RespMS: float32(r.RespTimeMsAvg), H2: float32(r.Http2xx), H3: float32(r.Http3xx), H4: float32(r.Http4xx), H5: float32(r.Http5xx), Errors: float32(r.Errors),
+				Queue: float32(r.Queue)})
 		}
 		if step < 60 {
 			step = 60

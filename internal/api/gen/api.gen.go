@@ -97,6 +97,216 @@ func (e AlertRuleInputMinSeverity) Valid() bool {
 	}
 }
 
+// Defines values for BackendAlgorithm.
+const (
+	BackendAlgorithmLeastconn  BackendAlgorithm = "leastconn"
+	BackendAlgorithmRandom     BackendAlgorithm = "random"
+	BackendAlgorithmRoundrobin BackendAlgorithm = "roundrobin"
+	BackendAlgorithmSource     BackendAlgorithm = "source"
+)
+
+// Valid indicates whether the value is a known member of the BackendAlgorithm enum.
+func (e BackendAlgorithm) Valid() bool {
+	switch e {
+	case BackendAlgorithmLeastconn:
+		return true
+	case BackendAlgorithmRandom:
+		return true
+	case BackendAlgorithmRoundrobin:
+		return true
+	case BackendAlgorithmSource:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendMode.
+const (
+	BackendModeHttp BackendMode = "http"
+	BackendModeTcp  BackendMode = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the BackendMode enum.
+func (e BackendMode) Valid() bool {
+	switch e {
+	case BackendModeHttp:
+		return true
+	case BackendModeTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendProxyProtocol.
+const (
+	BackendProxyProtocolNone BackendProxyProtocol = "none"
+	BackendProxyProtocolV1   BackendProxyProtocol = "v1"
+	BackendProxyProtocolV2   BackendProxyProtocol = "v2"
+)
+
+// Valid indicates whether the value is a known member of the BackendProxyProtocol enum.
+func (e BackendProxyProtocol) Valid() bool {
+	switch e {
+	case BackendProxyProtocolNone:
+		return true
+	case BackendProxyProtocolV1:
+		return true
+	case BackendProxyProtocolV2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendInputAlgorithm.
+const (
+	BackendInputAlgorithmLeastconn  BackendInputAlgorithm = "leastconn"
+	BackendInputAlgorithmRandom     BackendInputAlgorithm = "random"
+	BackendInputAlgorithmRoundrobin BackendInputAlgorithm = "roundrobin"
+	BackendInputAlgorithmSource     BackendInputAlgorithm = "source"
+)
+
+// Valid indicates whether the value is a known member of the BackendInputAlgorithm enum.
+func (e BackendInputAlgorithm) Valid() bool {
+	switch e {
+	case BackendInputAlgorithmLeastconn:
+		return true
+	case BackendInputAlgorithmRandom:
+		return true
+	case BackendInputAlgorithmRoundrobin:
+		return true
+	case BackendInputAlgorithmSource:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendInputMode.
+const (
+	BackendInputModeHttp BackendInputMode = "http"
+	BackendInputModeTcp  BackendInputMode = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the BackendInputMode enum.
+func (e BackendInputMode) Valid() bool {
+	switch e {
+	case BackendInputModeHttp:
+		return true
+	case BackendInputModeTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendInputProxyProtocol.
+const (
+	BackendInputProxyProtocolNone BackendInputProxyProtocol = "none"
+	BackendInputProxyProtocolV1   BackendInputProxyProtocol = "v1"
+	BackendInputProxyProtocolV2   BackendInputProxyProtocol = "v2"
+)
+
+// Valid indicates whether the value is a known member of the BackendInputProxyProtocol enum.
+func (e BackendInputProxyProtocol) Valid() bool {
+	switch e {
+	case BackendInputProxyProtocolNone:
+		return true
+	case BackendInputProxyProtocolV1:
+		return true
+	case BackendInputProxyProtocolV2:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendServerAdminState.
+const (
+	BackendServerAdminStateDrain BackendServerAdminState = "drain"
+	BackendServerAdminStateMaint BackendServerAdminState = "maint"
+	BackendServerAdminStateReady BackendServerAdminState = "ready"
+)
+
+// Valid indicates whether the value is a known member of the BackendServerAdminState enum.
+func (e BackendServerAdminState) Valid() bool {
+	switch e {
+	case BackendServerAdminStateDrain:
+		return true
+	case BackendServerAdminStateMaint:
+		return true
+	case BackendServerAdminStateReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendServerType.
+const (
+	BackendServerTypeHost          BackendServerType = "host"
+	BackendServerTypeIp            BackendServerType = "ip"
+	BackendServerTypeLabelSelector BackendServerType = "label_selector"
+)
+
+// Valid indicates whether the value is a known member of the BackendServerType enum.
+func (e BackendServerType) Valid() bool {
+	switch e {
+	case BackendServerTypeHost:
+		return true
+	case BackendServerTypeIp:
+		return true
+	case BackendServerTypeLabelSelector:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendServerInputType.
+const (
+	BackendServerInputTypeHost          BackendServerInputType = "host"
+	BackendServerInputTypeIp            BackendServerInputType = "ip"
+	BackendServerInputTypeLabelSelector BackendServerInputType = "label_selector"
+)
+
+// Valid indicates whether the value is a known member of the BackendServerInputType enum.
+func (e BackendServerInputType) Valid() bool {
+	switch e {
+	case BackendServerInputTypeHost:
+		return true
+	case BackendServerInputTypeIp:
+		return true
+	case BackendServerInputTypeLabelSelector:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BackendServerUpdateAdminState.
+const (
+	BackendServerUpdateAdminStateDrain BackendServerUpdateAdminState = "drain"
+	BackendServerUpdateAdminStateMaint BackendServerUpdateAdminState = "maint"
+	BackendServerUpdateAdminStateReady BackendServerUpdateAdminState = "ready"
+)
+
+// Valid indicates whether the value is a known member of the BackendServerUpdateAdminState enum.
+func (e BackendServerUpdateAdminState) Valid() bool {
+	switch e {
+	case BackendServerUpdateAdminStateDrain:
+		return true
+	case BackendServerUpdateAdminStateMaint:
+		return true
+	case BackendServerUpdateAdminStateReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CertificateChallenge.
 const (
 	CertificateChallengeDns01  CertificateChallenge = "dns01"
@@ -214,33 +424,6 @@ func (e CertificateCreateType) Valid() bool {
 	}
 }
 
-// Defines values for CheckStatusStatus.
-const (
-	CheckStatusStatusDraining    CheckStatusStatus = "draining"
-	CheckStatusStatusHealthy     CheckStatusStatus = "healthy"
-	CheckStatusStatusMaintenance CheckStatusStatus = "maintenance"
-	CheckStatusStatusUnhealthy   CheckStatusStatus = "unhealthy"
-	CheckStatusStatusUnknown     CheckStatusStatus = "unknown"
-)
-
-// Valid indicates whether the value is a known member of the CheckStatusStatus enum.
-func (e CheckStatusStatus) Valid() bool {
-	switch e {
-	case CheckStatusStatusDraining:
-		return true
-	case CheckStatusStatusHealthy:
-		return true
-	case CheckStatusStatusMaintenance:
-		return true
-	case CheckStatusStatusUnhealthy:
-		return true
-	case CheckStatusStatusUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for DNSProviderStatus.
 const (
 	DNSProviderStatusError   DNSProviderStatus = "error"
@@ -327,17 +510,15 @@ func (e DomainStatus) Valid() bool {
 
 // Defines values for ErrorResponseErrorCode.
 const (
-	ApplyFailed   ErrorResponseErrorCode = "apply_failed"
-	Conflict      ErrorResponseErrorCode = "conflict"
-	Forbidden     ErrorResponseErrorCode = "forbidden"
-	Internal      ErrorResponseErrorCode = "internal"
-	InvalidInput  ErrorResponseErrorCode = "invalid_input"
-	NotFound      ErrorResponseErrorCode = "not_found"
-	Protected     ErrorResponseErrorCode = "protected"
-	QuotaExceeded ErrorResponseErrorCode = "quota_exceeded"
-	RateLimited   ErrorResponseErrorCode = "rate_limited"
-	TotpRequired  ErrorResponseErrorCode = "totp_required"
-	Unauthorized  ErrorResponseErrorCode = "unauthorized"
+	ApplyFailed  ErrorResponseErrorCode = "apply_failed"
+	Conflict     ErrorResponseErrorCode = "conflict"
+	Forbidden    ErrorResponseErrorCode = "forbidden"
+	Internal     ErrorResponseErrorCode = "internal"
+	InvalidInput ErrorResponseErrorCode = "invalid_input"
+	NotFound     ErrorResponseErrorCode = "not_found"
+	RateLimited  ErrorResponseErrorCode = "rate_limited"
+	TotpRequired ErrorResponseErrorCode = "totp_required"
+	Unauthorized ErrorResponseErrorCode = "unauthorized"
 )
 
 // Valid indicates whether the value is a known member of the ErrorResponseErrorCode enum.
@@ -354,10 +535,6 @@ func (e ErrorResponseErrorCode) Valid() bool {
 	case InvalidInput:
 		return true
 	case NotFound:
-		return true
-	case Protected:
-		return true
-	case QuotaExceeded:
 		return true
 	case RateLimited:
 		return true
@@ -385,6 +562,63 @@ func (e EventSeverity) Valid() bool {
 	case EventSeverityInfo:
 		return true
 	case EventSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FrontendMode.
+const (
+	FrontendModeHttp FrontendMode = "http"
+	FrontendModeTcp  FrontendMode = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the FrontendMode enum.
+func (e FrontendMode) Valid() bool {
+	switch e {
+	case FrontendModeHttp:
+		return true
+	case FrontendModeTcp:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FrontendStatus.
+const (
+	Active     FrontendStatus = "active"
+	ApplyError FrontendStatus = "apply_error"
+	Applying   FrontendStatus = "applying"
+)
+
+// Valid indicates whether the value is a known member of the FrontendStatus enum.
+func (e FrontendStatus) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case ApplyError:
+		return true
+	case Applying:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for FrontendInputMode.
+const (
+	FrontendInputModeHttp FrontendInputMode = "http"
+	FrontendInputModeTcp  FrontendInputMode = "tcp"
+)
+
+// Valid indicates whether the value is a known member of the FrontendInputMode enum.
+func (e FrontendInputMode) Valid() bool {
+	switch e {
+	case FrontendInputModeHttp:
+		return true
+	case FrontendInputModeTcp:
 		return true
 	default:
 		return false
@@ -430,99 +664,6 @@ func (e HealthSummaryStatus) Valid() bool {
 	case HealthSummaryStatusUnhealthy:
 		return true
 	case HealthSummaryStatusUnknown:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for LoadBalancerAlgorithm.
-const (
-	LoadBalancerAlgorithmLeastconn  LoadBalancerAlgorithm = "leastconn"
-	LoadBalancerAlgorithmRandom     LoadBalancerAlgorithm = "random"
-	LoadBalancerAlgorithmRoundrobin LoadBalancerAlgorithm = "roundrobin"
-	LoadBalancerAlgorithmSource     LoadBalancerAlgorithm = "source"
-)
-
-// Valid indicates whether the value is a known member of the LoadBalancerAlgorithm enum.
-func (e LoadBalancerAlgorithm) Valid() bool {
-	switch e {
-	case LoadBalancerAlgorithmLeastconn:
-		return true
-	case LoadBalancerAlgorithmRandom:
-		return true
-	case LoadBalancerAlgorithmRoundrobin:
-		return true
-	case LoadBalancerAlgorithmSource:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for LoadBalancerStatus.
-const (
-	Active     LoadBalancerStatus = "active"
-	ApplyError LoadBalancerStatus = "apply_error"
-	Applying   LoadBalancerStatus = "applying"
-)
-
-// Valid indicates whether the value is a known member of the LoadBalancerStatus enum.
-func (e LoadBalancerStatus) Valid() bool {
-	switch e {
-	case Active:
-		return true
-	case ApplyError:
-		return true
-	case Applying:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for LoadBalancerCreateAlgorithm.
-const (
-	LoadBalancerCreateAlgorithmLeastconn  LoadBalancerCreateAlgorithm = "leastconn"
-	LoadBalancerCreateAlgorithmRandom     LoadBalancerCreateAlgorithm = "random"
-	LoadBalancerCreateAlgorithmRoundrobin LoadBalancerCreateAlgorithm = "roundrobin"
-	LoadBalancerCreateAlgorithmSource     LoadBalancerCreateAlgorithm = "source"
-)
-
-// Valid indicates whether the value is a known member of the LoadBalancerCreateAlgorithm enum.
-func (e LoadBalancerCreateAlgorithm) Valid() bool {
-	switch e {
-	case LoadBalancerCreateAlgorithmLeastconn:
-		return true
-	case LoadBalancerCreateAlgorithmRandom:
-		return true
-	case LoadBalancerCreateAlgorithmRoundrobin:
-		return true
-	case LoadBalancerCreateAlgorithmSource:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for LoadBalancerUpdateAlgorithm.
-const (
-	LoadBalancerUpdateAlgorithmLeastconn  LoadBalancerUpdateAlgorithm = "leastconn"
-	LoadBalancerUpdateAlgorithmRandom     LoadBalancerUpdateAlgorithm = "random"
-	LoadBalancerUpdateAlgorithmRoundrobin LoadBalancerUpdateAlgorithm = "roundrobin"
-	LoadBalancerUpdateAlgorithmSource     LoadBalancerUpdateAlgorithm = "source"
-)
-
-// Valid indicates whether the value is a known member of the LoadBalancerUpdateAlgorithm enum.
-func (e LoadBalancerUpdateAlgorithm) Valid() bool {
-	switch e {
-	case LoadBalancerUpdateAlgorithmLeastconn:
-		return true
-	case LoadBalancerUpdateAlgorithmRandom:
-		return true
-	case LoadBalancerUpdateAlgorithmRoundrobin:
-		return true
-	case LoadBalancerUpdateAlgorithmSource:
 		return true
 	default:
 		return false
@@ -577,6 +718,33 @@ func (e NotificationChannelInputKind) Valid() bool {
 	}
 }
 
+// Defines values for ResolvedServerStatus.
+const (
+	ResolvedServerStatusDraining    ResolvedServerStatus = "draining"
+	ResolvedServerStatusHealthy     ResolvedServerStatus = "healthy"
+	ResolvedServerStatusMaintenance ResolvedServerStatus = "maintenance"
+	ResolvedServerStatusUnhealthy   ResolvedServerStatus = "unhealthy"
+	ResolvedServerStatusUnknown     ResolvedServerStatus = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ResolvedServerStatus enum.
+func (e ResolvedServerStatus) Valid() bool {
+	switch e {
+	case ResolvedServerStatusDraining:
+		return true
+	case ResolvedServerStatusHealthy:
+		return true
+	case ResolvedServerStatusMaintenance:
+		return true
+	case ResolvedServerStatusUnhealthy:
+		return true
+	case ResolvedServerStatusUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RevisionKind.
 const (
 	Bootstrap RevisionKind = "bootstrap"
@@ -613,174 +781,6 @@ func (e RevisionResult) Valid() bool {
 	case RevisionResultFailed:
 		return true
 	case RevisionResultOk:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ServiceProtocol.
-const (
-	ServiceProtocolHttp  ServiceProtocol = "http"
-	ServiceProtocolHttps ServiceProtocol = "https"
-	ServiceProtocolTcp   ServiceProtocol = "tcp"
-)
-
-// Valid indicates whether the value is a known member of the ServiceProtocol enum.
-func (e ServiceProtocol) Valid() bool {
-	switch e {
-	case ServiceProtocolHttp:
-		return true
-	case ServiceProtocolHttps:
-		return true
-	case ServiceProtocolTcp:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ServiceProxyProtocol.
-const (
-	ServiceProxyProtocolNone ServiceProxyProtocol = "none"
-	ServiceProxyProtocolV1   ServiceProxyProtocol = "v1"
-	ServiceProxyProtocolV2   ServiceProxyProtocol = "v2"
-)
-
-// Valid indicates whether the value is a known member of the ServiceProxyProtocol enum.
-func (e ServiceProxyProtocol) Valid() bool {
-	switch e {
-	case ServiceProxyProtocolNone:
-		return true
-	case ServiceProxyProtocolV1:
-		return true
-	case ServiceProxyProtocolV2:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ServiceInputProtocol.
-const (
-	ServiceInputProtocolHttp  ServiceInputProtocol = "http"
-	ServiceInputProtocolHttps ServiceInputProtocol = "https"
-	ServiceInputProtocolTcp   ServiceInputProtocol = "tcp"
-)
-
-// Valid indicates whether the value is a known member of the ServiceInputProtocol enum.
-func (e ServiceInputProtocol) Valid() bool {
-	switch e {
-	case ServiceInputProtocolHttp:
-		return true
-	case ServiceInputProtocolHttps:
-		return true
-	case ServiceInputProtocolTcp:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for ServiceInputProxyProtocol.
-const (
-	ServiceInputProxyProtocolNone ServiceInputProxyProtocol = "none"
-	ServiceInputProxyProtocolV1   ServiceInputProxyProtocol = "v1"
-	ServiceInputProxyProtocolV2   ServiceInputProxyProtocol = "v2"
-)
-
-// Valid indicates whether the value is a known member of the ServiceInputProxyProtocol enum.
-func (e ServiceInputProxyProtocol) Valid() bool {
-	switch e {
-	case ServiceInputProxyProtocolNone:
-		return true
-	case ServiceInputProxyProtocolV1:
-		return true
-	case ServiceInputProxyProtocolV2:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TargetAdminState.
-const (
-	TargetAdminStateDrain TargetAdminState = "drain"
-	TargetAdminStateMaint TargetAdminState = "maint"
-	TargetAdminStateReady TargetAdminState = "ready"
-)
-
-// Valid indicates whether the value is a known member of the TargetAdminState enum.
-func (e TargetAdminState) Valid() bool {
-	switch e {
-	case TargetAdminStateDrain:
-		return true
-	case TargetAdminStateMaint:
-		return true
-	case TargetAdminStateReady:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TargetType.
-const (
-	TargetTypeIp            TargetType = "ip"
-	TargetTypeLabelSelector TargetType = "label_selector"
-	TargetTypeServer        TargetType = "server"
-)
-
-// Valid indicates whether the value is a known member of the TargetType enum.
-func (e TargetType) Valid() bool {
-	switch e {
-	case TargetTypeIp:
-		return true
-	case TargetTypeLabelSelector:
-		return true
-	case TargetTypeServer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TargetInputType.
-const (
-	TargetInputTypeIp            TargetInputType = "ip"
-	TargetInputTypeLabelSelector TargetInputType = "label_selector"
-	TargetInputTypeServer        TargetInputType = "server"
-)
-
-// Valid indicates whether the value is a known member of the TargetInputType enum.
-func (e TargetInputType) Valid() bool {
-	switch e {
-	case TargetInputTypeIp:
-		return true
-	case TargetInputTypeLabelSelector:
-		return true
-	case TargetInputTypeServer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TargetUpdateAdminState.
-const (
-	TargetUpdateAdminStateDrain TargetUpdateAdminState = "drain"
-	TargetUpdateAdminStateMaint TargetUpdateAdminState = "maint"
-	TargetUpdateAdminStateReady TargetUpdateAdminState = "ready"
-)
-
-// Valid indicates whether the value is a known member of the TargetUpdateAdminState enum.
-func (e TargetUpdateAdminState) Valid() bool {
-	switch e {
-	case TargetUpdateAdminStateDrain:
-		return true
-	case TargetUpdateAdminStateMaint:
-		return true
-	case TargetUpdateAdminStateReady:
 		return true
 	default:
 		return false
@@ -832,30 +832,6 @@ func (e UserCreateRole) Valid() bool {
 	}
 }
 
-// Defines values for AddNodeIPJSONBodyKind.
-const (
-	Additional AddNodeIPJSONBodyKind = "additional"
-	Failover   AddNodeIPJSONBodyKind = "failover"
-	Primary    AddNodeIPJSONBodyKind = "primary"
-	Private    AddNodeIPJSONBodyKind = "private"
-)
-
-// Valid indicates whether the value is a known member of the AddNodeIPJSONBodyKind enum.
-func (e AddNodeIPJSONBodyKind) Valid() bool {
-	switch e {
-	case Additional:
-		return true
-	case Failover:
-		return true
-	case Primary:
-		return true
-	case Private:
-		return true
-	default:
-		return false
-	}
-}
-
 // APIToken defines model for APIToken.
 type APIToken struct {
 	CreatedAt  int64        `json:"created_at"`
@@ -882,11 +858,13 @@ type APITokenCreateRole string
 
 // AlertRule defines model for AlertRule.
 type AlertRule struct {
-	ChannelId   int64                `json:"channel_id"`
-	CooldownS   int                  `json:"cooldown_s"`
-	EventKinds  []string             `json:"event_kinds"`
-	Id          int64                `json:"id"`
-	LbFilter    string               `json:"lb_filter"`
+	ChannelId  int64    `json:"channel_id"`
+	CooldownS  int      `json:"cooldown_s"`
+	EventKinds []string `json:"event_kinds"`
+	Id         int64    `json:"id"`
+
+	// LabelFilter label selector on frontend/backend labels
+	LabelFilter string               `json:"label_filter"`
 	MinSeverity AlertRuleMinSeverity `json:"min_severity"`
 }
 
@@ -898,22 +876,16 @@ type AlertRuleInput struct {
 	ChannelId int64 `json:"channel_id"`
 	CooldownS *int  `json:"cooldown_s,omitempty"`
 
-	// EventKinds e.g. target.health.changed, lb.apply.*; empty = all
+	// EventKinds e.g. server.health.changed, apply.*; empty = all
 	EventKinds *[]string `json:"event_kinds,omitempty"`
 
-	// LbFilter label selector on LB labels
-	LbFilter    *string                    `json:"lb_filter,omitempty"`
+	// LabelFilter label selector on frontend/backend labels
+	LabelFilter *string                    `json:"label_filter,omitempty"`
 	MinSeverity *AlertRuleInputMinSeverity `json:"min_severity,omitempty"`
 }
 
 // AlertRuleInputMinSeverity defines model for AlertRuleInput.MinSeverity.
 type AlertRuleInputMinSeverity string
-
-// AttachNetwork defines model for AttachNetwork.
-type AttachNetwork struct {
-	Ip        string `json:"ip"`
-	NetworkId int64  `json:"network_id"`
-}
 
 // AuditEntry defines model for AuditEntry.
 type AuditEntry struct {
@@ -926,6 +898,141 @@ type AuditEntry struct {
 	ResourceId   *int64                  `json:"resource_id,omitempty"`
 	ResourceType string                  `json:"resource_type"`
 	Ts           int64                   `json:"ts"`
+}
+
+// Backend defines model for Backend.
+type Backend struct {
+	Algorithm       BackendAlgorithm `json:"algorithm"`
+	CookieLifetimeS int              `json:"cookie_lifetime_s"`
+	CookieName      string           `json:"cookie_name"`
+	CreatedAt       int64            `json:"created_at"`
+	Description     *string          `json:"description,omitempty"`
+	Health          HealthSummary    `json:"health"`
+	HealthCheck     HealthCheck      `json:"health_check"`
+	Id              int64            `json:"id"`
+	Labels          Labels           `json:"labels"`
+	Mode            BackendMode      `json:"mode"`
+	Name            string           `json:"name"`
+
+	// Port default server port
+	Port          int                  `json:"port"`
+	ProxyProtocol BackendProxyProtocol `json:"proxy_protocol"`
+	ServersCount  int                  `json:"servers_count"`
+	Stats         struct {
+		Queue          float32 `json:"queue"`
+		ResponseTimeMs float32 `json:"response_time_ms"`
+		Sessions       float32 `json:"sessions"`
+	} `json:"stats"`
+	StickySessions bool `json:"sticky_sessions"`
+	TimeoutServerS int  `json:"timeout_server_s"`
+
+	// UsedBy frontend ids
+	UsedBy  []int64 `json:"used_by"`
+	Version int64   `json:"version"`
+}
+
+// BackendAlgorithm defines model for Backend.Algorithm.
+type BackendAlgorithm string
+
+// BackendMode defines model for Backend.Mode.
+type BackendMode string
+
+// BackendProxyProtocol defines model for Backend.ProxyProtocol.
+type BackendProxyProtocol string
+
+// BackendHealth defines model for BackendHealth.
+type BackendHealth struct {
+	Servers []ResolvedServer `json:"servers"`
+	Summary HealthSummary    `json:"summary"`
+}
+
+// BackendInput defines model for BackendInput.
+type BackendInput struct {
+	Algorithm       *BackendInputAlgorithm `json:"algorithm,omitempty"`
+	CookieLifetimeS *int                   `json:"cookie_lifetime_s,omitempty"`
+	CookieName      *string                `json:"cookie_name,omitempty"`
+	Description     *string                `json:"description,omitempty"`
+	HealthCheck     *HealthCheck           `json:"health_check,omitempty"`
+	Labels          *Labels                `json:"labels,omitempty"`
+	Mode            BackendInputMode       `json:"mode"`
+	Name            string                 `json:"name"`
+
+	// Port default server port
+	Port           int                        `json:"port"`
+	ProxyProtocol  *BackendInputProxyProtocol `json:"proxy_protocol,omitempty"`
+	StickySessions *bool                      `json:"sticky_sessions,omitempty"`
+	TimeoutServerS *int                       `json:"timeout_server_s,omitempty"`
+}
+
+// BackendInputAlgorithm defines model for BackendInput.Algorithm.
+type BackendInputAlgorithm string
+
+// BackendInputMode defines model for BackendInput.Mode.
+type BackendInputMode string
+
+// BackendInputProxyProtocol defines model for BackendInput.ProxyProtocol.
+type BackendInputProxyProtocol string
+
+// BackendServer defines model for BackendServer.
+type BackendServer struct {
+	AdminState    BackendServerAdminState `json:"admin_state"`
+	BackendId     int64                   `json:"backend_id"`
+	Backup        bool                    `json:"backup"`
+	HostId        *int64                  `json:"host_id,omitempty"`
+	Id            int64                   `json:"id"`
+	Ip            *string                 `json:"ip,omitempty"`
+	LabelSelector *string                 `json:"label_selector,omitempty"`
+	Port          *int                    `json:"port,omitempty"`
+	Removing      *bool                   `json:"removing,omitempty"`
+	Resolved      []ResolvedServer        `json:"resolved"`
+	Type          BackendServerType       `json:"type"`
+	UsePrivateIp  bool                    `json:"use_private_ip"`
+	Weight        int                     `json:"weight"`
+}
+
+// BackendServerAdminState defines model for BackendServer.AdminState.
+type BackendServerAdminState string
+
+// BackendServerType defines model for BackendServer.Type.
+type BackendServerType string
+
+// BackendServerInput defines model for BackendServerInput.
+type BackendServerInput struct {
+	Backup        *bool   `json:"backup,omitempty"`
+	HostId        *int64  `json:"host_id,omitempty"`
+	Ip            *string `json:"ip,omitempty"`
+	LabelSelector *string `json:"label_selector,omitempty"`
+
+	// Port override the backend port
+	Port         *int                   `json:"port,omitempty"`
+	Type         BackendServerInputType `json:"type"`
+	UsePrivateIp *bool                  `json:"use_private_ip,omitempty"`
+	Weight       *int                   `json:"weight,omitempty"`
+}
+
+// BackendServerInputType defines model for BackendServerInput.Type.
+type BackendServerInputType string
+
+// BackendServerUpdate defines model for BackendServerUpdate.
+type BackendServerUpdate struct {
+	AdminState *BackendServerUpdateAdminState `json:"admin_state,omitempty"`
+	Backup     *bool                          `json:"backup,omitempty"`
+	Weight     *int                           `json:"weight,omitempty"`
+}
+
+// BackendServerUpdateAdminState defines model for BackendServerUpdate.AdminState.
+type BackendServerUpdateAdminState string
+
+// BackendServersCreate defines model for BackendServersCreate.
+type BackendServersCreate struct {
+	Servers []BackendServerInput `json:"servers"`
+}
+
+// Bind defines model for Bind.
+type Bind struct {
+	// Address IP address, or "*" for all interfaces
+	Address string `json:"address"`
+	Port    int    `json:"port"`
 }
 
 // Certificate defines model for Certificate.
@@ -995,22 +1102,6 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password"`
 }
 
-// CheckStatus defines model for CheckStatus.
-type CheckStatus struct {
-	Address string `json:"address"`
-
-	// Check e.g. L7OK/200 in 3ms
-	Check    *string           `json:"check,omitempty"`
-	Name     *string           `json:"name,omitempty"`
-	ServerId *int64            `json:"server_id,omitempty"`
-	SlotId   int64             `json:"slot_id"`
-	Status   CheckStatusStatus `json:"status"`
-	TargetId int64             `json:"target_id"`
-}
-
-// CheckStatusStatus defines model for CheckStatus.Status.
-type CheckStatusStatus string
-
 // DNSProvider defines model for DNSProvider.
 type DNSProvider struct {
 	Configured bool              `json:"configured"`
@@ -1077,14 +1168,13 @@ type Domain struct {
 	CreatedAt     int64  `json:"created_at"`
 	DnsProviderId *int64 `json:"dns_provider_id,omitempty"`
 	Fqdn          string `json:"fqdn"`
+	FrontendId    *int64 `json:"frontend_id,omitempty"`
 	Id            int64  `json:"id"`
-	LbId          *int64 `json:"lb_id,omitempty"`
 	Observed      struct {
 		A    []string `json:"a"`
 		Aaaa []string `json:"aaaa"`
 	} `json:"observed"`
 	RequiredRecords []DNSRequiredRecord `json:"required_records"`
-	ServiceId       *int64              `json:"service_id,omitempty"`
 	Status          DomainStatus        `json:"status"`
 	StatusDetail    *string             `json:"status_detail,omitempty"`
 	Zone            *string             `json:"zone,omitempty"`
@@ -1098,8 +1188,7 @@ type DomainInput struct {
 	AutoRecords   *bool   `json:"auto_records,omitempty"`
 	DnsProviderId *int64  `json:"dns_provider_id,omitempty"`
 	Fqdn          *string `json:"fqdn,omitempty"`
-	LbId          *int64  `json:"lb_id,omitempty"`
-	ServiceId     *int64  `json:"service_id,omitempty"`
+	FrontendId    *int64  `json:"frontend_id,omitempty"`
 }
 
 // DomainResponse defines model for DomainResponse.
@@ -1126,17 +1215,100 @@ type ErrorResponseErrorCode string
 
 // Event defines model for Event.
 type Event struct {
-	Data     *map[string]interface{} `json:"data,omitempty"`
-	Id       int64                   `json:"id"`
-	Kind     string                  `json:"kind"`
-	LbId     *int64                  `json:"lb_id,omitempty"`
-	Message  string                  `json:"message"`
-	Severity EventSeverity           `json:"severity"`
-	Ts       int64                   `json:"ts"`
+	BackendId  *int64                  `json:"backend_id,omitempty"`
+	Data       *map[string]interface{} `json:"data,omitempty"`
+	FrontendId *int64                  `json:"frontend_id,omitempty"`
+	Id         int64                   `json:"id"`
+	Kind       string                  `json:"kind"`
+	Message    string                  `json:"message"`
+	Severity   EventSeverity           `json:"severity"`
+	Ts         int64                   `json:"ts"`
 }
 
 // EventSeverity defines model for Event.Severity.
 type EventSeverity string
+
+// Frontend defines model for Frontend.
+type Frontend struct {
+	Binds            []Bind  `json:"binds"`
+	Certificates     []int64 `json:"certificates"`
+	CreatedAt        int64   `json:"created_at"`
+	DefaultBackendId *int64  `json:"default_backend_id"`
+	Description      *string `json:"description,omitempty"`
+	Enabled          bool    `json:"enabled"`
+
+	// ForwardedHeaders http: X-Forwarded-For/Proto/Port
+	ForwardedHeaders bool          `json:"forwarded_headers"`
+	Health           HealthSummary `json:"health"`
+
+	// HttpRedirect tls only: also listen on :80 and redirect to https
+	HttpRedirect bool    `json:"http_redirect"`
+	Id           int64   `json:"id"`
+	Labels       Labels  `json:"labels"`
+	LastError    *string `json:"last_error,omitempty"`
+	Maintenance  bool    `json:"maintenance"`
+
+	// Maxconn 0 = unlimited
+	Maxconn int          `json:"maxconn"`
+	Mode    FrontendMode `json:"mode"`
+	Name    string       `json:"name"`
+	Routes  []Route      `json:"routes"`
+	Stats   struct {
+		BytesOutPerSecond float32 `json:"bytes_out_per_second"`
+		OpenConnections   float32 `json:"open_connections"`
+		RequestsPerSecond float32 `json:"requests_per_second"`
+	} `json:"stats"`
+	Status         FrontendStatus `json:"status"`
+	TimeoutClientS int            `json:"timeout_client_s"`
+
+	// Tls terminate TLS (http mode); requires certificates
+	Tls     bool  `json:"tls"`
+	Version int64 `json:"version"`
+}
+
+// FrontendMode defines model for Frontend.Mode.
+type FrontendMode string
+
+// FrontendStatus defines model for Frontend.Status.
+type FrontendStatus string
+
+// FrontendInput defines model for FrontendInput.
+type FrontendInput struct {
+	Binds            []Bind   `json:"binds"`
+	Certificates     *[]int64 `json:"certificates,omitempty"`
+	DefaultBackendId *int64   `json:"default_backend_id,omitempty"`
+	Description      *string  `json:"description,omitempty"`
+	Enabled          *bool    `json:"enabled,omitempty"`
+
+	// ForwardedHeaders http: X-Forwarded-For/Proto/Port
+	ForwardedHeaders *bool `json:"forwarded_headers,omitempty"`
+
+	// HttpRedirect tls only: also listen on :80 and redirect to https
+	HttpRedirect *bool   `json:"http_redirect,omitempty"`
+	Labels       *Labels `json:"labels,omitempty"`
+
+	// Maxconn 0 = unlimited
+	Maxconn        *int              `json:"maxconn,omitempty"`
+	Mode           FrontendInputMode `json:"mode"`
+	Name           string            `json:"name"`
+	Routes         *[]Route          `json:"routes,omitempty"`
+	TimeoutClientS *int              `json:"timeout_client_s,omitempty"`
+
+	// Tls terminate TLS (http mode); requires certificates
+	Tls *bool `json:"tls,omitempty"`
+}
+
+// FrontendInputMode defines model for FrontendInput.Mode.
+type FrontendInputMode string
+
+// FrontendPatch defines model for FrontendPatch.
+type FrontendPatch struct {
+	Description *string `json:"description,omitempty"`
+	Enabled     *bool   `json:"enabled,omitempty"`
+	Labels      *Labels `json:"labels,omitempty"`
+	Maintenance *bool   `json:"maintenance,omitempty"`
+	Name        *string `json:"name,omitempty"`
+}
 
 // HealthCheck defines model for HealthCheck.
 type HealthCheck struct {
@@ -1168,109 +1340,32 @@ type HealthSummary struct {
 // HealthSummaryStatus defines model for HealthSummary.Status.
 type HealthSummaryStatus string
 
-// HealthTree defines model for HealthTree.
-type HealthTree struct {
-	Services []struct {
-		Checks    []CheckStatus `json:"checks"`
-		Healthy   int           `json:"healthy"`
-		ServiceId int64         `json:"service_id"`
-		Total     int           `json:"total"`
-	} `json:"services"`
-	Summary HealthSummary `json:"summary"`
+// Host defines model for Host.
+type Host struct {
+	Id          int64   `json:"id"`
+	Ipv4        *string `json:"ipv4,omitempty"`
+	Ipv6        *string `json:"ipv6,omitempty"`
+	Labels      Labels  `json:"labels"`
+	Name        string  `json:"name"`
+	Notes       *string `json:"notes,omitempty"`
+	PrivateIpv4 *string `json:"private_ipv4,omitempty"`
+
+	// UsedBy backend ids
+	UsedBy *[]int64 `json:"used_by,omitempty"`
+}
+
+// HostInput defines model for HostInput.
+type HostInput struct {
+	Ipv4        *string `json:"ipv4,omitempty"`
+	Ipv6        *string `json:"ipv6,omitempty"`
+	Labels      *Labels `json:"labels,omitempty"`
+	Name        *string `json:"name,omitempty"`
+	Notes       *string `json:"notes,omitempty"`
+	PrivateIpv4 *string `json:"private_ipv4,omitempty"`
 }
 
 // Labels defines model for Labels.
 type Labels map[string]string
-
-// LoadBalancer defines model for LoadBalancer.
-type LoadBalancer struct {
-	Algorithm       LoadBalancerAlgorithm `json:"algorithm"`
-	CreatedAt       int64                 `json:"created_at"`
-	DeleteProtected bool                  `json:"delete_protected"`
-	Health          HealthSummary         `json:"health"`
-	Id              int64                 `json:"id"`
-	Labels          Labels                `json:"labels"`
-	LastError       *string               `json:"last_error,omitempty"`
-	Location        Location              `json:"location"`
-	Maintenance     bool                  `json:"maintenance"`
-	Name            string                `json:"name"`
-	NodeId          int64                 `json:"node_id"`
-	Plan            Plan                  `json:"plan"`
-	PrivateNet      []struct {
-		Ip        string `json:"ip"`
-		NetworkId int64  `json:"network_id"`
-	} `json:"private_net"`
-	PublicNet struct {
-		Enabled bool    `json:"enabled"`
-		Ipv4    *string `json:"ipv4,omitempty"`
-		Ipv6    *string `json:"ipv6,omitempty"`
-	} `json:"public_net"`
-	Status LoadBalancerStatus `json:"status"`
-	Usage  struct {
-		Certificates         int   `json:"certificates"`
-		OpenConnections      int   `json:"open_connections"`
-		Services             int   `json:"services"`
-		Targets              int   `json:"targets"`
-		TrafficOutMonthBytes int64 `json:"traffic_out_month_bytes"`
-	} `json:"usage"`
-	Version int64 `json:"version"`
-}
-
-// LoadBalancerAlgorithm defines model for LoadBalancer.Algorithm.
-type LoadBalancerAlgorithm string
-
-// LoadBalancerStatus defines model for LoadBalancer.Status.
-type LoadBalancerStatus string
-
-// LoadBalancerCreate defines model for LoadBalancerCreate.
-type LoadBalancerCreate struct {
-	Algorithm *LoadBalancerCreateAlgorithm `json:"algorithm,omitempty"`
-
-	// Ipv4Id IP from the node pool; omitted = auto-assign a free one, none free = shared node address
-	Ipv4Id        *int64          `json:"ipv4_id,omitempty"`
-	Ipv6Id        *int64          `json:"ipv6_id,omitempty"`
-	Labels        *Labels         `json:"labels,omitempty"`
-	Name          string          `json:"name"`
-	NodeId        *int64          `json:"node_id,omitempty"`
-	PlanId        int64           `json:"plan_id"`
-	PublicEnabled *bool           `json:"public_enabled,omitempty"`
-	Services      *[]ServiceInput `json:"services,omitempty"`
-	Targets       *[]TargetInput  `json:"targets,omitempty"`
-}
-
-// LoadBalancerCreateAlgorithm defines model for LoadBalancerCreate.Algorithm.
-type LoadBalancerCreateAlgorithm string
-
-// LoadBalancerList defines model for LoadBalancerList.
-type LoadBalancerList struct {
-	LoadBalancers []LoadBalancer `json:"load_balancers"`
-}
-
-// LoadBalancerResponse defines model for LoadBalancerResponse.
-type LoadBalancerResponse struct {
-	LoadBalancer LoadBalancer `json:"load_balancer"`
-}
-
-// LoadBalancerUpdate defines model for LoadBalancerUpdate.
-type LoadBalancerUpdate struct {
-	Algorithm       *LoadBalancerUpdateAlgorithm `json:"algorithm,omitempty"`
-	DeleteProtected *bool                        `json:"delete_protected,omitempty"`
-	Labels          *Labels                      `json:"labels,omitempty"`
-	Maintenance     *bool                        `json:"maintenance,omitempty"`
-	Name            *string                      `json:"name,omitempty"`
-}
-
-// LoadBalancerUpdateAlgorithm defines model for LoadBalancerUpdate.Algorithm.
-type LoadBalancerUpdateAlgorithm string
-
-// Location defines model for Location.
-type Location struct {
-	City        *string  `json:"city,omitempty"`
-	Country     *string  `json:"country,omitempty"`
-	Lat         *float32 `json:"lat,omitempty"`
-	Lon         *float32 `json:"lon,omitempty"`
-	NetworkZone *string  `json:"network_zone,omitempty"`
-}
 
 // LoginRequest defines model for LoginRequest.
 type LoginRequest struct {
@@ -1300,13 +1395,6 @@ type MetricsPoint struct {
 	Ts                   int64    `json:"ts"`
 }
 
-// Network defines model for Network.
-type Network struct {
-	Cidr string `json:"cidr"`
-	Id   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
 // Node defines model for Node.
 type Node struct {
 	AppliedVersion        int64     `json:"applied_version"`
@@ -1316,7 +1404,6 @@ type Node struct {
 	HaproxyVersion        *string   `json:"haproxy_version,omitempty"`
 	Id                    int64     `json:"id"`
 	Ips                   []NodeIP  `json:"ips"`
-	Location              Location  `json:"location"`
 	LoxyVersion           *string   `json:"loxy_version,omitempty"`
 	Name                  string    `json:"name"`
 	Reloads               *int      `json:"reloads,omitempty"`
@@ -1326,17 +1413,15 @@ type Node struct {
 
 // NodeIP defines model for NodeIP.
 type NodeIP struct {
-	Address      string `json:"address"`
-	AssignedLbId *int64 `json:"assigned_lb_id,omitempty"`
-	Family       int    `json:"family"`
-	Id           int64  `json:"id"`
-	Kind         string `json:"kind"`
+	Address string  `json:"address"`
+	Family  int     `json:"family"`
+	Id      int64   `json:"id"`
+	Label   *string `json:"label,omitempty"`
 }
 
 // NodeUpdate defines model for NodeUpdate.
 type NodeUpdate struct {
-	Location *Location `json:"location,omitempty"`
-	Name     *string   `json:"name,omitempty"`
+	Name *string `json:"name,omitempty"`
 }
 
 // NotificationChannel defines model for NotificationChannel.
@@ -1361,18 +1446,50 @@ type NotificationChannelInput struct {
 // NotificationChannelInputKind defines model for NotificationChannelInput.Kind.
 type NotificationChannelInputKind string
 
-// Plan defines model for Plan.
-type Plan struct {
-	Currency          *string `json:"currency,omitempty"`
-	Id                int64   `json:"id"`
-	MaxCertificates   int     `json:"max_certificates"`
-	MaxConnections    int     `json:"max_connections"`
-	MaxServices       int     `json:"max_services"`
-	MaxTargets        int     `json:"max_targets"`
-	Name              string  `json:"name"`
-	PriceMonthlyCents *int    `json:"price_monthly_cents,omitempty"`
-	TrafficQuotaBytes int64   `json:"traffic_quota_bytes"`
+// Overview defines model for Overview.
+type Overview struct {
+	Backends struct {
+		Degraded  int `json:"degraded"`
+		Healthy   int `json:"healthy"`
+		Total     int `json:"total"`
+		Unhealthy int `json:"unhealthy"`
+	} `json:"backends"`
+	Certificates struct {
+		ExpiringSoon int `json:"expiring_soon"`
+		Failed       int `json:"failed"`
+		Total        int `json:"total"`
+	} `json:"certificates"`
+	Frontends struct {
+		ApplyErrors int `json:"apply_errors"`
+		Total       int `json:"total"`
+	} `json:"frontends"`
+	Node    Node `json:"node"`
+	Servers struct {
+		Healthy int `json:"healthy"`
+		Total   int `json:"total"`
+	} `json:"servers"`
+	Traffic *struct {
+		BytesInPerSecond  float32 `json:"bytes_in_per_second"`
+		BytesOutPerSecond float32 `json:"bytes_out_per_second"`
+		OpenConnections   float32 `json:"open_connections"`
+		RequestsPerSecond float32 `json:"requests_per_second"`
+	} `json:"traffic,omitempty"`
 }
+
+// ResolvedServer defines model for ResolvedServer.
+type ResolvedServer struct {
+	Address  string               `json:"address"`
+	Check    *string              `json:"check,omitempty"`
+	HostId   *int64               `json:"host_id,omitempty"`
+	Name     *string              `json:"name,omitempty"`
+	Port     int                  `json:"port"`
+	Sessions *float32             `json:"sessions,omitempty"`
+	SlotId   int64                `json:"slot_id"`
+	Status   ResolvedServerStatus `json:"status"`
+}
+
+// ResolvedServerStatus defines model for ResolvedServer.Status.
+type ResolvedServerStatus string
 
 // Revision defines model for Revision.
 type Revision struct {
@@ -1394,76 +1511,16 @@ type RevisionKind string
 // RevisionResult defines model for Revision.Result.
 type RevisionResult string
 
-// Server defines model for Server.
-type Server struct {
-	Id          int64   `json:"id"`
-	Labels      Labels  `json:"labels"`
-	Name        string  `json:"name"`
-	Notes       *string `json:"notes,omitempty"`
-	PrivateIpv4 *string `json:"private_ipv4,omitempty"`
-	PublicIpv4  *string `json:"public_ipv4,omitempty"`
-	PublicIpv6  *string `json:"public_ipv6,omitempty"`
-	Source      string  `json:"source"`
-}
+// Route defines model for Route.
+type Route struct {
+	BackendId int64 `json:"backend_id"`
 
-// ServerInput defines model for ServerInput.
-type ServerInput struct {
-	Labels      *Labels `json:"labels,omitempty"`
-	Name        *string `json:"name,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
-	PrivateIpv4 *string `json:"private_ipv4,omitempty"`
-	PublicIpv4  *string `json:"public_ipv4,omitempty"`
-	PublicIpv6  *string `json:"public_ipv6,omitempty"`
-}
+	// Hosts Host header match; "*.example.com" matches subdomains
+	Hosts *[]string `json:"hosts,omitempty"`
+	Id    *int64    `json:"id,omitempty"`
 
-// Service defines model for Service.
-type Service struct {
-	DestinationPort int                  `json:"destination_port"`
-	HealthCheck     HealthCheck          `json:"health_check"`
-	Http            ServiceHTTP          `json:"http"`
-	Id              int64                `json:"id"`
-	LbId            int64                `json:"lb_id"`
-	ListenPort      int                  `json:"listen_port"`
-	Protocol        ServiceProtocol      `json:"protocol"`
-	ProxyProtocol   ServiceProxyProtocol `json:"proxy_protocol"`
-	Version         int64                `json:"version"`
-}
-
-// ServiceProtocol defines model for Service.Protocol.
-type ServiceProtocol string
-
-// ServiceProxyProtocol defines model for Service.ProxyProtocol.
-type ServiceProxyProtocol string
-
-// ServiceHTTP defines model for ServiceHTTP.
-type ServiceHTTP struct {
-	Certificates    *[]int64 `json:"certificates,omitempty"`
-	CookieLifetimeS *int     `json:"cookie_lifetime_s,omitempty"`
-	CookieName      *string  `json:"cookie_name,omitempty"`
-	RedirectHttp    *bool    `json:"redirect_http,omitempty"`
-	StickySessions  *bool    `json:"sticky_sessions,omitempty"`
-	TimeoutS        *int     `json:"timeout_s,omitempty"`
-}
-
-// ServiceInput defines model for ServiceInput.
-type ServiceInput struct {
-	DestinationPort int                        `json:"destination_port"`
-	HealthCheck     *HealthCheck               `json:"health_check,omitempty"`
-	Http            *ServiceHTTP               `json:"http,omitempty"`
-	ListenPort      int                        `json:"listen_port"`
-	Protocol        ServiceInputProtocol       `json:"protocol"`
-	ProxyProtocol   *ServiceInputProxyProtocol `json:"proxy_protocol,omitempty"`
-}
-
-// ServiceInputProtocol defines model for ServiceInput.Protocol.
-type ServiceInputProtocol string
-
-// ServiceInputProxyProtocol defines model for ServiceInput.ProxyProtocol.
-type ServiceInputProxyProtocol string
-
-// ServiceResponse defines model for ServiceResponse.
-type ServiceResponse struct {
-	Service Service `json:"service"`
+	// PathPrefix e.g. /api; empty = any path
+	PathPrefix *string `json:"path_prefix,omitempty"`
 }
 
 // SessionResponse defines model for SessionResponse.
@@ -1476,65 +1533,6 @@ type SessionResponse struct {
 type Status struct {
 	Status  string  `json:"status"`
 	Version *string `json:"version,omitempty"`
-}
-
-// Target defines model for Target.
-type Target struct {
-	AdminState    TargetAdminState `json:"admin_state"`
-	Backup        bool             `json:"backup"`
-	Id            int64            `json:"id"`
-	Ip            *string          `json:"ip,omitempty"`
-	LabelSelector *string          `json:"label_selector,omitempty"`
-	Removing      *bool            `json:"removing,omitempty"`
-	Resolved      []struct {
-		Address   string  `json:"address"`
-		Healthy   int     `json:"healthy"`
-		Name      *string `json:"name,omitempty"`
-		PrivateIp *string `json:"private_ip,omitempty"`
-		PublicIp  *string `json:"public_ip,omitempty"`
-		ServerId  *int64  `json:"server_id,omitempty"`
-		SlotId    int64   `json:"slot_id"`
-		Total     int     `json:"total"`
-	} `json:"resolved"`
-	ServerId     *int64     `json:"server_id,omitempty"`
-	Type         TargetType `json:"type"`
-	UsePrivateIp bool       `json:"use_private_ip"`
-	Weight       int        `json:"weight"`
-}
-
-// TargetAdminState defines model for Target.AdminState.
-type TargetAdminState string
-
-// TargetType defines model for Target.Type.
-type TargetType string
-
-// TargetInput defines model for TargetInput.
-type TargetInput struct {
-	Backup        *bool           `json:"backup,omitempty"`
-	Ip            *string         `json:"ip,omitempty"`
-	LabelSelector *string         `json:"label_selector,omitempty"`
-	ServerId      *int64          `json:"server_id,omitempty"`
-	Type          TargetInputType `json:"type"`
-	UsePrivateIp  *bool           `json:"use_private_ip,omitempty"`
-	Weight        *int            `json:"weight,omitempty"`
-}
-
-// TargetInputType defines model for TargetInput.Type.
-type TargetInputType string
-
-// TargetUpdate defines model for TargetUpdate.
-type TargetUpdate struct {
-	AdminState *TargetUpdateAdminState `json:"admin_state,omitempty"`
-	Backup     *bool                   `json:"backup,omitempty"`
-	Weight     *int                    `json:"weight,omitempty"`
-}
-
-// TargetUpdateAdminState defines model for TargetUpdate.AdminState.
-type TargetUpdateAdminState string
-
-// TargetsCreate defines model for TargetsCreate.
-type TargetsCreate struct {
-	Targets []TargetInput `json:"targets"`
 }
 
 // User defines model for User.
@@ -1581,6 +1579,20 @@ type TotpEnableJSONBody struct {
 	Code string `json:"code"`
 }
 
+// ListBackendsParams defines parameters for ListBackends.
+type ListBackendsParams struct {
+	LabelSelector *string `form:"label_selector,omitempty" json:"label_selector,omitempty"`
+}
+
+// GetBackendMetricsParams defines parameters for GetBackendMetrics.
+type GetBackendMetricsParams struct {
+	// Type comma separated series names
+	Type  *string `form:"type,omitempty" json:"type,omitempty"`
+	Start *int64  `form:"start,omitempty" json:"start,omitempty"`
+	End   *int64  `form:"end,omitempty" json:"end,omitempty"`
+	Step  *int    `form:"step,omitempty" json:"step,omitempty"`
+}
+
 // UpdateCertificateJSONBody defines parameters for UpdateCertificate.
 type UpdateCertificateJSONBody struct {
 	Labels *Labels `json:"labels,omitempty"`
@@ -1589,9 +1601,24 @@ type UpdateCertificateJSONBody struct {
 
 // ListEventsParams defines parameters for ListEvents.
 type ListEventsParams struct {
-	LbId  *int64  `form:"lb_id,omitempty" json:"lb_id,omitempty"`
-	Kind  *string `form:"kind,omitempty" json:"kind,omitempty"`
-	Limit *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	FrontendId *int64  `form:"frontend_id,omitempty" json:"frontend_id,omitempty"`
+	BackendId  *int64  `form:"backend_id,omitempty" json:"backend_id,omitempty"`
+	Kind       *string `form:"kind,omitempty" json:"kind,omitempty"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
+// ListFrontendsParams defines parameters for ListFrontends.
+type ListFrontendsParams struct {
+	LabelSelector *string `form:"label_selector,omitempty" json:"label_selector,omitempty"`
+}
+
+// GetFrontendMetricsParams defines parameters for GetFrontendMetrics.
+type GetFrontendMetricsParams struct {
+	// Type comma separated series names
+	Type  *string `form:"type,omitempty" json:"type,omitempty"`
+	Start *int64  `form:"start,omitempty" json:"start,omitempty"`
+	End   *int64  `form:"end,omitempty" json:"end,omitempty"`
+	Step  *int    `form:"step,omitempty" json:"step,omitempty"`
 }
 
 // PreviewLabelSelectorParams defines parameters for PreviewLabelSelector.
@@ -1599,48 +1626,11 @@ type PreviewLabelSelectorParams struct {
 	Selector string `form:"selector" json:"selector"`
 }
 
-// ListLoadBalancersParams defines parameters for ListLoadBalancers.
-type ListLoadBalancersParams struct {
-	LabelSelector *string `form:"label_selector,omitempty" json:"label_selector,omitempty"`
-	Name          *string `form:"name,omitempty" json:"name,omitempty"`
-}
-
-// ChangePlanJSONBody defines parameters for ChangePlan.
-type ChangePlanJSONBody struct {
-	PlanId int64 `json:"plan_id"`
-}
-
-// DetachFromNetworkJSONBody defines parameters for DetachFromNetwork.
-type DetachFromNetworkJSONBody struct {
-	NetworkId int64 `json:"network_id"`
-}
-
-// GetLoadBalancerMetricsParams defines parameters for GetLoadBalancerMetrics.
-type GetLoadBalancerMetricsParams struct {
-	// Type comma separated: open_connections,connections_per_second,requests_per_second,bandwidth
-	Type *string `form:"type,omitempty" json:"type,omitempty"`
-
-	// Start unix seconds
-	Start     *int64 `form:"start,omitempty" json:"start,omitempty"`
-	End       *int64 `form:"end,omitempty" json:"end,omitempty"`
-	Step      *int   `form:"step,omitempty" json:"step,omitempty"`
-	ServiceId *int64 `form:"service_id,omitempty" json:"service_id,omitempty"`
-}
-
-// CreateNetworkJSONBody defines parameters for CreateNetwork.
-type CreateNetworkJSONBody struct {
-	Cidr string `json:"cidr"`
-	Name string `json:"name"`
-}
-
 // AddNodeIPJSONBody defines parameters for AddNodeIP.
 type AddNodeIPJSONBody struct {
-	Address string                 `json:"address"`
-	Kind    *AddNodeIPJSONBodyKind `json:"kind,omitempty"`
+	Address string  `json:"address"`
+	Label   *string `json:"label,omitempty"`
 }
-
-// AddNodeIPJSONBodyKind defines parameters for AddNodeIP.
-type AddNodeIPJSONBodyKind string
 
 // DiffRevisionParams defines parameters for DiffRevision.
 type DiffRevisionParams struct {
@@ -1665,6 +1655,18 @@ type TotpDisableJSONRequestBody TotpDisableJSONBody
 // TotpEnableJSONRequestBody defines body for TotpEnable for application/json ContentType.
 type TotpEnableJSONRequestBody TotpEnableJSONBody
 
+// CreateBackendJSONRequestBody defines body for CreateBackend for application/json ContentType.
+type CreateBackendJSONRequestBody = BackendInput
+
+// UpdateBackendJSONRequestBody defines body for UpdateBackend for application/json ContentType.
+type UpdateBackendJSONRequestBody = BackendInput
+
+// CreateBackendServersJSONRequestBody defines body for CreateBackendServers for application/json ContentType.
+type CreateBackendServersJSONRequestBody = BackendServersCreate
+
+// UpdateBackendServerJSONRequestBody defines body for UpdateBackendServer for application/json ContentType.
+type UpdateBackendServerJSONRequestBody = BackendServerUpdate
+
 // CreateCertificateJSONRequestBody defines body for CreateCertificate for application/json ContentType.
 type CreateCertificateJSONRequestBody = CertificateCreate
 
@@ -1686,35 +1688,20 @@ type CreateDomainJSONRequestBody = DomainInput
 // UpdateDomainJSONRequestBody defines body for UpdateDomain for application/json ContentType.
 type UpdateDomainJSONRequestBody = DomainInput
 
-// CreateLoadBalancerJSONRequestBody defines body for CreateLoadBalancer for application/json ContentType.
-type CreateLoadBalancerJSONRequestBody = LoadBalancerCreate
+// CreateFrontendJSONRequestBody defines body for CreateFrontend for application/json ContentType.
+type CreateFrontendJSONRequestBody = FrontendInput
 
-// UpdateLoadBalancerJSONRequestBody defines body for UpdateLoadBalancer for application/json ContentType.
-type UpdateLoadBalancerJSONRequestBody = LoadBalancerUpdate
+// PatchFrontendJSONRequestBody defines body for PatchFrontend for application/json ContentType.
+type PatchFrontendJSONRequestBody = FrontendPatch
 
-// AttachToNetworkJSONRequestBody defines body for AttachToNetwork for application/json ContentType.
-type AttachToNetworkJSONRequestBody = AttachNetwork
+// UpdateFrontendJSONRequestBody defines body for UpdateFrontend for application/json ContentType.
+type UpdateFrontendJSONRequestBody = FrontendInput
 
-// ChangePlanJSONRequestBody defines body for ChangePlan for application/json ContentType.
-type ChangePlanJSONRequestBody ChangePlanJSONBody
+// CreateHostJSONRequestBody defines body for CreateHost for application/json ContentType.
+type CreateHostJSONRequestBody = HostInput
 
-// DetachFromNetworkJSONRequestBody defines body for DetachFromNetwork for application/json ContentType.
-type DetachFromNetworkJSONRequestBody DetachFromNetworkJSONBody
-
-// CreateServiceJSONRequestBody defines body for CreateService for application/json ContentType.
-type CreateServiceJSONRequestBody = ServiceInput
-
-// UpdateServiceJSONRequestBody defines body for UpdateService for application/json ContentType.
-type UpdateServiceJSONRequestBody = ServiceInput
-
-// CreateTargetsJSONRequestBody defines body for CreateTargets for application/json ContentType.
-type CreateTargetsJSONRequestBody = TargetsCreate
-
-// UpdateTargetJSONRequestBody defines body for UpdateTarget for application/json ContentType.
-type UpdateTargetJSONRequestBody = TargetUpdate
-
-// CreateNetworkJSONRequestBody defines body for CreateNetwork for application/json ContentType.
-type CreateNetworkJSONRequestBody CreateNetworkJSONBody
+// UpdateHostJSONRequestBody defines body for UpdateHost for application/json ContentType.
+type UpdateHostJSONRequestBody = HostInput
 
 // UpdateNodeJSONRequestBody defines body for UpdateNode for application/json ContentType.
 type UpdateNodeJSONRequestBody = NodeUpdate
@@ -1724,12 +1711,6 @@ type AddNodeIPJSONRequestBody AddNodeIPJSONBody
 
 // CreateChannelJSONRequestBody defines body for CreateChannel for application/json ContentType.
 type CreateChannelJSONRequestBody = NotificationChannelInput
-
-// CreateServerJSONRequestBody defines body for CreateServer for application/json ContentType.
-type CreateServerJSONRequestBody = ServerInput
-
-// UpdateServerJSONRequestBody defines body for UpdateServer for application/json ContentType.
-type UpdateServerJSONRequestBody = ServerInput
 
 // CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
 type CreateUserJSONRequestBody = UserCreate
@@ -1755,6 +1736,9 @@ type ServerInterface interface {
 	// (DELETE /api_tokens/{id})
 	DeleteAPIToken(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (POST /apply/retry)
+	RetryApply(w http.ResponseWriter, r *http.Request)
+
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
 
@@ -1778,6 +1762,39 @@ type ServerInterface interface {
 
 	// (POST /auth/totp/setup)
 	TotpSetup(w http.ResponseWriter, r *http.Request)
+
+	// (GET /backends)
+	ListBackends(w http.ResponseWriter, r *http.Request, params ListBackendsParams)
+
+	// (POST /backends)
+	CreateBackend(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /backends/{id})
+	DeleteBackend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /backends/{id})
+	GetBackend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /backends/{id})
+	UpdateBackend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /backends/{id}/metrics)
+	GetBackendMetrics(w http.ResponseWriter, r *http.Request, id Id, params GetBackendMetricsParams)
+
+	// (GET /backends/{id}/servers)
+	ListBackendServers(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /backends/{id}/servers)
+	CreateBackendServers(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (DELETE /backends/{id}/servers/{sid})
+	DeleteBackendServer(w http.ResponseWriter, r *http.Request, id Id, sid int64)
+
+	// (PATCH /backends/{id}/servers/{sid})
+	UpdateBackendServer(w http.ResponseWriter, r *http.Request, id Id, sid int64)
+
+	// (GET /backends/{id}/status)
+	GetBackendStatus(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /certificates)
 	ListCertificates(w http.ResponseWriter, r *http.Request)
@@ -1845,95 +1862,53 @@ type ServerInterface interface {
 	// (GET /events/history)
 	ListEvents(w http.ResponseWriter, r *http.Request, params ListEventsParams)
 
+	// (GET /frontends)
+	ListFrontends(w http.ResponseWriter, r *http.Request, params ListFrontendsParams)
+
+	// (POST /frontends)
+	CreateFrontend(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /frontends/{id})
+	DeleteFrontend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /frontends/{id})
+	GetFrontend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PATCH /frontends/{id})
+	PatchFrontend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PUT /frontends/{id})
+	UpdateFrontend(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /frontends/{id}/config)
+	GetFrontendConfig(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /frontends/{id}/logs/stream)
+	StreamFrontendLogs(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /frontends/{id}/metrics)
+	GetFrontendMetrics(w http.ResponseWriter, r *http.Request, id Id, params GetFrontendMetricsParams)
+
+	// (GET /frontends/{id}/metrics/stream)
+	StreamFrontendMetrics(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /healthz)
 	Healthz(w http.ResponseWriter, r *http.Request)
 
+	// (GET /hosts)
+	ListHosts(w http.ResponseWriter, r *http.Request)
+
+	// (POST /hosts)
+	CreateHost(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /hosts/{id})
+	DeleteHost(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (PATCH /hosts/{id})
+	UpdateHost(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /label_selector/preview)
 	PreviewLabelSelector(w http.ResponseWriter, r *http.Request, params PreviewLabelSelectorParams)
-
-	// (GET /load_balancers)
-	ListLoadBalancers(w http.ResponseWriter, r *http.Request, params ListLoadBalancersParams)
-
-	// (POST /load_balancers)
-	CreateLoadBalancer(w http.ResponseWriter, r *http.Request)
-
-	// (DELETE /load_balancers/{id})
-	DeleteLoadBalancer(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id})
-	GetLoadBalancer(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (PATCH /load_balancers/{id})
-	UpdateLoadBalancer(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/attach_to_network)
-	AttachToNetwork(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/change_plan)
-	ChangePlan(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/detach_from_network)
-	DetachFromNetwork(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/disable_public_interface)
-	DisablePublicInterface(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/enable_public_interface)
-	EnablePublicInterface(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/actions/retry_apply)
-	RetryApply(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id}/config)
-	GetLoadBalancerConfig(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id}/logs/stream)
-	StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id}/metrics)
-	GetLoadBalancerMetrics(w http.ResponseWriter, r *http.Request, id Id, params GetLoadBalancerMetricsParams)
-
-	// (GET /load_balancers/{id}/metrics/stream)
-	StreamLoadBalancerMetrics(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id}/services)
-	ListServices(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/services)
-	CreateService(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (DELETE /load_balancers/{id}/services/{sid})
-	DeleteService(w http.ResponseWriter, r *http.Request, id Id, sid int64)
-
-	// (GET /load_balancers/{id}/services/{sid})
-	GetService(w http.ResponseWriter, r *http.Request, id Id, sid int64)
-
-	// (PUT /load_balancers/{id}/services/{sid})
-	UpdateService(w http.ResponseWriter, r *http.Request, id Id, sid int64)
-
-	// (GET /load_balancers/{id}/status)
-	GetLoadBalancerStatus(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (GET /load_balancers/{id}/targets)
-	ListTargets(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (POST /load_balancers/{id}/targets)
-	CreateTargets(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (DELETE /load_balancers/{id}/targets/{tid})
-	DeleteTarget(w http.ResponseWriter, r *http.Request, id Id, tid int64)
-
-	// (PATCH /load_balancers/{id}/targets/{tid})
-	UpdateTarget(w http.ResponseWriter, r *http.Request, id Id, tid int64)
-
-	// (GET /networks)
-	ListNetworks(w http.ResponseWriter, r *http.Request)
-
-	// (POST /networks)
-	CreateNetwork(w http.ResponseWriter, r *http.Request)
-
-	// (DELETE /networks/{id})
-	DeleteNetwork(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /nodes)
 	ListNodes(w http.ResponseWriter, r *http.Request)
@@ -1968,23 +1943,11 @@ type ServerInterface interface {
 	// (POST /notification_channels/{id}/actions/test)
 	TestChannel(w http.ResponseWriter, r *http.Request, id Id)
 
-	// (GET /plans)
-	ListPlans(w http.ResponseWriter, r *http.Request)
+	// (GET /overview)
+	GetOverview(w http.ResponseWriter, r *http.Request)
 
 	// (GET /readyz)
 	Readyz(w http.ResponseWriter, r *http.Request)
-
-	// (GET /servers)
-	ListServers(w http.ResponseWriter, r *http.Request)
-
-	// (POST /servers)
-	CreateServer(w http.ResponseWriter, r *http.Request)
-
-	// (DELETE /servers/{id})
-	DeleteServer(w http.ResponseWriter, r *http.Request, id Id)
-
-	// (PATCH /servers/{id})
-	UpdateServer(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /users)
 	ListUsers(w http.ResponseWriter, r *http.Request)
@@ -2104,6 +2067,20 @@ func (siw *ServerInterfaceWrapper) DeleteAPIToken(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteAPIToken(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RetryApply operation middleware
+func (siw *ServerInterfaceWrapper) RetryApply(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RetryApply(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2235,6 +2212,360 @@ func (siw *ServerInterfaceWrapper) TotpSetup(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.TotpSetup(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListBackends operation middleware
+func (siw *ServerInterfaceWrapper) ListBackends(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListBackendsParams
+
+	// ------------- Optional query parameter "label_selector" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "label_selector", r.URL.Query(), &params.LabelSelector, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "label_selector"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "label_selector", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBackends(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBackend operation middleware
+func (siw *ServerInterfaceWrapper) CreateBackend(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBackend(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBackend operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBackend(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBackend(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBackend operation middleware
+func (siw *ServerInterfaceWrapper) GetBackend(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBackend(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBackend operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBackend(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBackend(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBackendMetrics operation middleware
+func (siw *ServerInterfaceWrapper) GetBackendMetrics(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetBackendMetricsParams
+
+	// ------------- Optional query parameter "type" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "type", r.URL.Query(), &params.Type, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "type"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "type", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "start" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "start", r.URL.Query(), &params.Start, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "start"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "start", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "end" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "end", r.URL.Query(), &params.End, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "end"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "end", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "step" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "step", r.URL.Query(), &params.Step, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "step"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "step", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBackendMetrics(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListBackendServers operation middleware
+func (siw *ServerInterfaceWrapper) ListBackendServers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBackendServers(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBackendServers operation middleware
+func (siw *ServerInterfaceWrapper) CreateBackendServers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBackendServers(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteBackendServer operation middleware
+func (siw *ServerInterfaceWrapper) DeleteBackendServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "sid" -------------
+	var sid int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sid", r.PathValue("sid"), &sid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sid", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteBackendServer(w, r, id, sid)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateBackendServer operation middleware
+func (siw *ServerInterfaceWrapper) UpdateBackendServer(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// ------------- Path parameter "sid" -------------
+	var sid int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "sid", r.PathValue("sid"), &sid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sid", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateBackendServer(w, r, id, sid)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBackendStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetBackendStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBackendStatus(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2742,15 +3073,28 @@ func (siw *ServerInterfaceWrapper) ListEvents(w http.ResponseWriter, r *http.Req
 	// Parameter object where we will unmarshal all parameters from the context
 	var params ListEventsParams
 
-	// ------------- Optional query parameter "lb_id" -------------
+	// ------------- Optional query parameter "frontend_id" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "lb_id", r.URL.Query(), &params.LbId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "frontend_id", r.URL.Query(), &params.FrontendId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "lb_id"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "frontend_id"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "lb_id", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "frontend_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "backend_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "backend_id", r.URL.Query(), &params.BackendId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "backend_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "backend_id", Err: err})
 		}
 		return
 	}
@@ -2792,61 +3136,14 @@ func (siw *ServerInterfaceWrapper) ListEvents(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// Healthz operation middleware
-func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.Healthz(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PreviewLabelSelector operation middleware
-func (siw *ServerInterfaceWrapper) PreviewLabelSelector(w http.ResponseWriter, r *http.Request) {
+// ListFrontends operation middleware
+func (siw *ServerInterfaceWrapper) ListFrontends(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params PreviewLabelSelectorParams
-
-	// ------------- Required query parameter "selector" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "selector", r.URL.Query(), &params.Selector, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "selector"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "selector", Err: err})
-		}
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PreviewLabelSelector(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListLoadBalancers operation middleware
-func (siw *ServerInterfaceWrapper) ListLoadBalancers(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params ListLoadBalancersParams
+	var params ListFrontendsParams
 
 	// ------------- Optional query parameter "label_selector" -------------
 
@@ -2861,21 +3158,8 @@ func (siw *ServerInterfaceWrapper) ListLoadBalancers(w http.ResponseWriter, r *h
 		return
 	}
 
-	// ------------- Optional query parameter "name" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "name", r.URL.Query(), &params.Name, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "name"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "name", Err: err})
-		}
-		return
-	}
-
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListLoadBalancers(w, r, params)
+		siw.Handler.ListFrontends(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2885,11 +3169,11 @@ func (siw *ServerInterfaceWrapper) ListLoadBalancers(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
-// CreateLoadBalancer operation middleware
-func (siw *ServerInterfaceWrapper) CreateLoadBalancer(w http.ResponseWriter, r *http.Request) {
+// CreateFrontend operation middleware
+func (siw *ServerInterfaceWrapper) CreateFrontend(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateLoadBalancer(w, r)
+		siw.Handler.CreateFrontend(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2899,8 +3183,8 @@ func (siw *ServerInterfaceWrapper) CreateLoadBalancer(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
-// DeleteLoadBalancer operation middleware
-func (siw *ServerInterfaceWrapper) DeleteLoadBalancer(w http.ResponseWriter, r *http.Request) {
+// DeleteFrontend operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFrontend(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -2915,7 +3199,7 @@ func (siw *ServerInterfaceWrapper) DeleteLoadBalancer(w http.ResponseWriter, r *
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteLoadBalancer(w, r, id)
+		siw.Handler.DeleteFrontend(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2925,8 +3209,8 @@ func (siw *ServerInterfaceWrapper) DeleteLoadBalancer(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
-// GetLoadBalancer operation middleware
-func (siw *ServerInterfaceWrapper) GetLoadBalancer(w http.ResponseWriter, r *http.Request) {
+// GetFrontend operation middleware
+func (siw *ServerInterfaceWrapper) GetFrontend(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -2941,7 +3225,7 @@ func (siw *ServerInterfaceWrapper) GetLoadBalancer(w http.ResponseWriter, r *htt
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLoadBalancer(w, r, id)
+		siw.Handler.GetFrontend(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2951,8 +3235,8 @@ func (siw *ServerInterfaceWrapper) GetLoadBalancer(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
-// UpdateLoadBalancer operation middleware
-func (siw *ServerInterfaceWrapper) UpdateLoadBalancer(w http.ResponseWriter, r *http.Request) {
+// PatchFrontend operation middleware
+func (siw *ServerInterfaceWrapper) PatchFrontend(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -2967,7 +3251,7 @@ func (siw *ServerInterfaceWrapper) UpdateLoadBalancer(w http.ResponseWriter, r *
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateLoadBalancer(w, r, id)
+		siw.Handler.PatchFrontend(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2977,8 +3261,8 @@ func (siw *ServerInterfaceWrapper) UpdateLoadBalancer(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
-// AttachToNetwork operation middleware
-func (siw *ServerInterfaceWrapper) AttachToNetwork(w http.ResponseWriter, r *http.Request) {
+// UpdateFrontend operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFrontend(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -2993,7 +3277,7 @@ func (siw *ServerInterfaceWrapper) AttachToNetwork(w http.ResponseWriter, r *htt
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AttachToNetwork(w, r, id)
+		siw.Handler.UpdateFrontend(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3003,8 +3287,8 @@ func (siw *ServerInterfaceWrapper) AttachToNetwork(w http.ResponseWriter, r *htt
 	handler.ServeHTTP(w, r)
 }
 
-// ChangePlan operation middleware
-func (siw *ServerInterfaceWrapper) ChangePlan(w http.ResponseWriter, r *http.Request) {
+// GetFrontendConfig operation middleware
+func (siw *ServerInterfaceWrapper) GetFrontendConfig(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -3019,7 +3303,7 @@ func (siw *ServerInterfaceWrapper) ChangePlan(w http.ResponseWriter, r *http.Req
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ChangePlan(w, r, id)
+		siw.Handler.GetFrontendConfig(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3029,8 +3313,8 @@ func (siw *ServerInterfaceWrapper) ChangePlan(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
-// DetachFromNetwork operation middleware
-func (siw *ServerInterfaceWrapper) DetachFromNetwork(w http.ResponseWriter, r *http.Request) {
+// StreamFrontendLogs operation middleware
+func (siw *ServerInterfaceWrapper) StreamFrontendLogs(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -3045,7 +3329,7 @@ func (siw *ServerInterfaceWrapper) DetachFromNetwork(w http.ResponseWriter, r *h
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DetachFromNetwork(w, r, id)
+		siw.Handler.StreamFrontendLogs(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3055,138 +3339,8 @@ func (siw *ServerInterfaceWrapper) DetachFromNetwork(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
-// DisablePublicInterface operation middleware
-func (siw *ServerInterfaceWrapper) DisablePublicInterface(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DisablePublicInterface(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// EnablePublicInterface operation middleware
-func (siw *ServerInterfaceWrapper) EnablePublicInterface(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.EnablePublicInterface(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// RetryApply operation middleware
-func (siw *ServerInterfaceWrapper) RetryApply(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.RetryApply(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetLoadBalancerConfig operation middleware
-func (siw *ServerInterfaceWrapper) GetLoadBalancerConfig(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLoadBalancerConfig(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// StreamLoadBalancerLogs operation middleware
-func (siw *ServerInterfaceWrapper) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.StreamLoadBalancerLogs(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetLoadBalancerMetrics operation middleware
-func (siw *ServerInterfaceWrapper) GetLoadBalancerMetrics(w http.ResponseWriter, r *http.Request) {
+// GetFrontendMetrics operation middleware
+func (siw *ServerInterfaceWrapper) GetFrontendMetrics(w http.ResponseWriter, r *http.Request) {
 
 	var err error
 	_ = err
@@ -3201,7 +3355,7 @@ func (siw *ServerInterfaceWrapper) GetLoadBalancerMetrics(w http.ResponseWriter,
 	}
 
 	// Parameter object where we will unmarshal all parameters from the context
-	var params GetLoadBalancerMetricsParams
+	var params GetFrontendMetricsParams
 
 	// ------------- Optional query parameter "type" -------------
 
@@ -3255,406 +3409,161 @@ func (siw *ServerInterfaceWrapper) GetLoadBalancerMetrics(w http.ResponseWriter,
 		return
 	}
 
-	// ------------- Optional query parameter "service_id" -------------
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetFrontendMetrics(w, r, id, params)
+	}))
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "service_id", r.URL.Query(), &params.ServiceId, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamFrontendMetrics operation middleware
+func (siw *ServerInterfaceWrapper) StreamFrontendMetrics(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamFrontendMetrics(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Healthz operation middleware
+func (siw *ServerInterfaceWrapper) Healthz(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Healthz(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListHosts operation middleware
+func (siw *ServerInterfaceWrapper) ListHosts(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListHosts(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateHost operation middleware
+func (siw *ServerInterfaceWrapper) CreateHost(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateHost(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteHost operation middleware
+func (siw *ServerInterfaceWrapper) DeleteHost(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteHost(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateHost operation middleware
+func (siw *ServerInterfaceWrapper) UpdateHost(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateHost(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PreviewLabelSelector operation middleware
+func (siw *ServerInterfaceWrapper) PreviewLabelSelector(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PreviewLabelSelectorParams
+
+	// ------------- Required query parameter "selector" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "selector", r.URL.Query(), &params.Selector, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "service_id"})
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "selector"})
 		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "service_id", Err: err})
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "selector", Err: err})
 		}
 		return
 	}
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLoadBalancerMetrics(w, r, id, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// StreamLoadBalancerMetrics operation middleware
-func (siw *ServerInterfaceWrapper) StreamLoadBalancerMetrics(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.StreamLoadBalancerMetrics(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListServices operation middleware
-func (siw *ServerInterfaceWrapper) ListServices(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListServices(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateService operation middleware
-func (siw *ServerInterfaceWrapper) CreateService(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateService(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteService operation middleware
-func (siw *ServerInterfaceWrapper) DeleteService(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "sid" -------------
-	var sid int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "sid", r.PathValue("sid"), &sid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sid", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteService(w, r, id, sid)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetService operation middleware
-func (siw *ServerInterfaceWrapper) GetService(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "sid" -------------
-	var sid int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "sid", r.PathValue("sid"), &sid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sid", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetService(w, r, id, sid)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateService operation middleware
-func (siw *ServerInterfaceWrapper) UpdateService(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "sid" -------------
-	var sid int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "sid", r.PathValue("sid"), &sid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sid", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateService(w, r, id, sid)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetLoadBalancerStatus operation middleware
-func (siw *ServerInterfaceWrapper) GetLoadBalancerStatus(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLoadBalancerStatus(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListTargets operation middleware
-func (siw *ServerInterfaceWrapper) ListTargets(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListTargets(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateTargets operation middleware
-func (siw *ServerInterfaceWrapper) CreateTargets(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateTargets(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteTarget operation middleware
-func (siw *ServerInterfaceWrapper) DeleteTarget(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "tid" -------------
-	var tid int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "tid", r.PathValue("tid"), &tid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tid", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteTarget(w, r, id, tid)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateTarget operation middleware
-func (siw *ServerInterfaceWrapper) UpdateTarget(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	// ------------- Path parameter "tid" -------------
-	var tid int64
-
-	err = runtime.BindStyledParameterWithOptions("simple", "tid", r.PathValue("tid"), &tid, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tid", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateTarget(w, r, id, tid)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListNetworks operation middleware
-func (siw *ServerInterfaceWrapper) ListNetworks(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListNetworks(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateNetwork operation middleware
-func (siw *ServerInterfaceWrapper) CreateNetwork(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateNetwork(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteNetwork operation middleware
-func (siw *ServerInterfaceWrapper) DeleteNetwork(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteNetwork(w, r, id)
+		siw.Handler.PreviewLabelSelector(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3957,11 +3866,11 @@ func (siw *ServerInterfaceWrapper) TestChannel(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
-// ListPlans operation middleware
-func (siw *ServerInterfaceWrapper) ListPlans(w http.ResponseWriter, r *http.Request) {
+// GetOverview operation middleware
+func (siw *ServerInterfaceWrapper) GetOverview(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListPlans(w, r)
+		siw.Handler.GetOverview(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3976,86 +3885,6 @@ func (siw *ServerInterfaceWrapper) Readyz(w http.ResponseWriter, r *http.Request
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Readyz(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ListServers operation middleware
-func (siw *ServerInterfaceWrapper) ListServers(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListServers(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// CreateServer operation middleware
-func (siw *ServerInterfaceWrapper) CreateServer(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateServer(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteServer operation middleware
-func (siw *ServerInterfaceWrapper) DeleteServer(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteServer(w, r, id)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UpdateServer operation middleware
-func (siw *ServerInterfaceWrapper) UpdateServer(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "id" -------------
-	var id Id
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
-		return
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UpdateServer(w, r, id)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -4248,33 +4077,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/setup", wrapper.TotpSetup)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/enable", wrapper.TotpEnable)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/auth/totp/disable", wrapper.TotpDisable)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers", wrapper.ListLoadBalancers)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers", wrapper.CreateLoadBalancer)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/load_balancers/{id}", wrapper.DeleteLoadBalancer)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}", wrapper.GetLoadBalancer)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/load_balancers/{id}", wrapper.UpdateLoadBalancer)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/change_plan", wrapper.ChangePlan)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/enable_public_interface", wrapper.EnablePublicInterface)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/disable_public_interface", wrapper.DisablePublicInterface)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/attach_to_network", wrapper.AttachToNetwork)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/detach_from_network", wrapper.DetachFromNetwork)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/actions/retry_apply", wrapper.RetryApply)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/status", wrapper.GetLoadBalancerStatus)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/config", wrapper.GetLoadBalancerConfig)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/metrics", wrapper.GetLoadBalancerMetrics)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/metrics/stream", wrapper.StreamLoadBalancerMetrics)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/logs/stream", wrapper.StreamLoadBalancerLogs)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/services", wrapper.ListServices)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/services", wrapper.CreateService)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/load_balancers/{id}/services/{sid}", wrapper.DeleteService)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/services/{sid}", wrapper.GetService)
-	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/load_balancers/{id}/services/{sid}", wrapper.UpdateService)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/targets", wrapper.ListTargets)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/targets", wrapper.CreateTargets)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/load_balancers/{id}/targets/{tid}", wrapper.DeleteTarget)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/load_balancers/{id}/targets/{tid}", wrapper.UpdateTarget)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/label_selector/preview", wrapper.PreviewLabelSelector)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/plans", wrapper.ListPlans)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/certificates", wrapper.ListCertificates)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/certificates", wrapper.CreateCertificate)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/certificates/{id}", wrapper.DeleteCertificate)
@@ -4295,13 +4097,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/dns_providers/{id}/zones/{zone}/records", wrapper.DeleteDNSRecord)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/dns_providers/{id}/zones/{zone}/records", wrapper.ListDNSRecords)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/dns_providers/{id}/zones/{zone}/records", wrapper.CreateDNSRecord)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/servers", wrapper.ListServers)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/servers", wrapper.CreateServer)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/servers/{id}", wrapper.DeleteServer)
-	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/servers/{id}", wrapper.UpdateServer)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/networks", wrapper.ListNetworks)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/networks", wrapper.CreateNetwork)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/networks/{id}", wrapper.DeleteNetwork)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/nodes", wrapper.ListNodes)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/nodes/{id}", wrapper.UpdateNode)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/nodes/{id}/ips", wrapper.AddNodeIP)
@@ -4325,6 +4120,34 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alert_rules", wrapper.ListAlertRules)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/alert_rules", wrapper.CreateAlertRule)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/alert_rules/{id}", wrapper.DeleteAlertRule)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends", wrapper.ListFrontends)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/frontends", wrapper.CreateFrontend)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/frontends/{id}", wrapper.DeleteFrontend)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends/{id}", wrapper.GetFrontend)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/frontends/{id}", wrapper.PatchFrontend)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/frontends/{id}", wrapper.UpdateFrontend)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends/{id}/config", wrapper.GetFrontendConfig)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends/{id}/metrics", wrapper.GetFrontendMetrics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends/{id}/metrics/stream", wrapper.StreamFrontendMetrics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/frontends/{id}/logs/stream", wrapper.StreamFrontendLogs)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/apply/retry", wrapper.RetryApply)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backends", wrapper.ListBackends)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backends", wrapper.CreateBackend)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/backends/{id}", wrapper.DeleteBackend)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backends/{id}", wrapper.GetBackend)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/backends/{id}", wrapper.UpdateBackend)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backends/{id}/status", wrapper.GetBackendStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backends/{id}/metrics", wrapper.GetBackendMetrics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/backends/{id}/servers", wrapper.ListBackendServers)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/backends/{id}/servers", wrapper.CreateBackendServers)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/backends/{id}/servers/{sid}", wrapper.DeleteBackendServer)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/backends/{id}/servers/{sid}", wrapper.UpdateBackendServer)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/hosts", wrapper.ListHosts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/hosts", wrapper.CreateHost)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/hosts/{id}", wrapper.DeleteHost)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/hosts/{id}", wrapper.UpdateHost)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/label_selector/preview", wrapper.PreviewLabelSelector)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/overview", wrapper.GetOverview)
 
 	return m
 }

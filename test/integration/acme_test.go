@@ -17,7 +17,7 @@ import (
 	"github.com/2shiraz/loxy/internal/config"
 )
 
-// TestACMEHTTP01Pebble: TLS-termination service with a managed certificate → lego HTTP-01 via the
+// TestACMEHTTP01Pebble: TLS frontend with a managed certificate → lego HTTP-01 via the
 // virt@acme_http01 map → Pebble-issued certificate served on :443 and 301 on :80 (§8.7, §11.2).
 // Needs `pebble` and `pebble-challtestsrv` on PATH (go install github.com/letsencrypt/pebble/v2/cmd/...).
 func TestACMEHTTP01Pebble(t *testing.T) {
@@ -37,7 +37,7 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 	s := startStack(t, func(cfg *config.Config) {
 		cfg.ACMEDirectory, cfg.ACMEInsecure, cfg.ACMEEmail = "https://127.0.0.1:14000/dir", true, "it@example.com"
 	})
-	cts := exec.Command(ctsBin, "-defaultIPv4", s.lbIP, "-defaultIPv6", "", "-dnsserver", "127.0.0.1:18053", "-http01", "", "-https01", "", "-tlsalpn01", "", "-doh", "", "-management", "127.0.0.1:18055")
+	cts := exec.Command(ctsBin, "-defaultIPv4", s.haIP, "-defaultIPv6", "", "-dnsserver", "127.0.0.1:18053", "-http01", "", "-https01", "", "-tlsalpn01", "", "-doh", "", "-management", "127.0.0.1:18055")
 	if err := cts.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -65,11 +65,15 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 		t.Fatalf("cert %d %v", st, body)
 	}
 	certID := body["certificate"].(map[string]any)["id"].(float64)
-	st, body = s.c.do("POST", "/load_balancers", map[string]any{"name": "tls", "plan_id": 1,
-		"services": []any{map[string]any{"protocol": "https", "listen_port": 443, "destination_port": 9001,
-			"http": map[string]any{"redirect_http": true, "certificates": []float64{certID}}}}})
+	st, body = s.c.do("POST", "/backends", map[string]any{"name": "app", "mode": "http", "port": 9001})
 	if st != 201 {
-		t.Fatalf("lb %d %v", st, body)
+		t.Fatalf("backend %d %v", st, body)
+	}
+	beID := body["backend"].(map[string]any)["id"].(float64)
+	st, body = s.c.do("POST", "/frontends", map[string]any{"name": "tls", "mode": "http", "tls": true, "http_redirect": true,
+		"certificates": []float64{certID}, "binds": []any{map[string]any{"address": "*", "port": 443}}, "default_backend_id": beID})
+	if st != 201 {
+		t.Fatalf("frontend %d %v", st, body)
 	}
 	start := time.Now()
 	var status string
@@ -85,7 +89,7 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 	t.Logf("issued after %v", time.Since(start))
 	var issuer string
 	waitFor(t, 15*time.Second, "issued cert served on :443", func() bool {
-		conn, err := tls.Dial("tcp", s.lbIP+":443", &tls.Config{ServerName: "app.loxy.test", InsecureSkipVerify: true}) //nolint:gosec
+		conn, err := tls.Dial("tcp", s.haIP+":443", &tls.Config{ServerName: "app.loxy.test", InsecureSkipVerify: true}) //nolint:gosec
 		if err != nil {
 			return false
 		}
@@ -94,7 +98,7 @@ func TestACMEHTTP01Pebble(t *testing.T) {
 		return strings.Contains(strings.ToLower(issuer), "pebble")
 	})
 	hc := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	r, err := hc.Get("http://" + s.lbIP + "/")
+	r, err := hc.Get("http://" + s.haIP + "/")
 	if err != nil {
 		t.Fatal(err)
 	}

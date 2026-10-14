@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -71,48 +73,68 @@ func runAPI(args []string) error {
 	return nil
 }
 
-// runLB implements `loxy lb ls`.
-func runLB(args []string) error {
+// runList implements `loxy frontends ls` and `loxy backends ls`.
+func runList(kind string, args []string) error {
 	if len(args) == 0 || args[0] != "ls" {
-		return fmt.Errorf("usage: loxy lb ls   (other operations: loxy api ...)")
+		return fmt.Errorf("usage: loxy %s ls   (other operations: loxy api ...)", kind)
 	}
-	b, status, err := apiCall("GET", "/load_balancers", nil)
+	b, status, err := apiCall("GET", "/"+kind, nil)
 	if err != nil {
 		return err
 	}
 	if status != 200 {
 		return fmt.Errorf("HTTP %d: %s", status, b)
 	}
+	type health struct {
+		Status  string `json:"status"`
+		Healthy int    `json:"healthy"`
+		Total   int    `json:"total"`
+	}
+	type bind struct {
+		Address string `json:"address"`
+		Port    int64  `json:"port"`
+	}
 	var res struct {
-		LoadBalancers []struct {
+		Frontends []struct {
+			ID     int64  `json:"id"`
+			Name   string `json:"name"`
+			Mode   string `json:"mode"`
+			TLS    bool   `json:"tls"`
+			Binds  []bind `json:"binds"`
+			Status string `json:"status"`
+			Health health `json:"health"`
+		} `json:"frontends"`
+		Backends []struct {
 			ID        int64  `json:"id"`
 			Name      string `json:"name"`
-			Status    string `json:"status"`
+			Mode      string `json:"mode"`
 			Algorithm string `json:"algorithm"`
-			Plan      struct {
-				Name string `json:"name"`
-			} `json:"plan"`
-			PublicNet struct {
-				IPv4 *string `json:"ipv4"`
-			} `json:"public_net"`
-			Health struct {
-				Status  string `json:"status"`
-				Healthy int    `json:"healthy"`
-				Total   int    `json:"total"`
-			} `json:"health"`
-		} `json:"load_balancers"`
+			Servers   int    `json:"servers_count"`
+			Health    health `json:"health"`
+		} `json:"backends"`
 	}
 	if err := json.Unmarshal(b, &res); err != nil {
 		return err
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPLAN\tIPV4\tSTATUS\tHEALTH")
-	for _, l := range res.LoadBalancers {
-		ip := "-"
-		if l.PublicNet.IPv4 != nil {
-			ip = *l.PublicNet.IPv4
+	if kind == "frontends" {
+		fmt.Fprintln(tw, "ID\tNAME\tMODE\tBINDS\tSTATUS\tHEALTH")
+		for _, f := range res.Frontends {
+			mode := f.Mode
+			if f.TLS {
+				mode += "+tls"
+			}
+			var bs []string
+			for _, x := range f.Binds {
+				bs = append(bs, net.JoinHostPort(x.Address, strconv.FormatInt(x.Port, 10)))
+			}
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s %d/%d\n", f.ID, f.Name, mode, strings.Join(bs, ","), f.Status, f.Health.Status, f.Health.Healthy, f.Health.Total)
 		}
-		fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%s\t%s %d/%d\n", l.ID, l.Name, l.Plan.Name, ip, l.Status, l.Health.Status, l.Health.Healthy, l.Health.Total)
+	} else {
+		fmt.Fprintln(tw, "ID\tNAME\tMODE\tALGORITHM\tSERVERS\tHEALTH")
+		for _, x := range res.Backends {
+			fmt.Fprintf(tw, "%d\t%s\t%s\t%s\t%d\t%s %d/%d\n", x.ID, x.Name, x.Mode, x.Algorithm, x.Servers, x.Health.Status, x.Health.Healthy, x.Health.Total)
+		}
 	}
 	return tw.Flush()
 }

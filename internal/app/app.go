@@ -173,17 +173,15 @@ func New(cfg *config.Config, version string) (*App, error) {
 		if n == nil || n.AppliedVersion < n.DesiredVersion {
 			return false
 		}
-		for _, lb := range snap.LBs {
-			for _, sv := range lb.Services {
-				for _, c := range sv.CertIDs {
-					if c == id {
-						return true
-					}
+		for _, f := range snap.Frontends {
+			for _, c := range f.CertIDs {
+				if c == id && f.Enabled != 0 {
+					return true
 				}
 			}
 		}
 		for _, d := range snap.Domains {
-			if d.CertificateID.Valid && d.CertificateID.Int64 == id && d.LbID.Valid {
+			if d.CertificateID.Valid && d.CertificateID.Int64 == id && d.FrontendID.Valid {
 				return true
 			}
 		}
@@ -196,11 +194,24 @@ func New(cfg *config.Config, version string) (*App, error) {
 		_, _ = a.Snap.Refresh(context.Background(), st.Q, box)
 		a.Issuer.Kick()
 	}
-	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(id int64) map[string]string {
-		if lb := a.Snap.Get().LB(id); lb != nil {
-			return lb.Labels
+	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(e events.Event) map[string]string {
+		snap := a.Snap.Get()
+		out := map[string]string{}
+		if e.BackendID != nil {
+			if b := snap.Backend(*e.BackendID); b != nil {
+				for k, v := range b.Labels {
+					out[k] = v
+				}
+			}
 		}
-		return nil
+		if e.FrontendID != nil {
+			if f := snap.Frontend(*e.FrontendID); f != nil {
+				for k, v := range f.Labels {
+					out[k] = v
+				}
+			}
+		}
+		return out
 	})
 	a.API.Drain = a.drain
 	return a, nil
@@ -276,9 +287,9 @@ func (a *App) selfSigned(ctx context.Context, key, cn, dnsName string) (string, 
 	return pem, nil
 }
 
-// drain gracefully removes a target: it is already in drain state; wait for open
+// drain gracefully removes a backend server: it is already in drain state; wait for open
 // connections to reach zero (or the timeout), then delete it (§7.6).
-func (a *App) drain(lbID, targetID int64) {
+func (a *App) drain(backendID, serverID int64) {
 	timeout := 30 * time.Second
 	if v := os.Getenv("LOXY_DRAIN_TIMEOUT"); v != "" {
 		if d, err := time.ParseDuration(v); err == nil {
@@ -288,16 +299,15 @@ func (a *App) drain(lbID, targetID int64) {
 	deadline := time.Now().Add(timeout)
 	time.Sleep(1500 * time.Millisecond) // let the drain state reach HAProxy
 	for time.Now().Before(deadline) && !a.Cfg.NoHAProxy {
-		lb := a.Snap.Get().LB(lbID)
-		if lb == nil || lb.Target(targetID) == nil {
+		b := a.Snap.Get().Backend(backendID)
+		if b == nil || b.Server(serverID) == nil {
 			return
 		}
 		busy := false
-		for _, ch := range a.Metrics.Checks(lbID) {
-			for _, sl := range lb.Target(targetID).Slots {
-				if ch.SlotID == sl.ID && ch.Scur > 0 {
-					busy = true
-				}
+		checks := a.Metrics.Checks(backendID)
+		for _, sl := range b.Server(serverID).Slots {
+			if ch, ok := checks[sl.ID]; ok && ch.Scur > 0 {
+				busy = true
 			}
 		}
 		if !busy {
@@ -307,7 +317,7 @@ func (a *App) drain(lbID, targetID int64) {
 	}
 	ctx := context.Background()
 	err := a.Store.Tx(ctx, func(q *db.Queries) error {
-		if err := q.DeleteTarget(ctx, targetID); err != nil {
+		if err := q.DeleteBackendServer(ctx, serverID); err != nil {
 			return err
 		}
 		if err := state.SyncSlots(ctx, q); err != nil {
@@ -317,7 +327,7 @@ func (a *App) drain(lbID, targetID int64) {
 		return err
 	})
 	if err != nil {
-		slog.Warn("remove target", "err", err)
+		slog.Warn("remove backend server", "err", err)
 		return
 	}
 	a.API.Changed(ctx)

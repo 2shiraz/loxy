@@ -11,10 +11,11 @@ import (
 	"github.com/2shiraz/loxy/internal/store/db"
 )
 
-// SeedDemo creates demo data (§17 `make seed`): servers, two LBs with services of each
-// protocol, IP/server/label-selector targets and an uploaded certificate.
-// targetIP is the address demo IP targets point to (e.g. the dev whoami host).
-func (a *App) SeedDemo(ctx context.Context, targetIP string) error {
+// SeedDemo creates demo data (§17 `make seed`): hosts, an http backend pool fed by an IP
+// and a label selector, a tcp backend, an http + https frontend with a host route, a tcp
+// frontend and an uploaded certificate. serverIP is the address demo IP servers point to
+// (e.g. the dev whoami host).
+func (a *App) SeedDemo(ctx context.Context, serverIP string) error {
 	now := time.Now().UnixMilli()
 	c, k, err := certs.SelfSigned("demo.loxy.test", []string{"demo.loxy.test"}, 90*24*time.Hour)
 	if err != nil {
@@ -26,7 +27,7 @@ func (a *App) SeedDemo(ctx context.Context, targetIP string) error {
 	}
 	return a.Store.Tx(ctx, func(q *db.Queries) error {
 		for i, l := range []string{"web", "web", "api"} {
-			if _, err := q.CreateServer(ctx, db.CreateServerParams{Name: fmt.Sprintf("demo-%s-%d", l, i+1), PublicIpv4: fmt.Sprintf("10.99.0.%d", i+1),
+			if _, err := q.CreateHost(ctx, db.CreateHostParams{Name: fmt.Sprintf("demo-%s-%d", l, i+1), Ipv4: fmt.Sprintf("10.99.0.%d", i+1),
 				Labels: fmt.Sprintf(`{"role":%q,"env":"demo"}`, l)}); err != nil {
 				return err
 			}
@@ -38,44 +39,63 @@ func (a *App) SeedDemo(ctx context.Context, targetIP string) error {
 		if err != nil {
 			return err
 		}
-		mk := func(name, alg string) (db.LoadBalancer, error) {
-			return q.CreateLoadBalancer(ctx, db.CreateLoadBalancerParams{Name: name, PlanID: 1, NodeID: 1, Algorithm: alg, PublicEnabled: 1, Labels: `{"env":"demo"}`, CreatedAt: now, UpdatedAt: now})
-		}
-		svc := func(lb int64, proto string, listen, dest int64, redirect int64, hc string) (db.Service, error) {
-			return q.CreateService(ctx, db.CreateServiceParams{LbID: lb, Protocol: proto, ListenPort: listen, DestinationPort: dest, HttpRedirect: redirect,
-				StickyCookieName: "LBSTICKY", StickyCookieLifetimeS: 300, ProxyProtocol: "none", HttpTimeoutS: 60, HcProtocol: hc, HcPort: dest,
-				HcIntervalS: 15, HcTimeoutS: 10, HcRetries: 3, HcPath: "/", HcStatusCodes: `["2??","3??"]`, CreatedAt: now})
-		}
-		web, err := mk("demo-web", "roundrobin")
-		if err != nil {
-			return err
-		}
-		if _, err := svc(web.ID, "http", 8080, 9001, 0, "http"); err != nil {
-			return err
-		}
-		tls, err := svc(web.ID, "https", 8444, 9001, 0, "http")
-		if err != nil {
-			return err
-		}
-		if err := q.AddServiceCertificate(ctx, db.AddServiceCertificateParams{ServiceID: tls.ID, CertificateID: cert.ID}); err != nil {
-			return err
-		}
-		for _, ip := range []string{targetIP} {
-			if _, err := q.CreateTarget(ctx, db.CreateTargetParams{LbID: web.ID, Type: "ip", Ip: ip, Weight: 100, CreatedAt: now}); err != nil {
-				return err
+		be := func(name, mode, alg string, port int64) (db.Backend, error) {
+			hc := "http"
+			if mode == "tcp" {
+				hc = "tcp"
 			}
+			return q.CreateBackend(ctx, db.CreateBackendParams{Name: name, Mode: mode, Algorithm: alg, Port: port, StickyCookieName: "LOXYSTICKY",
+				StickyCookieLifetimeS: 300, ProxyProtocol: "none", TimeoutServerS: 60, HcProtocol: hc, HcPort: port, HcIntervalS: 15, HcTimeoutS: 10,
+				HcRetries: 3, HcPath: "/", HcStatusCodes: `["2??","3??"]`, Labels: `{"env":"demo"}`, CreatedAt: now})
 		}
-		if _, err := q.CreateTarget(ctx, db.CreateTargetParams{LbID: web.ID, Type: "label_selector", LabelSelector: "role=web", Weight: 100, CreatedAt: now}); err != nil {
+		srv := func(b int64, typ, ip, sel string) error {
+			_, err := q.CreateBackendServer(ctx, db.CreateBackendServerParams{BackendID: b, Type: typ, Ip: ip, LabelSelector: sel, Weight: 100, CreatedAt: now})
 			return err
 		}
-		api, err := mk("demo-api", "leastconn")
+		fe := func(name, mode string, tls int64, port int64, def int64) (db.Frontend, error) {
+			return q.CreateFrontend(ctx, db.CreateFrontendParams{Name: name, Mode: mode, Tls: tls, Binds: fmt.Sprintf(`[{"address":"*","port":%d}]`, port),
+				DefaultBackendID: sql.NullInt64{Int64: def, Valid: true}, TimeoutClientS: 60, Maxconn: 10000, ForwardedHeaders: b2i(mode == "http"),
+				Enabled: 1, Labels: `{"env":"demo"}`, CreatedAt: now, UpdatedAt: now})
+		}
+		web, err := be("demo-web", "http", "roundrobin", 9001)
 		if err != nil {
 			return err
 		}
-		if _, err := svc(api.ID, "tcp", 7443, 9002, 0, "tcp"); err != nil {
+		if err := srv(web.ID, "ip", serverIP, ""); err != nil {
 			return err
 		}
-		if _, err := q.CreateTarget(ctx, db.CreateTargetParams{LbID: api.ID, Type: "ip", Ip: targetIP, Weight: 100, CreatedAt: now}); err != nil {
+		if err := srv(web.ID, "label_selector", "", "role=web"); err != nil {
+			return err
+		}
+		apiBE, err := be("demo-api", "http", "leastconn", 9001)
+		if err != nil {
+			return err
+		}
+		if err := srv(apiBE.ID, "ip", serverIP, ""); err != nil {
+			return err
+		}
+		tcp, err := be("demo-tcp", "tcp", "leastconn", 9002)
+		if err != nil {
+			return err
+		}
+		if err := srv(tcp.ID, "ip", serverIP, ""); err != nil {
+			return err
+		}
+		h, err := fe("demo-http", "http", 0, 8080, web.ID)
+		if err != nil {
+			return err
+		}
+		if err := q.AddRoute(ctx, db.AddRouteParams{FrontendID: h.ID, Hosts: `["api.loxy.test"]`, BackendID: apiBE.ID}); err != nil {
+			return err
+		}
+		hs, err := fe("demo-https", "http", 1, 8444, web.ID)
+		if err != nil {
+			return err
+		}
+		if err := q.AddFrontendCertificate(ctx, db.AddFrontendCertificateParams{FrontendID: hs.ID, CertificateID: cert.ID}); err != nil {
+			return err
+		}
+		if _, err := fe("demo-tcp", "tcp", 0, 7443, tcp.ID); err != nil {
 			return err
 		}
 		if err := state.SyncSlots(ctx, q); err != nil {
@@ -84,4 +104,11 @@ func (a *App) SeedDemo(ctx context.Context, targetIP string) error {
 		_, err = q.BumpDesiredVersion(ctx, 1)
 		return err
 	})
+}
+
+func b2i(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }

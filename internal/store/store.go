@@ -96,29 +96,10 @@ func (s *Store) Tx(ctx context.Context, fn func(q *db.Queries) error) error {
 	return tx.Commit()
 }
 
-// Seed creates the default project, local node and default plans (§21 Q4 defaults).
+// Seed creates the default project and the local node.
 func (s *Store) Seed(ctx context.Context) error {
-	now := time.Now().UnixMilli()
-	if err := s.Q.EnsureProject(ctx, now); err != nil {
+	if err := s.Q.EnsureProject(ctx, time.Now().UnixMilli()); err != nil {
 		return err
 	}
-	if err := s.Q.EnsureLocalNode(ctx); err != nil {
-		return err
-	}
-	n, err := s.Q.CountPlans(ctx)
-	if err != nil || n > 0 {
-		return err
-	}
-	const tb = int64(1_000_000_000_000)
-	plans := []db.CreatePlanParams{
-		{Name: "lb11", MaxConnections: 10000, MaxServices: 5, MaxTargets: 25, MaxCertificates: 10, TrafficQuotaBytes: 20 * tb, Sort: 1},
-		{Name: "lb21", MaxConnections: 20000, MaxServices: 15, MaxTargets: 75, MaxCertificates: 25, TrafficQuotaBytes: 20 * tb, Sort: 2},
-		{Name: "lb31", MaxConnections: 40000, MaxServices: 30, MaxTargets: 150, MaxCertificates: 50, TrafficQuotaBytes: 20 * tb, Sort: 3},
-	}
-	for _, p := range plans {
-		if err := s.Q.CreatePlan(ctx, p); err != nil {
-			return err
-		}
-	}
-	return nil
+	return s.Q.EnsureLocalNode(ctx)
 }

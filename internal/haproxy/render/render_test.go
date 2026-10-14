@@ -21,10 +21,10 @@ func input(t *testing.T, root string) Input {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lbs, cf := fixture(c, k)
+	fes, bes, cf := fixture(c, k)
 	return Input{
 		Root: root, NodeID: 1, Revision: 123, DesiredVersion: 456, PanelPort: 8443, PanelAllow: []string{"10.0.0.0/8", "192.0.2.1"},
-		Promex: true, LBs: lbs, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k,
+		Promex: true, Frontends: fes, Backends: bes, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k, ACMEHTTP01: map[int64]bool{7: true},
 	}
 }
 
@@ -46,17 +46,18 @@ func TestGolden(t *testing.T) {
 	if string(want) != out.Config() {
 		t.Fatalf("golden mismatch; run go test ./internal/haproxy/render -update\n--- got ---\n%s", out.Config())
 	}
-	for _, f := range []string{"crt-lists/s31.lst", "certs/12.pem", "maps/maint.map", "maps/panel_allow.lst", "errors/maint.http"} {
+	for _, f := range []string{"crt-lists/fe3.lst", "certs/12.pem", "maps/maint.map", "maps/panel_allow.lst", "errors/maint.http"} {
 		if _, ok := out.Files[f]; !ok {
 			t.Errorf("missing file %s", f)
 		}
 	}
-	if got := string(out.Files["maps/maint.map"]); got != "8 1\n" {
+	if got := string(out.Files["maps/maint.map"]); got != "7 1\n" {
 		t.Errorf("maint map %q", got)
 	}
-	sec := LBSections(out.Config(), 8)
-	if !strings.Contains(sec, "frontend lb8_s40_fe") || strings.Contains(sec, "lb7_") {
-		t.Errorf("LBSections wrong:\n%s", sec)
+	in := input(t, "/x")
+	sec := FrontendSections(out.Config(), in.Frontends[0])
+	if !strings.Contains(sec, "frontend fe_3 ") || !strings.Contains(sec, "backend be_5 ") || strings.Contains(sec, "fe_7") || strings.Contains(sec, "be_6") {
+		t.Errorf("FrontendSections wrong:\n%s", sec)
 	}
 }
 

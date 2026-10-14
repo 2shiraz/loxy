@@ -23,7 +23,7 @@ func TestBackupRoundTrip(t *testing.T) {
 	if err := st.Seed(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.DB.Exec(`INSERT INTO servers (project_id, name, public_ipv4) VALUES (1, 'web-1', '10.0.0.1')`); err != nil {
+	if _, err := st.DB.Exec(`INSERT INTO hosts (project_id, name, ipv4) VALUES (1, 'web-1', '10.0.0.1')`); err != nil {
 		t.Fatal(err)
 	}
 	p, err := Backup(st, filepath.Join(dir, "backups"), 14)
@@ -36,9 +36,9 @@ func TestBackupRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer restored.Close()
-	srv, err := restored.Q.ListServers(ctx)
+	srv, err := restored.Q.ListHosts(ctx)
 	if err != nil || len(srv) != 1 || srv[0].Name != "web-1" {
-		t.Fatalf("restored servers: %v %+v", err, srv)
+		t.Fatalf("restored hosts: %v %+v", err, srv)
 	}
 }
 
@@ -48,11 +48,11 @@ func TestSeedDemo(t *testing.T) {
 		t.Fatal(err)
 	}
 	snap, _ := a.Snap.Refresh(context.Background(), a.Store.Q, a.Box)
-	if len(snap.LBs) != 2 || len(snap.LBs[0].Services) != 2 || len(snap.LBs[0].Slots()) != 3 {
-		t.Fatalf("seed: %d LBs, %d services, %d slots", len(snap.LBs), len(snap.LBs[0].Services), len(snap.LBs[0].Slots()))
+	if len(snap.Frontends) != 3 || len(snap.Backends) != 3 || len(snap.Backends[0].Slots()) != 3 || len(snap.Frontends[0].Routes) != 1 {
+		t.Fatalf("seed: %d frontends, %d backends", len(snap.Frontends), len(snap.Backends))
 	}
 	out, err := a.Rec.RenderLive(context.Background())
-	if err != nil || !strings.Contains(out.Config(), "frontend lb1_s2_fe") {
+	if err != nil || !strings.Contains(out.Config(), "frontend fe_2") || !strings.Contains(out.Config(), "backend be_3") {
 		t.Fatalf("render: %v", err)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -47,7 +48,7 @@ type Server struct {
 	Static   http.Handler
 	Limiter  *auth.Limiter
 	NodeInfo func() (version string, features []string)
-	Drain    func(lbID, targetID int64)
+	Drain    func(backendID, serverID int64)
 	Notifier *notify.Notifier
 	Logs     *logrecv.Receiver
 }
@@ -216,7 +217,6 @@ func errField(field, msg string) *apiError {
 func errNotFound(what string) *apiError {
 	return &apiError{Status: 404, Code: "not_found", Msg: what + " not found"}
 }
-func errQuota(msg string) *apiError    { return &apiError{Status: 422, Code: "quota_exceeded", Msg: msg} }
 func errConflict(msg string) *apiError { return &apiError{Status: 409, Code: "conflict", Msg: msg} }
 
 func writeErr(w http.ResponseWriter, status int, code, msg string, fields model.FieldErrors) {
@@ -319,15 +319,15 @@ func (s *Server) Changed(ctx context.Context) {
 		slog.Error("refresh snapshot", "err", err)
 	}
 	s.Rec.Trigger()
-	s.Hub.Publish(events.Event{Kind: "lb.updated", Ephemeral: true})
+	s.Hub.Publish(events.Event{Kind: "config.updated", Ephemeral: true})
 }
 
-func (s *Server) lb(id int64) (*state.LB, error) {
-	lb := s.Snap.Get().LB(id)
-	if lb == nil {
-		return nil, errNotFound("load balancer")
+// checkIfMatch enforces optimistic concurrency: a stale If-Match version yields 409.
+func checkIfMatch(r *http.Request, version int64) error {
+	if m := r.Header.Get("If-Match"); m != "" && strings.Trim(m, `"W/`) != fmt.Sprint(version) {
+		return errConflict("resource was modified (version mismatch)")
 	}
-	return lb, nil
+	return nil
 }
 
 func ptr[T any](v T) *T { return &v }
@@ -384,7 +384,7 @@ func (s *Server) promMetrics(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	reconcile.Stats.WriteProm(w)
 	snap := s.Snap.Get()
-	_, _ = w.Write([]byte("# TYPE loxy_load_balancers gauge\nloxy_load_balancers " + strconv.Itoa(len(snap.LBs)) + "\n"))
+	_, _ = w.Write([]byte("# TYPE loxy_frontends gauge\nloxy_frontends " + strconv.Itoa(len(snap.Frontends)) + "\n# TYPE loxy_backends gauge\nloxy_backends " + strconv.Itoa(len(snap.Backends)) + "\n"))
 	if s.Metrics != nil {
 		_, reloads, last := s.Metrics.Info()
 		_, _ = w.Write([]byte("# TYPE loxy_haproxy_worker_restarts_total counter\nloxy_haproxy_worker_restarts_total " + strconv.Itoa(reloads) + "\n"))

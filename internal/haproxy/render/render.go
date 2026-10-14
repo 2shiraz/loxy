@@ -38,9 +38,10 @@ type Input struct {
 	StateFile      string
 	SocketPath     string
 	LogTarget      string
-	LBs            []*state.LB
+	Frontends      []*state.Frontend
+	Backends       []*state.Backend
 	Cert           func(id int64) *state.Cert
-	// ACMEHTTP01 lists LB ids that need challenge answering on :80 although no :80 frontend exists.
+	// ACMEHTTP01 lists frontend ids that need HTTP-01 challenge answering on :80.
 	ACMEHTTP01     map[int64]bool
 	PanelPEM       string
 	PlaceholderPEM string
@@ -60,17 +61,17 @@ type section struct {
 	Lines  []string
 }
 
+type block struct {
+	Comment  string
+	Sections []section
+}
+
 type cfg struct {
 	Comment  string
 	Global   []string
 	Defaults []section
 	System   []section
-	LBs      []lbBlock
-}
-
-type lbBlock struct {
-	Comment  string
-	Sections []section
+	Blocks   []block
 }
 
 func defaultsIn(in *Input) {
@@ -98,32 +99,36 @@ func defaultsIn(in *Input) {
 	if in.MaintPage == "" {
 		in.MaintPage = "<!doctype html><title>Maintenance</title><h1>Down for maintenance</h1><p>Please try again shortly.</p>\n"
 	}
+	if in.Cert == nil {
+		in.Cert = func(int64) *state.Cert { return nil }
+	}
 }
 
-// Names (§7.3).
-func FrontendName(lb, svc int64) string { return fmt.Sprintf("lb%d_s%d_fe", lb, svc) }
-func RedirectName(lb, svc int64) string { return fmt.Sprintf("lb%d_s%d_rd", lb, svc) }
-func BackendName(lb, svc int64) string  { return fmt.Sprintf("lb%d_s%d_be", lb, svc) }
-func CapTable(lb int64) string          { return fmt.Sprintf("lb%d_cap", lb) }
-func ACMEFrontend(lb int64) string      { return fmt.Sprintf("sys_acme_lb%d", lb) }
-func ServerName(t *state.Target, sl *state.Slot) string {
-	if sl.ServerID == 0 {
-		return fmt.Sprintf("t%d", t.ID)
+// Names (§7.3). Frontend and backend names always differ (HAProxy 3.3+ requirement).
+func FrontendName(id int64) string { return fmt.Sprintf("fe_%d", id) }
+func RedirectName(id int64) string { return fmt.Sprintf("fe_%d_rd", id) }
+func ACMEFrontend(id int64) string { return fmt.Sprintf("sys_acme_fe%d", id) }
+func BackendName(id int64) string  { return fmt.Sprintf("be_%d", id) }
+func ServerName(sv *state.Server, sl *state.Slot) string {
+	if sl.HostID == 0 {
+		return fmt.Sprintf("s%d", sv.ID)
 	}
-	return fmt.Sprintf("t%dx%d", t.ID, sl.ServerID)
+	return fmt.Sprintf("s%dx%d", sv.ID, sl.HostID)
 }
 
 // CertPath is the path of a certificate PEM inside the tree.
 func CertPath(root string, certID int64) string {
 	return path.Join(root, "certs", fmt.Sprintf("%d.pem", certID))
 }
-func PlaceholderPath(root string) string { return path.Join(root, "certs", "_placeholder.pem") }
-func CrtListPath(root string, svc int64) string {
-	return path.Join(root, "crt-lists", fmt.Sprintf("s%d.lst", svc))
+func CrtListPath(root string, fe int64) string {
+	return path.Join(root, "crt-lists", fmt.Sprintf("fe%d.lst", fe))
 }
 func MaintMapPath(root string) string { return path.Join(root, "maps", "maint.map") }
 
-func hostPort(addr string, port int64) string {
+func bindAddr(addr string, port int64) string {
+	if addr == "*" || addr == "" {
+		return ":" + strconv.FormatInt(port, 10)
+	}
 	a, err := netip.ParseAddr(addr)
 	if err == nil && a.Is6() {
 		return "ipv6@" + a.String() + ":" + strconv.FormatInt(port, 10)
@@ -139,61 +144,61 @@ func serverAddr(addr string, port int64) string {
 	return addr + ":" + strconv.FormatInt(port, 10)
 }
 
-// BindAddrs returns the addresses an LB listens on (sorted, deterministic).
-// With the public interface enabled but no assigned IP, the LB shares the node's
-// addresses (wildcard bind, §21 Q3 default).
-func BindAddrs(lb *state.LB) []string {
-	var out []string
-	if lb.PublicEnabled != 0 {
-		if lb.IPv4 != "" {
-			out = append(out, lb.IPv4)
-		}
-		if lb.IPv6 != "" {
-			out = append(out, lb.IPv6)
-		}
-		if lb.IPv4 == "" && lb.IPv6 == "" {
-			out = append(out, "")
-		}
+func validAddr(a string, allowWildcard bool) bool {
+	if a == "*" || a == "" {
+		return allowWildcard
 	}
-	for _, n := range lb.Networks {
-		out = append(out, n.IP)
-	}
-	return out
+	x, err := netip.ParseAddr(a)
+	return err == nil && x.Zone() == ""
 }
 
-// ServerArgs renders everything after "server <name>" for a slot. The same string is
-// used for config lines and for the runtime `add server` command (§7.6), so dynamic
-// servers are byte-identical to configured ones.
-func ServerArgs(lb *state.LB, svc *state.Service, t *state.Target, sl *state.Slot) string {
+// ServerArgs renders everything after "server <name>" for a slot. The same string is used for
+// config lines and for the runtime `add server` command (§7.6), so dynamic servers are
+// byte-identical to configured ones.
+func ServerArgs(be *state.Backend, sv *state.Server, sl *state.Slot) string {
+	port := sv.PortOr(be.Port)
 	var b strings.Builder
-	b.WriteString(serverAddr(sl.Address, svc.DestinationPort))
-	fmt.Fprintf(&b, " id %d check inter %ds rise %d fall %d", sl.ID, svc.HcIntervalS, svc.HcRetries, svc.HcRetries)
-	if svc.HcPort != 0 && svc.HcPort != svc.DestinationPort {
-		fmt.Fprintf(&b, " port %d", svc.HcPort)
+	b.WriteString(serverAddr(sl.Address, port))
+	fmt.Fprintf(&b, " id %d check inter %ds rise %d fall %d", sl.ID, be.HcIntervalS, be.HcRetries, be.HcRetries)
+	if be.HcPort != 0 && be.HcPort != port {
+		fmt.Fprintf(&b, " port %d", be.HcPort)
 	}
-	if svc.HcProtocol == "https" {
-		if svc.HcTlsVerify != 0 && svc.HcDomain != "" {
-			fmt.Fprintf(&b, " check-ssl verify required ca-file @system-ca check-sni %s", svc.HcDomain)
+	if be.HcProtocol == "https" {
+		if be.HcTlsVerify != 0 && be.HcDomain != "" {
+			fmt.Fprintf(&b, " check-ssl verify required ca-file @system-ca check-sni %s", be.HcDomain)
 		} else {
 			b.WriteString(" check-ssl verify none")
 		}
 	}
-	if svc.StickyEnabled != 0 && svc.Protocol != "tcp" {
-		fmt.Fprintf(&b, " cookie %s", ServerName(t, sl))
+	if be.StickyEnabled != 0 && be.Mode == "http" {
+		fmt.Fprintf(&b, " cookie %s", ServerName(sv, sl))
 	}
-	switch svc.ProxyProtocol {
+	switch be.ProxyProtocol {
 	case "v1":
 		b.WriteString(" send-proxy check-send-proxy")
 	case "v2":
 		b.WriteString(" send-proxy-v2 check-send-proxy")
 	}
-	if t.Weight != 100 {
-		fmt.Fprintf(&b, " weight %d", t.Weight)
+	if sv.Weight != 100 {
+		fmt.Fprintf(&b, " weight %d", sv.Weight)
 	}
-	if t.Backup != 0 {
+	if sv.Backup != 0 {
 		b.WriteString(" backup")
 	}
 	return b.String()
+}
+
+// HasPort80 reports whether a frontend already listens on :80 itself (or via its redirect).
+func HasPort80(f *state.Frontend) bool {
+	if f.Mode == "http" && f.Tls != 0 && f.HttpRedirect != 0 {
+		return true
+	}
+	for _, b := range f.Binds {
+		if b.Port == 80 && f.Mode == "http" && f.Tls == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Render produces the full tree.
@@ -230,7 +235,6 @@ func Render(in Input) (*Output, error) {
 			"timeout connect 5s", "timeout client 60s", "timeout server 60s", "timeout check 10s",
 		}},
 	}
-	// System sections.
 	panel := section{Header: "frontend sys_panel from loxy_http", Lines: []string{
 		fmt.Sprintf("bind :%d ssl crt %s alpn h2,http/1.1", in.PanelPort, path.Join(in.Root, "certs", "panel.pem")),
 		"option forwardfor",
@@ -261,29 +265,36 @@ func Render(in Input) (*Output, error) {
 		stats.Lines = append(stats.Lines, "http-request use-service prometheus-exporter if { path /metrics }")
 	}
 	stats.Lines = append(stats.Lines, "stats enable", "stats uri /stats", "stats refresh 5s")
-	c.System = []section{
-		panel,
-		{Header: "backend sys_panel_be from loxy_http", Lines: []string{"server loxy " + in.LoxyAddr}},
-		stats,
-	}
+	c.System = []section{panel, {Header: "backend sys_panel_be from loxy_http", Lines: []string{"server loxy " + in.LoxyAddr}}, stats}
 	out.Files["certs/panel.pem"] = []byte(in.PanelPEM)
 	out.Files["errors/maint.http"] = []byte(in.MaintPage)
 
-	var maint []string
 	usedCerts := map[int64]bool{}
 	needPlaceholder := false
-	lbs := append([]*state.LB(nil), in.LBs...)
-	sort.Slice(lbs, func(i, j int) bool { return lbs[i].ID < lbs[j].ID })
-	maintMap := MaintMapPath(in.Root)
-	for _, lb := range lbs {
-		if lb.Maintenance != 0 {
-			maint = append(maint, fmt.Sprintf("%d 1", lb.ID))
+	var maint []string
+	fes := append([]*state.Frontend(nil), in.Frontends...)
+	sort.Slice(fes, func(i, j int) bool { return fes[i].ID < fes[j].ID })
+	for _, f := range fes {
+		if f.Enabled == 0 {
+			continue
 		}
-		blk, err := renderLB(&in, lb, maintMap, usedCerts, &needPlaceholder, out)
+		if f.Maintenance != 0 {
+			maint = append(maint, fmt.Sprintf("%d 1", f.ID))
+		}
+		blk, err := renderFrontend(&in, f, usedCerts, &needPlaceholder, out)
 		if err != nil {
-			return nil, fmt.Errorf("lb %d: %w", lb.ID, err)
+			return nil, fmt.Errorf("frontend %d: %w", f.ID, err)
 		}
-		c.LBs = append(c.LBs, blk)
+		c.Blocks = append(c.Blocks, blk)
+	}
+	bes := append([]*state.Backend(nil), in.Backends...)
+	sort.Slice(bes, func(i, j int) bool { return bes[i].ID < bes[j].ID })
+	for _, b := range bes {
+		sec, err := renderBackend(&in, b)
+		if err != nil {
+			return nil, fmt.Errorf("backend %d: %w", b.ID, err)
+		}
+		c.Blocks = append(c.Blocks, block{Comment: fmt.Sprintf("# ---------- backend %d ----------", b.ID), Sections: []section{sec}})
 	}
 	if len(maint) > 0 {
 		out.Files["maps/maint.map"] = []byte(strings.Join(maint, "\n") + "\n")
@@ -309,206 +320,250 @@ func Render(in Input) (*Output, error) {
 	return out, nil
 }
 
-func validAddr(a string) bool {
-	if a == "" {
-		return true // wildcard
+const acmeLine = `http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/),map(virt@acme_http01)]" if { path_beg /.well-known/acme-challenge/ } { path,field(-1,/),map(virt@acme_http01) -m found }`
+
+// routeCond builds the ACL condition of a routing rule: (exact hosts) / (suffix hosts) AND path prefix.
+func routeCond(r state.Route) (string, error) {
+	var exact, suffix []string
+	for _, h := range r.Hosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if !model.ValidHostname(h, true) {
+			return "", fmt.Errorf("invalid route host %q", h)
+		}
+		if strings.HasPrefix(h, "*.") {
+			suffix = append(suffix, h[1:]) // ".example.com"
+		} else {
+			exact = append(exact, h)
+		}
 	}
-	x, err := netip.ParseAddr(a)
-	return err == nil && x.Zone() == ""
+	pathCond := ""
+	if r.PathPrefix != "" {
+		if !model.ValidRoutePath(r.PathPrefix) {
+			return "", fmt.Errorf("invalid path prefix %q", r.PathPrefix)
+		}
+		pathCond = " { path_beg " + r.PathPrefix + " }"
+	}
+	const host = "req.hdr(host),field(1,:),lower"
+	var alts []string
+	if len(exact) > 0 {
+		alts = append(alts, "{ "+host+" -m str "+strings.Join(exact, " ")+" }"+pathCond)
+	}
+	if len(suffix) > 0 {
+		alts = append(alts, "{ "+host+" -m end "+strings.Join(suffix, " ")+" }"+pathCond)
+	}
+	if len(alts) == 0 {
+		if pathCond == "" {
+			return "", fmt.Errorf("route needs hosts or a path prefix")
+		}
+		return strings.TrimSpace(pathCond), nil
+	}
+	return strings.Join(alts, " || "), nil
 }
 
-func renderLB(in *Input, lb *state.LB, maintMap string, usedCerts map[int64]bool, needPlaceholder *bool, out *Output) (lbBlock, error) {
-	for _, a := range BindAddrs(lb) {
-		if !validAddr(a) {
-			return lbBlock{}, fmt.Errorf("invalid bind address %q", a)
+func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, needPlaceholder *bool, out *Output) (block, error) {
+	blk := block{Comment: fmt.Sprintf("# ---------- frontend %d ----------", f.ID)}
+	if len(f.Binds) == 0 {
+		return blk, nil // nothing to listen on
+	}
+	for _, b := range f.Binds {
+		if !validAddr(b.Address, true) || !model.ValidPort(int(b.Port)) {
+			return blk, fmt.Errorf("invalid bind %q:%d", b.Address, b.Port)
 		}
 	}
-	for _, t := range lb.Targets {
-		for _, sl := range t.Slots {
-			if sl.Address == "" || !validAddr(sl.Address) {
-				return lbBlock{}, fmt.Errorf("invalid target address %q", sl.Address)
+	mode := "loxy_http"
+	if f.Mode == "tcp" {
+		mode = "loxy_tcp"
+	}
+	tls := f.Mode == "http" && f.Tls != 0
+	fe := section{Header: fmt.Sprintf("frontend %s from %s", FrontendName(f.ID), mode)}
+	for _, b := range f.Binds {
+		line := "bind " + bindAddr(b.Address, b.Port)
+		if tls {
+			line += " ssl crt-list " + CrtListPath(in.Root, f.ID) + " alpn h2,http/1.1"
+		}
+		fe.Lines = append(fe.Lines, line)
+	}
+	if f.Maxconn > 0 {
+		fe.Lines = append(fe.Lines, fmt.Sprintf("maxconn %d", f.Maxconn))
+	}
+	if f.TimeoutClientS != 60 {
+		fe.Lines = append(fe.Lines, fmt.Sprintf("timeout client %ds", f.TimeoutClientS))
+	}
+	maintMap := MaintMapPath(in.Root)
+	if f.Mode == "tcp" {
+		fe.Lines = append(fe.Lines, fmt.Sprintf("tcp-request connection reject if { str(%d),map(opt@%s) -m found }", f.ID, maintMap))
+	} else {
+		if f.ForwardedHeaders != 0 {
+			proto := "http"
+			if tls {
+				proto = "https"
 			}
+			fe.Lines = append(fe.Lines, "option forwardfor",
+				"http-request set-header X-Forwarded-Proto "+proto,
+				"http-request set-header X-Forwarded-Port %[dst_port]")
 		}
-	}
-	planName, maxconn, enforce := "-", int64(0), false
-	if lb.Plan != nil {
-		planName, maxconn, enforce = lb.Plan.Name, lb.Plan.MaxConnections, lb.Plan.EnforceLbCap != 0
-	}
-	blk := lbBlock{Comment: fmt.Sprintf("# ---------- LB %d (plan %s) ----------", lb.ID, planName)}
-	addrs := BindAddrs(lb)
-	if enforce && maxconn > 0 {
-		blk.Sections = append(blk.Sections, section{Header: "backend " + CapTable(lb.ID) + " from loxy_tcp", Lines: []string{
-			"stick-table type integer size 1 expire 24h store conn_cur",
-		}})
-	}
-	svcs := append([]*state.Service(nil), lb.Services...)
-	sort.Slice(svcs, func(i, j int) bool { return svcs[i].ID < svcs[j].ID })
-	has80 := false
-	for _, s := range svcs {
-		if (s.ListenPort == 80 && s.Protocol == "http") || (s.Protocol == "https" && s.HttpRedirect != 0) {
-			has80 = true
-		}
-	}
-	acmeLine := `http-request return status 200 content-type text/plain lf-string "%[path,field(-1,/),map(virt@acme_http01)]" if { path_beg /.well-known/acme-challenge/ } { path,field(-1,/),map(virt@acme_http01) -m found }`
-	maintHTTP := fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }", path.Join(in.Root, "errors", "maint.http"), lb.ID, maintMap)
-	maintTCP := fmt.Sprintf("tcp-request connection reject if { str(%d),map(opt@%s) -m found }", lb.ID, maintMap)
-	capLines := func() []string {
-		if !enforce || maxconn <= 0 {
-			return nil
-		}
-		return []string{
-			fmt.Sprintf("tcp-request connection track-sc0 int(1) table %s", CapTable(lb.ID)),
-			fmt.Sprintf("tcp-request connection reject if { sc0_conn_cur gt %d }", maxconn),
-		}
-	}
-	for _, s := range svcs {
-		mode := "loxy_http"
-		if s.Protocol == "tcp" {
-			mode = "loxy_tcp"
-		}
-		if len(addrs) > 0 {
-			fe := section{Header: fmt.Sprintf("frontend %s from %s", FrontendName(lb.ID, s.ID), mode)}
-			for _, a := range addrs {
-				line := "bind " + hostPort(a, s.ListenPort)
-				if s.Protocol == "https" {
-					line += " ssl crt-list " + CrtListPath(in.Root, s.ID) + " alpn h2,http/1.1"
-				}
-				fe.Lines = append(fe.Lines, line)
-			}
-			if maxconn > 0 {
-				fe.Lines = append(fe.Lines, fmt.Sprintf("maxconn %d", maxconn))
-			}
-			fe.Lines = append(fe.Lines, capLines()...)
-			if s.HttpTimeoutS != 60 {
-				fe.Lines = append(fe.Lines, fmt.Sprintf("timeout client %ds", s.HttpTimeoutS))
-			}
-			if s.Protocol == "tcp" {
-				fe.Lines = append(fe.Lines, maintTCP)
-			} else {
-				proto := "http"
-				if s.Protocol == "https" {
-					proto = "https"
-				}
-				fe.Lines = append(fe.Lines,
-					"option forwardfor",
-					"http-request set-header X-Forwarded-Proto "+proto,
-					"http-request set-header X-Forwarded-Port %[dst_port]")
-				if s.ListenPort == 80 && s.Protocol == "http" {
+		if !tls {
+			for _, b := range f.Binds {
+				if b.Port == 80 {
 					fe.Lines = append(fe.Lines, acmeLine)
+					break
 				}
-				fe.Lines = append(fe.Lines, maintHTTP)
-			}
-			fe.Lines = append(fe.Lines, "default_backend "+BackendName(lb.ID, s.ID))
-			blk.Sections = append(blk.Sections, fe)
-
-			if s.Protocol == "https" && s.HttpRedirect != 0 {
-				rd := section{Header: fmt.Sprintf("frontend %s from loxy_http", RedirectName(lb.ID, s.ID))}
-				for _, a := range addrs {
-					rd.Lines = append(rd.Lines, "bind "+hostPort(a, 80))
-				}
-				rd.Lines = append(rd.Lines, acmeLine, "http-request redirect scheme https code 301")
-				blk.Sections = append(blk.Sections, rd)
 			}
 		}
-		if s.Protocol == "https" {
-			var lst []string
-			for _, cid := range s.CertIDs {
-				c := in.Cert(cid)
-				if c == nil || c.PEM() == "" {
-					continue
-				}
-				usedCerts[cid] = true
-				lst = append(lst, fmt.Sprintf("%d.pem [alpn h2,http/1.1]", cid))
-			}
-			if len(lst) == 0 {
-				*needPlaceholder = true
-				lst = append(lst, "_placeholder.pem [alpn h2,http/1.1]")
-			}
-			out.Files[fmt.Sprintf("crt-lists/s%d.lst", s.ID)] = []byte(strings.Join(lst, "\n") + "\n")
-		}
-
-		be := section{Header: fmt.Sprintf("backend %s from %s", BackendName(lb.ID, s.ID), mode)}
-		be.Lines = append(be.Lines, "balance "+lb.Algorithm)
-		if s.HttpTimeoutS != 60 {
-			be.Lines = append(be.Lines, fmt.Sprintf("timeout server %ds", s.HttpTimeoutS))
-		}
-		if s.StickyEnabled != 0 && s.Protocol != "tcp" {
-			line := fmt.Sprintf("cookie %s insert indirect nocache httponly", s.StickyCookieName)
-			if s.Protocol == "https" {
-				line += " secure"
-			}
-			be.Lines = append(be.Lines, line+fmt.Sprintf(" maxlife %ds", s.StickyCookieLifetimeS))
-		}
-		if s.HcProtocol == "http" || s.HcProtocol == "https" {
-			be.Lines = append(be.Lines, "option httpchk")
-			send := "http-check send meth GET uri " + s.HcPath
-			if s.HcDomain != "" {
-				send += " ver HTTP/1.1 hdr Host " + s.HcDomain
-			}
-			be.Lines = append(be.Lines, send)
-			codes, err := model.StatusCodesToHAProxy(s.StatusCodes)
+		fe.Lines = append(fe.Lines, fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }",
+			path.Join(in.Root, "errors", "maint.http"), f.ID, maintMap))
+		for _, r := range f.Routes {
+			cond, err := routeCond(r)
 			if err != nil {
 				return blk, err
 			}
-			be.Lines = append(be.Lines, "http-check expect status "+codes)
-			if s.HcResponse != "" {
-				be.Lines = append(be.Lines, "http-check expect string '"+s.HcResponse+"'")
-			}
+			fe.Lines = append(fe.Lines, fmt.Sprintf("use_backend %s if %s", BackendName(r.BackendID), cond))
 		}
-		if s.HcTimeoutS != 10 {
-			be.Lines = append(be.Lines, fmt.Sprintf("timeout check %ds", s.HcTimeoutS))
-		}
-		if !in.OmitServers {
-			targets := append([]*state.Target(nil), lb.Targets...)
-			sort.Slice(targets, func(i, j int) bool { return targets[i].ID < targets[j].ID })
-			type srv struct {
-				id   int64
-				line string
-			}
-			var lines []srv
-			for _, t := range targets {
-				for _, sl := range t.Slots {
-					line := "server " + ServerName(t, sl) + " " + ServerArgs(lb, s, t, sl)
-					if t.AdminState == "maint" {
-						line += " disabled"
-					}
-					lines = append(lines, srv{sl.ID, line})
-				}
-			}
-			sort.Slice(lines, func(i, j int) bool { return lines[i].id < lines[j].id })
-			for _, l := range lines {
-				be.Lines = append(be.Lines, l.line)
-			}
-		}
-		blk.Sections = append(blk.Sections, be)
 	}
-	if !has80 && in.ACMEHTTP01[lb.ID] && len(addrs) > 0 {
-		fe := section{Header: fmt.Sprintf("frontend %s from loxy_http", ACMEFrontend(lb.ID))}
-		for _, a := range addrs {
-			fe.Lines = append(fe.Lines, "bind "+hostPort(a, 80))
+	if f.DefaultBackendID.Valid {
+		fe.Lines = append(fe.Lines, "default_backend "+BackendName(f.DefaultBackendID.Int64))
+	}
+	blk.Sections = append(blk.Sections, fe)
+
+	if tls {
+		var lst []string
+		for _, cid := range f.CertIDs {
+			c := in.Cert(cid)
+			if c == nil || c.PEM() == "" {
+				continue
+			}
+			usedCerts[cid] = true
+			lst = append(lst, fmt.Sprintf("%d.pem [alpn h2,http/1.1]", cid))
 		}
-		fe.Lines = append(fe.Lines, acmeLine, "http-request return status 404")
-		blk.Sections = append(blk.Sections, fe)
+		if len(lst) == 0 {
+			*needPlaceholder = true
+			lst = append(lst, "_placeholder.pem [alpn h2,http/1.1]")
+		}
+		out.Files[fmt.Sprintf("crt-lists/fe%d.lst", f.ID)] = []byte(strings.Join(lst, "\n") + "\n")
+		if f.HttpRedirect != 0 {
+			rd := section{Header: fmt.Sprintf("frontend %s from loxy_http", RedirectName(f.ID))}
+			for _, a := range addrs(f) {
+				rd.Lines = append(rd.Lines, "bind "+bindAddr(a, 80))
+			}
+			rd.Lines = append(rd.Lines, acmeLine, "http-request redirect scheme https code 301")
+			blk.Sections = append(blk.Sections, rd)
+		}
+	}
+	if in.ACMEHTTP01[f.ID] && !HasPort80(f) {
+		ac := section{Header: fmt.Sprintf("frontend %s from loxy_http", ACMEFrontend(f.ID))}
+		for _, a := range addrs(f) {
+			ac.Lines = append(ac.Lines, "bind "+bindAddr(a, 80))
+		}
+		ac.Lines = append(ac.Lines, acmeLine, "http-request return status 404")
+		blk.Sections = append(blk.Sections, ac)
 	}
 	return blk, nil
 }
 
-// LBSections extracts the config lines that belong to one LB (for GET /config).
-func LBSections(cfgText string, lbID int64) string {
-	prefixes := []string{fmt.Sprintf("lb%d_", lbID), ACMEFrontend(lbID)}
+// addrs returns the distinct bind addresses of a frontend (sorted).
+func addrs(f *state.Frontend) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, b := range f.Binds {
+		a := b.Address
+		if a == "" {
+			a = "*"
+		}
+		if !seen[a] {
+			seen[a] = true
+			out = append(out, a)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Ports80 returns the "address:80" listeners a frontend occupies implicitly (redirect/ACME).
+func Ports80(f *state.Frontend, acme bool) []string {
+	if f.Enabled == 0 {
+		return nil
+	}
+	implicit := (f.Mode == "http" && f.Tls != 0 && f.HttpRedirect != 0) || (acme && !HasPort80(f))
+	if !implicit {
+		return nil
+	}
+	return addrs(f)
+}
+
+func renderBackend(in *Input, b *state.Backend) (section, error) {
+	mode := "loxy_http"
+	if b.Mode == "tcp" {
+		mode = "loxy_tcp"
+	}
+	be := section{Header: fmt.Sprintf("backend %s from %s", BackendName(b.ID), mode)}
+	be.Lines = append(be.Lines, "balance "+b.Algorithm)
+	if b.TimeoutServerS != 60 {
+		be.Lines = append(be.Lines, fmt.Sprintf("timeout server %ds", b.TimeoutServerS))
+	}
+	if b.StickyEnabled != 0 && b.Mode == "http" {
+		if !model.ValidCookieName(b.StickyCookieName) {
+			return be, fmt.Errorf("invalid cookie name")
+		}
+		be.Lines = append(be.Lines, fmt.Sprintf("cookie %s insert indirect nocache httponly maxlife %ds", b.StickyCookieName, b.StickyCookieLifetimeS))
+	}
+	if b.HcProtocol == "http" || b.HcProtocol == "https" {
+		be.Lines = append(be.Lines, "option httpchk")
+		send := "http-check send meth GET uri " + b.HcPath
+		if b.HcDomain != "" {
+			send += " ver HTTP/1.1 hdr Host " + b.HcDomain
+		}
+		be.Lines = append(be.Lines, send)
+		codes, err := model.StatusCodesToHAProxy(b.StatusCodes)
+		if err != nil {
+			return be, err
+		}
+		be.Lines = append(be.Lines, "http-check expect status "+codes)
+		if b.HcResponse != "" {
+			be.Lines = append(be.Lines, "http-check expect string '"+b.HcResponse+"'")
+		}
+	}
+	if b.HcTimeoutS != 10 {
+		be.Lines = append(be.Lines, fmt.Sprintf("timeout check %ds", b.HcTimeoutS))
+	}
+	if in.OmitServers {
+		return be, nil
+	}
+	type srv struct {
+		id   int64
+		line string
+	}
+	var lines []srv
+	for _, sv := range b.Servers {
+		for _, sl := range sv.Slots {
+			if !validAddr(sl.Address, false) {
+				return be, fmt.Errorf("invalid server address %q", sl.Address)
+			}
+			line := "server " + ServerName(sv, sl) + " " + ServerArgs(b, sv, sl)
+			if sv.AdminState == "maint" {
+				line += " disabled"
+			}
+			lines = append(lines, srv{sl.ID, line})
+		}
+	}
+	sort.Slice(lines, func(i, j int) bool { return lines[i].id < lines[j].id })
+	for _, l := range lines {
+		be.Lines = append(be.Lines, l.line)
+	}
+	return be, nil
+}
+
+// FrontendSections extracts the config of one frontend and the backends it uses (GET /config).
+func FrontendSections(cfgText string, f *state.Frontend) string {
+	names := map[string]bool{FrontendName(f.ID): true, RedirectName(f.ID): true, ACMEFrontend(f.ID): true}
+	for _, id := range f.BackendIDs() {
+		names[BackendName(id)] = true
+	}
 	var b strings.Builder
 	in := false
 	for _, line := range strings.Split(cfgText, "\n") {
 		if line != "" && line[0] != ' ' && line[0] != '#' {
-			f := strings.Fields(line)
-			in = false
-			if len(f) >= 2 && (f[0] == "frontend" || f[0] == "backend") {
-				for _, p := range prefixes {
-					if strings.HasPrefix(f[1], p) {
-						in = true
-					}
-				}
-			}
+			fl := strings.Fields(line)
+			in = len(fl) >= 2 && (fl[0] == "frontend" || fl[0] == "backend") && names[fl[1]]
 		}
 		if in {
 			b.WriteString(line + "\n")

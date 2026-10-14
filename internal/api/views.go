@@ -1,34 +1,12 @@
 package api
 
 import (
-	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/2shiraz/loxy/internal/health"
+	"github.com/2shiraz/loxy/internal/metrics"
 	"github.com/2shiraz/loxy/internal/state"
 )
-
-type planView struct {
-	ID                int64  `json:"id"`
-	Name              string `json:"name"`
-	MaxConnections    int64  `json:"max_connections"`
-	MaxServices       int64  `json:"max_services"`
-	MaxTargets        int64  `json:"max_targets"`
-	MaxCertificates   int64  `json:"max_certificates"`
-	TrafficQuotaBytes int64  `json:"traffic_quota_bytes"`
-	PriceMonthlyCents *int64 `json:"price_monthly_cents"`
-	Currency          string `json:"currency"`
-}
-
-func viewPlan(p *state.Plan) planView {
-	if p == nil {
-		return planView{}
-	}
-	return planView{ID: p.ID, Name: p.Name, MaxConnections: p.MaxConnections, MaxServices: p.MaxServices, MaxTargets: p.MaxTargets,
-		MaxCertificates: p.MaxCertificates, TrafficQuotaBytes: p.TrafficQuotaBytes, PriceMonthlyCents: nullI64(p.PriceMonthlyCents), Currency: p.Currency}
-}
 
 type healthSummary struct {
 	Status   string   `json:"status"`
@@ -37,199 +15,174 @@ type healthSummary struct {
 	Messages []string `json:"messages"`
 }
 
-type checkView struct {
-	TargetID int64   `json:"target_id"`
+type resolvedView struct {
 	SlotID   int64   `json:"slot_id"`
-	ServerID *int64  `json:"server_id"`
+	ServerID int64   `json:"server_id"`
+	HostID   *int64  `json:"host_id"`
 	Name     *string `json:"name"`
 	Address  string  `json:"address"`
+	Port     int64   `json:"port"`
 	Status   string  `json:"status"`
 	Check    string  `json:"check,omitempty"`
+	Sessions float64 `json:"sessions"`
 }
 
-type serviceHealth struct {
-	ServiceID int64       `json:"service_id"`
-	Healthy   int         `json:"healthy"`
-	Total     int         `json:"total"`
-	Checks    []checkView `json:"checks"`
-}
-
-// healthTree builds per-service checks from observed state (§9).
-func (s *Server) healthTree(lb *state.LB) (healthSummary, []serviceHealth) {
+// backendHealth computes the health of every resolved server of a backend (§9).
+func (s *Server) backendHealth(b *state.Backend) (healthSummary, []resolvedView) {
 	snap := s.Snap.Get()
-	var svcs []health.Service
-	var out []serviceHealth
+	out := []resolvedView{}
+	var statuses []string
 	var msgs []string
-	for _, sv := range lb.Services {
-		sh := serviceHealth{ServiceID: sv.ID, Checks: []checkView{}}
-		hs := health.Service{ID: sv.ID}
-		for _, t := range lb.Targets {
-			for _, sl := range t.Slots {
-				cv := checkView{TargetID: t.ID, SlotID: sl.ID, Address: sl.Address, Status: "unknown"}
-				if sl.ServerID != 0 {
-					cv.ServerID = ptr(sl.ServerID)
-					if srv := snap.Server(sl.ServerID); srv != nil {
-						cv.Name = ptr(srv.Name)
-					}
+	var checks map[int64]metrics.Check
+	if s.Metrics != nil {
+		checks = s.Metrics.Checks(b.ID)
+	}
+	for _, sv := range b.Servers {
+		for _, sl := range sv.Slots {
+			rv := resolvedView{SlotID: sl.ID, ServerID: sv.ID, Address: sl.Address, Port: sv.PortOr(b.Port), Status: "unknown"}
+			if sl.HostID != 0 {
+				rv.HostID = ptr(sl.HostID)
+				if h := snap.Host(sl.HostID); h != nil {
+					rv.Name = ptr(h.Name)
 				}
-				if s.Metrics != nil {
-					if ch, ok := s.Metrics.Check(lb.ID, sv.ID, sl.ID); ok {
-						cv.Status, cv.Check = ch.Status, ch.Detail
-					}
-				}
-				if cv.Status == "unhealthy" && len(msgs) < 3 {
-					msgs = append(msgs, fmt.Sprintf("%s → :%d · %s", sl.Address, sv.DestinationPort, cv.Check))
-				}
-				hs.Checks = append(hs.Checks, cv.Status)
-				sh.Checks = append(sh.Checks, cv)
 			}
+			if ch, ok := checks[sl.ID]; ok {
+				rv.Status, rv.Check, rv.Sessions = ch.Status, ch.Detail, float64(ch.Scur)
+			}
+			if rv.Status == "unhealthy" && len(msgs) < 3 {
+				msgs = append(msgs, fmt.Sprintf("%s:%d · %s", sl.Address, rv.Port, rv.Check))
+			}
+			statuses = append(statuses, rv.Status)
+			out = append(out, rv)
 		}
-		svcs = append(svcs, hs)
-		out = append(out, sh)
 	}
-	sum := health.Aggregate(svcs)
-	for i := range out {
-		out[i].Healthy, out[i].Total = svcs[i].Healthy, svcs[i].Total
-	}
+	sum := health.Aggregate([]health.Service{{ID: b.ID, Checks: statuses}})
 	if msgs == nil {
 		msgs = []string{}
 		if sum.Status == "healthy" {
-			msgs = append(msgs, "All services are healthy.")
+			msgs = append(msgs, "All servers are healthy.")
 		}
 	}
 	return healthSummary{Status: sum.Status, Healthy: sum.Healthy, Total: sum.Total, Messages: msgs}, out
 }
 
-func distinctCerts(lb *state.LB) int {
-	m := map[int64]bool{}
-	for _, s := range lb.Services {
-		for _, c := range s.CertIDs {
-			m[c] = true
+// frontendHealth aggregates the backends a frontend routes to.
+func (s *Server) frontendHealth(f *state.Frontend) healthSummary {
+	snap := s.Snap.Get()
+	var svcs []health.Service
+	var msgs []string
+	for _, id := range f.BackendIDs() {
+		b := snap.Backend(id)
+		if b == nil {
+			continue
+		}
+		sum, rs := s.backendHealth(b)
+		hs := health.Service{ID: b.ID}
+		for _, r := range rs {
+			hs.Checks = append(hs.Checks, r.Status)
+		}
+		svcs = append(svcs, hs)
+		if sum.Status == "unhealthy" || sum.Status == "degraded" {
+			msgs = append(msgs, fmt.Sprintf("Backend %s: %d/%d healthy", b.Name, sum.Healthy, sum.Total))
 		}
 	}
-	return len(m)
+	sum := health.Aggregate(svcs)
+	if msgs == nil {
+		msgs = []string{}
+	}
+	return healthSummary{Status: sum.Status, Healthy: sum.Healthy, Total: sum.Total, Messages: msgs}
 }
 
-func resolvedCount(lb *state.LB) int {
-	n := 0
-	for _, t := range lb.Targets {
-		n += len(t.Slots)
-	}
-	return n
-}
-
-func (s *Server) viewLB(lb *state.LB) map[string]any {
-	snap := s.Snap.Get()
-	node := snap.Node(lb.NodeID)
-	loc := map[string]any{}
-	if node != nil {
-		loc = map[string]any{"city": node.LocationCity, "country": node.LocationCountry, "network_zone": node.NetworkZone, "lat": node.Lat, "lon": node.Lon}
-	}
-	nets := []map[string]any{}
-	for _, n := range lb.Networks {
-		nets = append(nets, map[string]any{"network_id": n.NetworkID, "ip": n.IP})
-	}
-	sum, _ := s.healthTree(lb)
-	var open int64
-	if s.Metrics != nil {
-		open = s.Metrics.OpenConnections(lb.ID)
-	}
-	traffic := s.trafficOut(lb.ID)
-	return map[string]any{
-		"id": lb.ID, "name": lb.Name, "version": lb.Version, "node_id": lb.NodeID, "plan": viewPlan(lb.Plan), "location": loc,
-		"public_net":       map[string]any{"enabled": lb.PublicEnabled != 0, "ipv4": nullStr(lb.IPv4), "ipv6": nullStr(lb.IPv6)},
-		"private_net":      nets,
-		"algorithm":        lb.Algorithm,
-		"delete_protected": lb.DeleteProtected != 0,
-		"maintenance":      lb.Maintenance != 0,
-		"labels":           lb.Labels,
-		"status":           lb.Status,
-		"last_error":       nullStr(lb.LastError.String),
-		"created_at":       lb.CreatedAt,
-		"usage": map[string]any{"targets": resolvedCount(lb), "services": len(lb.Services), "certificates": distinctCerts(lb),
-			"open_connections": open, "traffic_out_month_bytes": traffic},
-		"health": sum,
-	}
-}
-
-func viewService(sv *state.Service) map[string]any {
-	certs := sv.CertIDs
+func (s *Server) viewFrontend(f *state.Frontend) map[string]any {
+	certs := f.CertIDs
 	if certs == nil {
 		certs = []int64{}
 	}
-	codes := sv.StatusCodes
+	binds := f.Binds
+	if binds == nil {
+		binds = []state.Bind{}
+	}
+	routes := []map[string]any{}
+	for _, r := range f.Routes {
+		hosts := r.Hosts
+		if hosts == nil {
+			hosts = []string{}
+		}
+		routes = append(routes, map[string]any{"id": r.ID, "hosts": hosts, "path_prefix": r.PathPrefix, "backend_id": r.BackendID})
+	}
+	var p metrics.Point
+	if s.Metrics != nil {
+		p = s.Metrics.Latest(metrics.FE, f.ID)
+	}
+	return map[string]any{
+		"id": f.ID, "name": f.Name, "version": f.Version, "description": f.Description, "mode": f.Mode, "tls": f.Tls != 0,
+		"binds": binds, "certificates": certs, "http_redirect": f.HttpRedirect != 0, "default_backend_id": nullI64(f.DefaultBackendID),
+		"routes": routes, "timeout_client_s": f.TimeoutClientS, "maxconn": f.Maxconn, "forwarded_headers": f.ForwardedHeaders != 0,
+		"enabled": f.Enabled != 0, "maintenance": f.Maintenance != 0, "labels": f.Labels, "status": f.Status,
+		"last_error": nullStr(f.LastError.String), "created_at": f.CreatedAt,
+		"stats":  map[string]any{"open_connections": p.Open, "requests_per_second": p.RPS, "bytes_out_per_second": p.Out},
+		"health": s.frontendHealth(f),
+	}
+}
+
+func viewHealthCheck(b *state.Backend) map[string]any {
+	codes := b.StatusCodes
 	if codes == nil {
 		codes = []string{}
 	}
 	var hcHTTP any
-	if sv.HcProtocol != "tcp" {
-		hcHTTP = map[string]any{"domain": nullStr(sv.HcDomain), "path": sv.HcPath, "response": nullStr(sv.HcResponse),
-			"status_codes": codes, "tls_verify": sv.HcTlsVerify != 0}
+	if b.HcProtocol != "tcp" {
+		hcHTTP = map[string]any{"domain": nullStr(b.HcDomain), "path": b.HcPath, "response": nullStr(b.HcResponse),
+			"status_codes": codes, "tls_verify": b.HcTlsVerify != 0}
+	}
+	port := b.HcPort
+	if port == 0 {
+		port = b.Port
+	}
+	return map[string]any{"protocol": b.HcProtocol, "port": port, "interval_s": b.HcIntervalS, "timeout_s": b.HcTimeoutS,
+		"retries": b.HcRetries, "http": hcHTTP}
+}
+
+func (s *Server) viewBackend(b *state.Backend) map[string]any {
+	sum, rs := s.backendHealth(b)
+	var p metrics.Point
+	if s.Metrics != nil {
+		p = s.Metrics.Latest(metrics.BE, b.ID)
 	}
 	return map[string]any{
-		"id": sv.ID, "lb_id": sv.LbID, "version": sv.Version, "protocol": sv.Protocol, "listen_port": sv.ListenPort,
-		"destination_port": sv.DestinationPort, "proxy_protocol": sv.ProxyProtocol,
-		"http": map[string]any{"redirect_http": sv.HttpRedirect != 0, "timeout_s": sv.HttpTimeoutS, "certificates": certs,
-			"sticky_sessions": sv.StickyEnabled != 0, "cookie_name": sv.StickyCookieName, "cookie_lifetime_s": sv.StickyCookieLifetimeS},
-		"health_check": map[string]any{"protocol": sv.HcProtocol, "port": sv.HcPort, "interval_s": sv.HcIntervalS,
-			"timeout_s": sv.HcTimeoutS, "retries": sv.HcRetries, "http": hcHTTP},
+		"id": b.ID, "name": b.Name, "version": b.Version, "description": b.Description, "mode": b.Mode, "algorithm": b.Algorithm,
+		"port": b.Port, "health_check": viewHealthCheck(b), "sticky_sessions": b.StickyEnabled != 0, "cookie_name": b.StickyCookieName,
+		"cookie_lifetime_s": b.StickyCookieLifetimeS, "proxy_protocol": b.ProxyProtocol, "timeout_server_s": b.TimeoutServerS,
+		"labels": b.Labels, "created_at": b.CreatedAt, "used_by": s.Snap.Get().UsedBy(b.ID), "servers_count": len(rs),
+		"health": sum, "stats": map[string]any{"sessions": p.Open, "queue": p.Queue, "response_time_ms": p.RespMS},
 	}
 }
 
-func (s *Server) viewTarget(lb *state.LB, t *state.Target) map[string]any {
-	snap := s.Snap.Get()
-	_, tree := s.healthTree(lb)
-	resolved := []map[string]any{}
-	for _, sl := range t.Slots {
-		h, total := 0, 0
-		for _, sh := range tree {
-			for _, c := range sh.Checks {
-				if c.SlotID == sl.ID {
-					total++
-					if c.Status == "healthy" {
-						h++
-					}
-				}
-			}
+func (s *Server) viewServer(b *state.Backend, sv *state.Server) map[string]any {
+	_, all := s.backendHealth(b)
+	resolved := []resolvedView{}
+	for _, r := range all {
+		if r.ServerID == sv.ID {
+			resolved = append(resolved, r)
 		}
-		item := map[string]any{"slot_id": sl.ID, "address": sl.Address, "healthy": h, "total": total, "server_id": nil, "name": nil,
-			"public_ip": nil, "private_ip": nil}
-		if sl.ServerID != 0 {
-			item["server_id"] = sl.ServerID
-			if srv := snap.Server(sl.ServerID); srv != nil {
-				item["name"] = srv.Name
-				item["public_ip"] = nullStr(firstNonEmpty(srv.PublicIpv4, srv.PublicIpv6))
-				item["private_ip"] = nullStr(srv.PrivateIpv4)
-			}
-		} else {
-			item["public_ip"] = sl.Address
-		}
-		resolved = append(resolved, item)
+	}
+	var port any
+	if sv.Port.Valid {
+		port = sv.Port.Int64
 	}
 	return map[string]any{
-		"id": t.ID, "type": t.Type, "server_id": nullI64(t.ServerID), "label_selector": nullStr(t.LabelSelector), "ip": nullStr(t.Ip),
-		"use_private_ip": t.UsePrivateIp != 0, "weight": t.Weight, "backup": t.Backup != 0, "admin_state": t.AdminState,
-		"removing": t.Removing != 0, "resolved": resolved,
+		"id": sv.ID, "backend_id": sv.BackendID, "type": sv.Type, "ip": nullStr(sv.Ip), "host_id": nullI64(sv.HostID),
+		"label_selector": nullStr(sv.LabelSelector), "port": port, "use_private_ip": sv.UsePrivateIp != 0, "weight": sv.Weight,
+		"backup": sv.Backup != 0, "admin_state": sv.AdminState, "removing": sv.Removing != 0, "resolved": resolved,
 	}
-}
-
-func firstNonEmpty(xs ...string) string {
-	for _, x := range xs {
-		if x != "" {
-			return x
-		}
-	}
-	return ""
 }
 
 func (s *Server) viewCert(c *state.Cert) map[string]any {
 	used := []int64{}
-	for _, lb := range s.Snap.Get().LBs {
-		for _, sv := range lb.Services {
-			for _, id := range sv.CertIDs {
-				if id == c.ID {
-					used = append(used, sv.ID)
-				}
+	for _, f := range s.Snap.Get().Frontends {
+		for _, id := range f.CertIDs {
+			if id == c.ID {
+				used = append(used, f.ID)
 			}
 		}
 	}
@@ -249,17 +202,37 @@ func (s *Server) viewCert(c *state.Cert) map[string]any {
 	}
 }
 
-// lbAddresses returns the public IPs clients should resolve to (assigned IPs, else the node's primary IPs).
-func (s *Server) lbAddresses(lb *state.LB) (string, string) {
-	v4, v6 := lb.IPv4, lb.IPv6
-	if v4 == "" && v6 == "" {
-		if n := s.Snap.Get().Node(lb.NodeID); n != nil {
-			for _, ip := range n.IPs {
-				if ip.Kind == "primary" && ip.Family == 4 && v4 == "" {
-					v4 = ip.Address
+// frontendAddresses returns the public IPs clients should resolve to: the frontend's explicit
+// bind addresses, or the node's addresses when it binds on all interfaces.
+func (s *Server) frontendAddresses(f *state.Frontend) (v4, v6 []string) {
+	wildcard := false
+	seen := map[string]bool{}
+	for _, b := range f.Binds {
+		if b.Address == "*" || b.Address == "" {
+			wildcard = true
+			continue
+		}
+		if seen[b.Address] {
+			continue
+		}
+		seen[b.Address] = true
+		if isV6(b.Address) {
+			v6 = append(v6, b.Address)
+		} else {
+			v4 = append(v4, b.Address)
+		}
+	}
+	if wildcard {
+		if n := s.Snap.Get().Node(f.NodeID); n != nil {
+			for _, a := range n.Addresses {
+				if seen[a.Address] {
+					continue
 				}
-				if ip.Kind == "primary" && ip.Family == 6 && v6 == "" {
-					v6 = ip.Address
+				seen[a.Address] = true
+				if a.Family == 6 {
+					v6 = append(v6, a.Address)
+				} else {
+					v4 = append(v4, a.Address)
 				}
 			}
 		}
@@ -269,14 +242,14 @@ func (s *Server) lbAddresses(lb *state.LB) (string, string) {
 
 func (s *Server) viewDomain(d *state.Domain) map[string]any {
 	req := []map[string]any{}
-	if d.LbID.Valid {
-		if lb := s.Snap.Get().LB(d.LbID.Int64); lb != nil {
-			v4, v6 := s.lbAddresses(lb)
-			if v4 != "" {
-				req = append(req, map[string]any{"type": "A", "name": d.Fqdn, "value": v4, "ttl": d.Ttl})
+	if d.FrontendID.Valid {
+		if f := s.Snap.Get().Frontend(d.FrontendID.Int64); f != nil {
+			v4, v6 := s.frontendAddresses(f)
+			for _, a := range v4 {
+				req = append(req, map[string]any{"type": "A", "name": d.Fqdn, "value": a, "ttl": d.Ttl})
 			}
-			if v6 != "" {
-				req = append(req, map[string]any{"type": "AAAA", "name": d.Fqdn, "value": v6, "ttl": d.Ttl})
+			for _, a := range v6 {
+				req = append(req, map[string]any{"type": "AAAA", "name": d.Fqdn, "value": a, "ttl": d.Ttl})
 			}
 		}
 	}
@@ -288,30 +261,9 @@ func (s *Server) viewDomain(d *state.Domain) map[string]any {
 		aaaa = []string{}
 	}
 	return map[string]any{
-		"id": d.ID, "fqdn": d.Fqdn, "lb_id": nullI64(d.LbID), "service_id": nullI64(d.ServiceID), "dns_provider_id": nullI64(d.DnsProviderID),
+		"id": d.ID, "fqdn": d.Fqdn, "frontend_id": nullI64(d.FrontendID), "dns_provider_id": nullI64(d.DnsProviderID),
 		"zone": nullStr(d.Zone), "auto_records": d.AutoRecords != 0, "status": d.Status, "status_detail": nullStr(d.StatusDetail.String),
 		"required_records": req, "observed": map[string]any{"a": a, "aaaa": aaaa}, "checked_at": nullI64(d.CheckedAt),
 		"certificate_id": nullI64(d.CertificateID), "created_at": d.CreatedAt,
 	}
-}
-
-var trafficCache struct {
-	sync.Mutex
-	at  time.Time
-	out map[int64]int64
-}
-
-// trafficOut returns month-to-date bytes out, cached for 10 s (keeps list reads in memory).
-func (s *Server) trafficOut(lb int64) int64 {
-	trafficCache.Lock()
-	defer trafficCache.Unlock()
-	if time.Since(trafficCache.at) > 10*time.Second || trafficCache.out == nil {
-		m := map[int64]int64{}
-		rows, _ := s.Store.Q.ListTrafficMonth(context.Background(), time.Now().UTC().Format("2006-01"))
-		for _, r := range rows {
-			m[r.LbID] = r.BytesOut
-		}
-		trafficCache.out, trafficCache.at = m, time.Now()
-	}
-	return trafficCache.out[lb]
 }

@@ -28,8 +28,8 @@ func (f *fakeNode) Stat(context.Context, bool) ([]stats.Row, map[string]string, 
 const hdr = "# pxname,svname,scur,conn_tot,req_tot,bin,bout,type,status,sid,check_status,check_code,check_duration,rtime,qcur\n"
 
 func row(conn, req int) string {
-	return hdr + "lb1_s1_fe,FRONTEND,3," + itoa(conn) + "," + itoa(req) + ",100,200,0,OPEN,,,,,,\n" +
-		"lb1_s1_be,t1,1,,,,,2,UP,7,L7OK,200,2,,\nlb1_s1_be,BACKEND,0,,,,,1,UP,,,,,5,0\n"
+	return hdr + "fe_1,FRONTEND,3," + itoa(conn) + "," + itoa(req) + ",100,200,0,OPEN,,,,,,\n" +
+		"be_1,s1,1,,,,,2,UP,7,L7OK,200,2,,\nbe_1,BACKEND,0,,,,,1,UP,,,,,5,0\n"
 }
 
 func itoa(i int) string { return fmtInt(i) }
@@ -59,7 +59,7 @@ func TestDeltasAndReset(t *testing.T) {
 	_ = c.pollNoDB(now.Add(time.Second), n)
 	n.stat, n.pid = row(5, 20), "9" // reload: new worker, counters restart
 	_ = c.pollNoDB(now.Add(2*time.Second), n)
-	pts := c.rings[key{1, 1}].since(0)
+	pts := c.rings[key{FE, 1}].since(0)
 	if len(pts) != 3 {
 		t.Fatalf("points %d", len(pts))
 	}
@@ -69,14 +69,17 @@ func TestDeltasAndReset(t *testing.T) {
 	if pts[2].CPS != 5 || pts[2].RPS != 20 {
 		t.Fatalf("after reset must use current value, got %+v", pts[2])
 	}
-	if pts[2].Open != 3 || pts[2].RespMS != 5 {
+	if pts[2].Open != 3 {
 		t.Fatalf("gauges: %+v", pts[2])
 	}
-	ch, ok := c.Check(1, 1, 7)
+	if be := c.rings[key{BE, 1}].since(0); len(be) != 3 || be[2].RespMS != 5 {
+		t.Fatalf("backend: %+v", be)
+	}
+	ch, ok := c.Check(1, 7)
 	if !ok || ch.Status != "healthy" || ch.Detail != "L7OK/200 in 2ms" {
 		t.Fatalf("check %+v", ch)
 	}
-	s, _ := c.Query(context.Background(), 1, 0, now.Unix(), now.Unix()+2, 1, []string{"requests_per_second"})
+	s, _ := c.Query(context.Background(), FE, 1, now.Unix(), now.Unix()+2, 1, []string{"requests_per_second"})
 	if v := s.Values["requests_per_second"]; len(v) != 3 || v[1] == nil || *v[1] != 50 {
 		t.Fatalf("query %v", v)
 	}

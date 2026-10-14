@@ -37,24 +37,34 @@ frontend fake_200_str from loxy_http
     http-request return status 200 content-type text/plain string "OK"
 `
 
-func plan(maxconn int64) *state.Plan {
-	return &state.Plan{ID: 1, Name: "lb11", MaxConnections: maxconn, MaxServices: 5, MaxTargets: 25, MaxCertificates: 10, EnforceLbCap: 1}
+func ipServer(id int64, ip string) *state.Server {
+	return &state.Server{BackendServer: db.BackendServer{ID: id, Type: "ip", Ip: ip, Weight: 100, AdminState: "ready"},
+		Slots: []*state.Slot{{ID: id, ServerID: id, Address: ip}}}
 }
 
-func ipTarget(id int64, ip string) *state.Target {
-	return &state.Target{Target: db.Target{ID: id, Type: "ip", Ip: ip, Weight: 100, AdminState: "ready"},
-		Slots: []*state.Slot{{ID: id, TargetID: id, Address: ip}}}
+// backend returns a backend on `port` (tcp health checks, 1 s interval) with the given servers.
+func backend(id int64, mode string, port int64, servers ...*state.Server) *state.Backend {
+	b := &state.Backend{Backend: db.Backend{ID: id, Name: fmt.Sprintf("b%d", id), Mode: mode, Algorithm: "roundrobin", Port: port, ProxyProtocol: "none",
+		TimeoutServerS: 60, HcProtocol: "tcp", HcPort: port, HcIntervalS: 1, HcTimeoutS: 1, HcRetries: 1, HcPath: "/",
+		StickyCookieName: "LOXYSTICKY", StickyCookieLifetimeS: 300}, StatusCodes: []string{"2??", "3??"}}
+	for _, sv := range servers {
+		sv.BackendID = id
+		b.Servers = append(b.Servers, sv)
+	}
+	return b
 }
 
-func svc(id, lb int64, proto string, listen, dest int64) *state.Service {
-	return &state.Service{Service: db.Service{ID: id, LbID: lb, Protocol: proto, ListenPort: listen, DestinationPort: dest, ProxyProtocol: "none",
-		HttpTimeoutS: 60, HcProtocol: "tcp", HcPort: dest, HcIntervalS: 1, HcTimeoutS: 1, HcRetries: 1, HcPath: "/",
-		StickyCookieName: "LBSTICKY", StickyCookieLifetimeS: 300}, StatusCodes: []string{"2??", "3??"}}
+// frontend returns an enabled frontend on *:port whose default backend is beID.
+func frontend(id int64, mode string, port int64, beID int64) *state.Frontend {
+	return &state.Frontend{Frontend: db.Frontend{ID: id, Name: fmt.Sprintf("f%d", id), Mode: mode, TimeoutClientS: 60, Maxconn: 1000, Enabled: 1,
+		DefaultBackendID: sql.NullInt64{Int64: beID, Valid: beID != 0}}, Binds: []state.Bind{{Address: "*", Port: port}}}
 }
 
-func baseInput(lbs ...*state.LB) render.Input {
-	return render.Input{NodeID: 1, PanelPort: 8443, LBs: lbs, Cert: func(int64) *state.Cert { return nil }}
+func input(fes []*state.Frontend, bes ...*state.Backend) render.Input {
+	return render.Input{NodeID: 1, PanelPort: 8443, Frontends: fes, Backends: bes, Cert: func(int64) *state.Cert { return nil }}
 }
+
+func baseInput() render.Input { return input(nil) }
 
 func serverStatus(t *testing.T, e *env) map[string]string {
 	out, err := e.rt.Exec(context.Background(), "show stat")
@@ -90,11 +100,9 @@ func TestVerifyMasterSocketPerms(t *testing.T) {
 // §7.7: synchronous reload reports Success=1; a config failing at startup reports Success=0
 // and the old worker keeps serving.
 func TestReloadSuccessAndFailure(t *testing.T) {
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1000)}
-	lb.Services = []*state.Service{svc(1, 1, "http", 8080, 19000)}
-	lb.Targets = []*state.Target{ipTarget(1, "127.0.0.3")}
-	e := startHAProxy(t, baseInput(lb), fakes)
-	res := e.apply(baseInput(lb), fakes, true)
+	in := input([]*state.Frontend{frontend(1, "http", 8080, 1)}, backend(1, "http", 19000, ipServer(1, "127.0.0.3")))
+	e := startHAProxy(t, in, fakes)
+	res := e.apply(in, fakes, true)
 	if !res.Success {
 		t.Fatalf("reload failed: %s", res.Output)
 	}
@@ -108,8 +116,7 @@ func TestReloadSuccessAndFailure(t *testing.T) {
 	}
 	waitFor(t, 10*time.Second, "service up", func() bool { c, _ := get(); return c == 200 })
 	// Binding a non-local address fails at startup (passes -c).
-	bad := baseInput(lb)
-	res = e.apply(bad, fakes+"\nfrontend broken from loxy_http\n    bind 192.0.2.77:9999\n", true)
+	res = e.apply(in, fakes+"\nfrontend broken from loxy_http\n    bind 192.0.2.77:9999\n", true)
 	if res.Success {
 		t.Fatalf("expected Success=0, got: %s", res.Output)
 	}
@@ -124,33 +131,29 @@ func TestReloadSuccessAndFailure(t *testing.T) {
 
 // VERIFY §7.5: two `http-check expect` rules are AND-ed (status and body).
 func TestVerifyHTTPCheckAND(t *testing.T) {
-	s := svc(1, 1, "http", 8080, 19000)
-	s.HcProtocol, s.HcResponse = "http", "OK"
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1000)}
-	lb.Services = []*state.Service{s}
-	lb.Targets = []*state.Target{ipTarget(1, "127.0.0.1"), ipTarget(2, "127.0.0.2"), ipTarget(3, "127.0.0.3")}
-	e := startHAProxy(t, baseInput(lb), fakes)
+	b := backend(1, "http", 19000, ipServer(1, "127.0.0.1"), ipServer(2, "127.0.0.2"), ipServer(3, "127.0.0.3"))
+	b.HcProtocol, b.HcResponse = "http", "OK"
+	e := startHAProxy(t, input([]*state.Frontend{frontend(1, "http", 8080, 1)}, b), fakes)
 	var st map[string]string
 	waitFor(t, 10*time.Second, "checks settle", func() bool {
 		st = serverStatus(t, e)
-		return st["lb1_s1_be/t1"] == "DOWN" && st["lb1_s1_be/t2"] == "DOWN" && st["lb1_s1_be/t3"] == "UP"
+		return st["be_1/s1"] == "DOWN" && st["be_1/s2"] == "DOWN" && st["be_1/s3"] == "UP"
 	})
 	t.Logf("statuses: %v", st)
 }
 
 // §7.6: dynamic server lifecycle with the exact ServerArgs used in config.
 func TestDynamicServers(t *testing.T) {
-	s := svc(1, 1, "http", 8080, 19000)
-	s.StickyEnabled = 1
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1000)}
-	lb.Services = []*state.Service{s}
-	e := startHAProxy(t, baseInput(lb), fakes)
+	b := backend(1, "http", 19000)
+	b.StickyEnabled = 1
+	e := startHAProxy(t, input([]*state.Frontend{frontend(1, "http", 8080, 1)}, b), fakes)
 	ctx := context.Background()
-	tg := ipTarget(7, "127.0.0.3")
-	be := render.BackendName(1, 1)
-	name := render.ServerName(tg, tg.Slots[0])
+	sv := ipServer(7, "127.0.0.3")
+	sv.BackendID = 1
+	be := render.BackendName(1)
+	name := render.ServerName(sv, sv.Slots[0])
 	for _, cmd := range []string{
-		fmt.Sprintf("add server %s/%s %s", be, name, render.ServerArgs(lb, s, tg, tg.Slots[0])),
+		fmt.Sprintf("add server %s/%s %s", be, name, render.ServerArgs(b, sv, sv.Slots[0])),
 		fmt.Sprintf("enable server %s/%s", be, name),
 		fmt.Sprintf("enable health %s/%s", be, name),
 	} {
@@ -179,54 +182,17 @@ func TestDynamicServers(t *testing.T) {
 	}
 }
 
-// VERIFY §7.4: the LB-wide cap counts connections across frontends of the same LB.
-func TestVerifyLBCapAcrossFrontends(t *testing.T) {
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1)}
-	lb.Services = []*state.Service{svc(1, 1, "tcp", 7001, 19000), svc(2, 1, "tcp", 7002, 19000)}
-	lb.Targets = []*state.Target{ipTarget(1, "127.0.0.3")}
-	e := startHAProxy(t, baseInput(lb), fakes)
-	a, err := e.dial(7001)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer a.Close()
-	time.Sleep(300 * time.Millisecond)
-	b, err := e.dial(7002)
-	if err != nil {
-		// Rejected during the handshake (reset) — also a rejection.
-		t.Logf("second connection rejected at connect: %v", err)
-		return
-	}
-	defer b.Close()
-	_ = b.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, err = b.Read(make([]byte, 1))
-	if ne, ok := err.(net.Error); ok && ne.Timeout() {
-		t.Fatal("second connection on another frontend was not rejected")
-	}
-	if err != io.EOF && err != nil && !strings.Contains(err.Error(), "reset") {
-		t.Logf("read err: %v", err)
-	}
-	// first connection still alive
-	_ = a.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
-	if _, err := a.Read(make([]byte, 1)); err != nil {
-		if ne, ok := err.(net.Error); !ok || !ne.Timeout() {
-			t.Fatalf("first connection closed: %v", err)
-		}
-	}
-}
-
 // VERIFY §7.5: `ca-file @system-ca` is accepted by the image; §7.6: SSL cert runtime commands; maps.
 func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 	c, k, _ := certs.SelfSigned("a.example.com", []string{"a.example.com"}, 24*time.Hour)
 	cert := &state.Cert{Certificate: db.Certificate{ID: 5, CertPem: c}, KeyPEM: k}
-	s := svc(1, 1, "https", 8443+1, 19000)
-	s.CertIDs = []int64{5}
-	s.HcProtocol, s.HcTlsVerify, s.HcDomain = "https", 1, "a.example.com"
-	s2 := svc(2, 1, "http", 80, 19000)
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1000)}
-	lb.Services = []*state.Service{s, s2}
-	lb.Targets = []*state.Target{ipTarget(1, "127.0.0.3")}
-	in := baseInput(lb)
+	tlsBE := backend(1, "http", 19000, ipServer(1, "127.0.0.3"))
+	tlsBE.HcProtocol, tlsBE.HcTlsVerify, tlsBE.HcDomain = "https", 1, "a.example.com"
+	plainBE := backend(2, "http", 19000, ipServer(2, "127.0.0.3"))
+	tlsFE := frontend(1, "http", 8443+1, 1)
+	tlsFE.Tls, tlsFE.CertIDs = 1, []int64{5}
+	in := input([]*state.Frontend{tlsFE, frontend(2, "http", 80, 2)}, tlsBE, plainBE)
+	in.ACMEHTTP01 = map[int64]bool{2: true}
 	in.Cert = func(id int64) *state.Cert {
 		if id == 5 {
 			return cert
@@ -261,7 +227,7 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 		}
 	}
 	// Maintenance map: opt@ prefix is not part of the name.
-	if err := e.rt.Run(ctx, "add map "+render.MaintMapPath(live)+" 1 1"); err != nil {
+	if err := e.rt.Run(ctx, "add map "+render.MaintMapPath(live)+" 2 1"); err != nil {
 		t.Fatal(err)
 	}
 	r, err := http.Get(fmt.Sprintf("http://%s:80/", e.ip))
@@ -272,7 +238,7 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 	if r.StatusCode != 503 {
 		t.Fatalf("maintenance not active: %d", r.StatusCode)
 	}
-	if err := e.rt.Run(ctx, "del map "+render.MaintMapPath(live)+" 1"); err != nil {
+	if err := e.rt.Run(ctx, "del map "+render.MaintMapPath(live)+" 2"); err != nil {
 		t.Fatal(err)
 	}
 	// ACME HTTP-01 virtual map.
@@ -292,12 +258,10 @@ func TestVerifySSLRuntimeAndMaps(t *testing.T) {
 
 // VERIFY §14.7: the minimal capability set is enough to start, bind and reload.
 func TestVerifyMinimalCapabilities(t *testing.T) {
-	lb := &state.LB{LoadBalancer: db.LoadBalancer{ID: 1, Algorithm: "roundrobin", PublicEnabled: 1}, Plan: plan(1000)}
-	lb.Services = []*state.Service{svc(1, 1, "http", 80, 19000)}
-	lb.Targets = []*state.Target{ipTarget(1, "127.0.0.3")}
-	e := startHAProxy(t, baseInput(lb), fakes, "--cap-drop", "ALL",
+	in := input([]*state.Frontend{frontend(1, "http", 80, 1)}, backend(1, "http", 19000, ipServer(1, "127.0.0.3")))
+	e := startHAProxy(t, in, fakes, "--cap-drop", "ALL",
 		"--cap-add", "NET_BIND_SERVICE", "--cap-add", "SETUID", "--cap-add", "SETGID", "--cap-add", "KILL", "--cap-add", "CHOWN")
-	if res := e.apply(baseInput(lb), fakes, true); !res.Success {
+	if res := e.apply(in, fakes, true); !res.Success {
 		t.Fatalf("reload with minimal caps failed: %s", res.Output)
 	}
 	waitFor(t, 10*time.Second, "served", func() bool {

@@ -1,5 +1,5 @@
 // Package logrecv receives HAProxy's UDP syslog (127.0.0.1:5514) and keeps a sampled ring
-// buffer of recent lines per load balancer for the live Logs tab (spec §20). Off by default.
+// buffer of recent lines per frontend for the live Logs tab (spec §20). Off by default.
 package logrecv
 
 import (
@@ -16,7 +16,7 @@ import (
 
 const perLB = 500
 
-var proxyRe = regexp.MustCompile(`\blb(\d+)_s\d+_(?:fe|rd)\b|\bsys_acme_lb(\d+)\b`)
+var proxyRe = regexp.MustCompile(`\bfe_(\d+)(?:_rd)?\b|\bsys_acme_fe(\d+)\b`)
 
 type Line struct {
 	TS   int64  `json:"ts"`
@@ -40,8 +40,8 @@ func New(addr string, sample int) *Receiver {
 	return &Receiver{Addr: addr, Sample: sample, rings: map[int64][]Line{}, subs: map[int64]map[chan Line]struct{}{}}
 }
 
-// ParseLB extracts the LB id from a log line, 0 when not an LB line.
-func ParseLB(line string) int64 {
+// ParseFrontend extracts the frontend id from a log line, 0 when not a managed frontend.
+func ParseFrontend(line string) int64 {
 	m := proxyRe.FindStringSubmatch(line)
 	if m == nil {
 		return 0
@@ -89,18 +89,18 @@ func (r *Receiver) Run(ctx context.Context) {
 // Add records one raw syslog datagram.
 func (r *Receiver) Add(raw string) {
 	msg := stripSyslog(raw)
-	lb := ParseLB(msg)
-	if lb == 0 {
+	fe := ParseFrontend(msg)
+	if fe == 0 {
 		return
 	}
 	l := Line{TS: time.Now().UnixMilli(), Text: msg}
 	r.mu.Lock()
-	ring := append(r.rings[lb], l)
+	ring := append(r.rings[fe], l)
 	if len(ring) > perLB {
 		ring = ring[len(ring)-perLB:]
 	}
-	r.rings[lb] = ring
-	for ch := range r.subs[lb] {
+	r.rings[fe] = ring
+	for ch := range r.subs[fe] {
 		select {
 		case ch <- l:
 		default:
@@ -109,19 +109,19 @@ func (r *Receiver) Add(raw string) {
 	r.mu.Unlock()
 }
 
-// Subscribe returns recent lines and a live channel for one LB.
-func (r *Receiver) Subscribe(lb int64) ([]Line, <-chan Line, func()) {
+// Subscribe returns recent lines and a live channel for one frontend.
+func (r *Receiver) Subscribe(fe int64) ([]Line, <-chan Line, func()) {
 	ch := make(chan Line, 64)
 	r.mu.Lock()
-	recent := append([]Line(nil), r.rings[lb]...)
-	if r.subs[lb] == nil {
-		r.subs[lb] = map[chan Line]struct{}{}
+	recent := append([]Line(nil), r.rings[fe]...)
+	if r.subs[fe] == nil {
+		r.subs[fe] = map[chan Line]struct{}{}
 	}
-	r.subs[lb][ch] = struct{}{}
+	r.subs[fe][ch] = struct{}{}
 	r.mu.Unlock()
 	return recent, ch, func() {
 		r.mu.Lock()
-		delete(r.subs[lb], ch)
+		delete(r.subs[fe], ch)
 		r.mu.Unlock()
 	}
 }

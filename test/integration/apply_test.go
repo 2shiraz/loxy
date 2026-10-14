@@ -25,8 +25,8 @@ import (
 	"github.com/2shiraz/loxy/internal/testutil"
 )
 
-// backend starts a tiny HTTP responder container answering `body` on :9001.
-func backend(t *testing.T, dir, body string) string {
+// echoServer starts a tiny HTTP responder container answering `body` on :9001.
+func echoServer(t *testing.T, dir, body string) string {
 	cfg := filepath.Join(dir, body+".cfg")
 	_ = os.WriteFile(cfg, []byte("defaults\n  mode http\n  timeout client 30s\n  timeout server 30s\n  timeout connect 5s\nfrontend f\n  bind :9001\n  http-request return status 200 content-type text/plain string \""+body+"\"\n"), 0o644)
 	name := fmt.Sprintf("loxy-it-be-%s-%d", body, time.Now().UnixNano())
@@ -69,7 +69,7 @@ type stack struct {
 	a    *app.App
 	c    *client
 	dir  string
-	lbIP string
+	haIP string
 }
 
 // startStack builds the app with temp dirs, applies bootstrap, starts HAProxy and logs in.
@@ -113,7 +113,7 @@ func startStack(t *testing.T, tweak func(*config.Config)) *stack {
 		_ = exec.Command("docker", "rm", "-f", name).Run()
 	})
 	out, _ := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name).Output()
-	lbIP := strings.TrimSpace(string(out))
+	haIP := strings.TrimSpace(string(out))
 	waitFor(t, 15*time.Second, "admin socket", func() bool { _, err := os.Stat(filepath.Join(dir, "run", "admin.sock")); return err == nil })
 	go a.Metrics.Run(ctx)
 
@@ -126,26 +126,36 @@ func startStack(t *testing.T, tweak func(*config.Config)) *stack {
 		t.Fatalf("login %d %v", st, body)
 	}
 	c.csrf = body["csrf_token"].(string)
-	return &stack{a: a, c: c, dir: dir, lbIP: lbIP}
+	return &stack{a: a, c: c, dir: dir, haIP: haIP}
 }
 
 // TestApplyPathZeroDowntime drives the real API + reconciler against HAProxy 3.4:
-// create LB (reload), add/remove targets (runtime, no reload), repeated reloads under load.
+// create a backend + frontend (reload), add/remove servers (runtime, no reload), repeated
+// reloads under load.
 func TestApplyPathZeroDowntime(t *testing.T) {
 	s := startStack(t, nil)
-	a, c, dir, lbIP := s.a, s.c, s.dir, s.lbIP
+	a, c, dir, haIP := s.a, s.c, s.dir, s.haIP
 	ctx := context.Background()
-	b1, b2 := backend(t, dir, "one"), backend(t, dir, "two")
+	b1, b2 := echoServer(t, dir, "one"), echoServer(t, dir, "two")
 	var st int
 	var body map[string]any
-	st, body = c.do("POST", "/load_balancers", map[string]any{"name": "it", "plan_id": 1,
-		"services": []any{map[string]any{"protocol": "http", "listen_port": 8080, "destination_port": 9001,
-			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}}},
-		"targets": []any{map[string]any{"type": "ip", "ip": b1}}})
-	if st != 201 {
-		t.Fatalf("create %d %v", st, body)
+	beSpec := func(alg string) map[string]any {
+		return map[string]any{"name": "it", "mode": "http", "port": 9001, "algorithm": alg,
+			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}}
 	}
-	lbID := int64(body["load_balancer"].(map[string]any)["id"].(float64))
+	st, body = c.do("POST", "/backends", beSpec("roundrobin"))
+	if st != 201 {
+		t.Fatalf("create backend %d %v", st, body)
+	}
+	beID := int64(body["backend"].(map[string]any)["id"].(float64))
+	if st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b1}}}); st != 201 {
+		t.Fatalf("add server %d %v", st, body)
+	}
+	st, body = c.do("POST", "/frontends", map[string]any{"name": "it", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 8080}},
+		"default_backend_id": beID})
+	if st != 201 {
+		t.Fatalf("create frontend %d %v", st, body)
+	}
 	apply := func(wantKind string) {
 		t.Helper()
 		if err := a.Rec.Apply(ctx, "test"); err != nil {
@@ -157,8 +167,8 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 		}
 	}
 	apply("reload")
-	url := fmt.Sprintf("http://%s:8080/", lbIP)
-	waitFor(t, 10*time.Second, "lb serving", func() bool {
+	url := fmt.Sprintf("http://%s:8080/", haIP)
+	waitFor(t, 10*time.Second, "frontend serving", func() bool {
 		r, err := http.Get(url)
 		if err != nil {
 			return false
@@ -200,20 +210,20 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 			}
 		}()
 	}
-	// Runtime: add and remove a target under load — no reload allowed.
-	st, body = c.do("POST", fmt.Sprintf("/load_balancers/%d/targets", lbID), map[string]any{"targets": []any{map[string]any{"type": "ip", "ip": b2}}})
+	// Runtime: add and remove a server under load — no reload allowed.
+	st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b2}}})
 	if st != 201 {
-		t.Fatalf("add target %d %v", st, body)
+		t.Fatalf("add server %d %v", st, body)
 	}
 	apply("runtime")
 	time.Sleep(4 * time.Second) // let the new server pass its first check
-	tid := int64(body["targets"].([]any)[0].(map[string]any)["id"].(float64))
-	st, _ = c.do("DELETE", fmt.Sprintf("/load_balancers/%d/targets/%d", lbID, tid), nil)
-	if st != 204 {
-		t.Fatalf("delete target %d", st)
+	sid := int64(body["servers"].([]any)[0].(map[string]any)["id"].(float64))
+	st, _ = c.do("DELETE", fmt.Sprintf("/backends/%d/servers/%d", beID, sid), nil)
+	if st != 204 && st != 202 {
+		t.Fatalf("delete server %d", st)
 	}
 	apply("runtime") // drain
-	waitFor(t, 10*time.Second, "target removed", func() bool { return a.Snap.Get().LB(lbID).Target(tid) == nil })
+	waitFor(t, 10*time.Second, "server removed", func() bool { return a.Snap.Get().Backend(beID).Server(sid) == nil })
 	apply("runtime") // del server
 	// Repeated reloads under load (algorithm flip forces a reload).
 	reloads := 20
@@ -222,7 +232,7 @@ func TestApplyPathZeroDowntime(t *testing.T) {
 	}
 	algs := []string{"leastconn", "roundrobin"}
 	for i := 0; i < reloads; i++ {
-		if st, b := c.do("PATCH", fmt.Sprintf("/load_balancers/%d", lbID), map[string]any{"algorithm": algs[i%2]}); st != 200 {
+		if st, b := c.do("PUT", fmt.Sprintf("/backends/%d", beID), beSpec(algs[i%2])); st != 200 {
 			t.Fatalf("patch %d %v", st, b)
 		}
 		apply("reload")

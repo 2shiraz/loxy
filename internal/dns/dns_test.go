@@ -16,13 +16,13 @@ func (f fakeRes) LookupNetIP(_ context.Context, network, host string) ([]netip.A
 
 func TestVerify(t *testing.T) {
 	ok := fakeRes{"ip4": {netip.MustParseAddr("1.2.3.4")}}
-	if v := Verify(context.Background(), ok, "a.example.com", "1.2.3.4", ""); v.Status != "ok" {
+	if v := Verify(context.Background(), ok, "a.example.com", []string{"1.2.3.4"}, nil); v.Status != "ok" {
 		t.Fatal(v)
 	}
-	if v := Verify(context.Background(), ok, "a.example.com", "5.6.7.8", ""); v.Status != "wrong_ip" {
+	if v := Verify(context.Background(), ok, "a.example.com", []string{"5.6.7.8"}, nil); v.Status != "wrong_ip" {
 		t.Fatal(v)
 	}
-	if v := Verify(context.Background(), fakeRes{}, "a.example.com", "1.2.3.4", ""); v.Status != "missing" {
+	if v := Verify(context.Background(), fakeRes{}, "a.example.com", []string{"1.2.3.4"}, nil); v.Status != "missing" {
 		t.Fatal(v)
 	}
 }
