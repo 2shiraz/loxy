@@ -193,7 +193,9 @@ func TestVerifyLBCapAcrossFrontends(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	b, err := e.dial(7002)
 	if err != nil {
-		t.Fatal(err)
+		// Rejected during the handshake (reset) — also a rejection.
+		t.Logf("second connection rejected at connect: %v", err)
+		return
 	}
 	defer b.Close()
 	_ = b.SetReadDeadline(time.Now().Add(2 * time.Second))

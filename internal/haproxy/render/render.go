@@ -317,7 +317,7 @@ func renderLB(in *Input, lb *state.LB, maintMap string, usedCerts map[int64]bool
 	blk := lbBlock{Comment: fmt.Sprintf("# ---------- LB %d (plan %s) ----------", lb.ID, planName)}
 	addrs := BindAddrs(lb)
 	if enforce && maxconn > 0 {
-		blk.Sections = append(blk.Sections, section{Header: "backend " + CapTable(lb.ID), Lines: []string{
+		blk.Sections = append(blk.Sections, section{Header: "backend " + CapTable(lb.ID) + " from loxy_tcp", Lines: []string{
 			"stick-table type integer size 1 expire 24h store conn_cur",
 		}})
 	}
