@@ -1,0 +1,111 @@
+/* Loxy design tokens (§13). Dark is the default; light via prefers-color-scheme or [data-theme]. */
+:root {
+  --bg: #141414;
+  --surface: #1c1c1c;
+  --surface-2: #242424;
+  --surface-3: #2c2c2c;
+  --border: #303030;
+  --border-strong: #3d3d3d;
+  --text: #ededed;
+  --text-2: #c4c4c4;
+  --muted: #8f8f8f;
+  --accent: #e5484d;
+  --accent-fg: #ffffff;
+  --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
+  --ok: #30a46c;
+  --warn: #f5a524;
+  --err: #e5484d;
+  --info: #3e8ed0;
+  --unknown: #7a7a7a;
+  --ok-soft: color-mix(in srgb, var(--ok) 15%, transparent);
+  --warn-soft: color-mix(in srgb, var(--warn) 15%, transparent);
+  --err-soft: color-mix(in srgb, var(--err) 15%, transparent);
+  --focus: #6aa5ff;
+  --overlay: rgb(0 0 0 / 0.6);
+  --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.45), 0 0 0 1px var(--border-strong);
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --radius-xs: 4px;
+
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --fs-xs: 11.5px;
+  --fs-sm: 12.5px;
+  --fs-md: 13.5px;
+  --fs-lg: 15px;
+  --fs-xl: 18px;
+  --fs-2xl: 22px;
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  --sidebar-w: 216px;
+  --topbar-h: 48px;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  /* chart palette: bandwidth in = red, out = yellow (§8.5) */
+  --chart-1: #6aa5ff;
+  --chart-in: #e5484d;
+  --chart-out: #f5c524;
+  --chart-grid: #2a2a2a;
+  --chart-axis: #8f8f8f;
+
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme='dark']) {
+    --bg: #f6f6f5;
+    --surface: #ffffff;
+    --surface-2: #f1f1f0;
+    --surface-3: #e8e8e7;
+    --border: #e2e2e0;
+    --border-strong: #cfcfcc;
+    --text: #1a1a1a;
+    --text-2: #3a3a3a;
+    --muted: #6b6b6b;
+    --accent: #d93d42;
+    --ok: #218358;
+    --warn: #b56a00;
+    --err: #d93d42;
+    --info: #2a6fb0;
+    --focus: #2563eb;
+    --overlay: rgb(20 20 20 / 0.35);
+    --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.12), 0 0 0 1px var(--border-strong);
+    --chart-out: #c99400;
+    --chart-grid: #ececea;
+    --chart-axis: #6b6b6b;
+    color-scheme: light;
+  }
+}
+
+:root[data-theme='light'] {
+  --bg: #f6f6f5;
+  --surface: #ffffff;
+  --surface-2: #f1f1f0;
+  --surface-3: #e8e8e7;
+  --border: #e2e2e0;
+  --border-strong: #cfcfcc;
+  --text: #1a1a1a;
+  --text-2: #3a3a3a;
+  --muted: #6b6b6b;
+  --accent: #d93d42;
+  --ok: #218358;
+  --warn: #b56a00;
+  --err: #d93d42;
+  --info: #2a6fb0;
+  --focus: #2563eb;
+  --overlay: rgb(20 20 20 / 0.35);
+  --shadow-pop: 0 8px 28px rgb(0 0 0 / 0.12), 0 0 0 1px var(--border-strong);
+  --chart-out: #c99400;
+  --chart-grid: #ececea;
+  --chart-axis: #6b6b6b;
+  color-scheme: light;
+}

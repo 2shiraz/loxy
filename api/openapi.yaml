@@ -1,0 +1,3003 @@
+openapi: 3.0.3
+info:
+  title: Loxy API
+  version: 1.0.0
+  description: 'REST API of Loxy, a self-hosted management panel for HAProxy 3.4.
+
+    Objects map directly to HAProxy: frontends (listeners + routing rules), backends (server pools + health checks),
+
+    servers, certificates. Session cookie or `Authorization: Bearer loxy_<prefix>_<secret>`. Mutating requests with a
+
+    session cookie must send `X-LOXY-CSRF`.
+
+    '
+servers:
+- url: /api/v1
+security:
+- session: []
+- bearer: []
+tags:
+- name: auth
+- name: frontends
+- name: backends
+- name: certificates
+- name: domains
+- name: inventory
+- name: system
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      tags:
+      - system
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+  /readyz:
+    get:
+      operationId: readyz
+      tags:
+      - system
+      security: []
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Status'
+        '503':
+          $ref: '#/components/responses/Error'
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+      - auth
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /auth/logout:
+    post:
+      operationId: logout
+      tags:
+      - auth
+      responses:
+        '204':
+          description: Logged out
+  /auth/me:
+    get:
+      operationId: me
+      tags:
+      - auth
+      responses:
+        '200':
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /auth/password:
+    post:
+      operationId: changePassword
+      tags:
+      - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Changed
+        '422':
+          $ref: '#/components/responses/Error'
+  /auth/totp/setup:
+    post:
+      operationId: totpSetup
+      tags:
+      - auth
+      responses:
+        '200':
+          description: New secret (not active until confirmed)
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - secret
+                - otpauth_url
+                properties:
+                  secret:
+                    type: string
+                  otpauth_url:
+                    type: string
+  /auth/totp/enable:
+    post:
+      operationId: totpEnable
+      tags:
+      - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '204':
+          description: 2FA enabled
+        '422':
+          $ref: '#/components/responses/Error'
+  /auth/totp/disable:
+    post:
+      operationId: totpDisable
+      tags:
+      - auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - code
+              properties:
+                code:
+                  type: string
+      responses:
+        '204':
+          description: 2FA disabled
+        '422':
+          $ref: '#/components/responses/Error'
+  /certificates:
+    get:
+      operationId: listCertificates
+      tags:
+      - certificates
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - certificates
+                properties:
+                  certificates:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Certificate'
+    post:
+      operationId: createCertificate
+      tags:
+      - certificates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CertificateCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '422':
+          $ref: '#/components/responses/Error'
+  /certificates/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getCertificate
+      tags:
+      - certificates
+      responses:
+        '200':
+          description: Cert
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+    patch:
+      operationId: updateCertificate
+      tags:
+      - certificates
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                labels:
+                  $ref: '#/components/schemas/Labels'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+    delete:
+      operationId: deleteCertificate
+      tags:
+      - certificates
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          $ref: '#/components/responses/Error'
+  /certificates/{id}/actions/renew:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: renewCertificate
+      tags:
+      - certificates
+      responses:
+        '202':
+          description: Renewal started
+  /domains:
+    get:
+      operationId: listDomains
+      tags:
+      - domains
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - domains
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Domain'
+    post:
+      operationId: createDomain
+      tags:
+      - domains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+        '422':
+          $ref: '#/components/responses/Error'
+  /domains/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: getDomain
+      tags:
+      - domains
+      responses:
+        '200':
+          description: Domain
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+    patch:
+      operationId: updateDomain
+      tags:
+      - domains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+    delete:
+      operationId: deleteDomain
+      tags:
+      - domains
+      responses:
+        '204':
+          description: Deleted
+  /domains/{id}/actions/verify:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: verifyDomain
+      tags:
+      - domains
+      responses:
+        '200':
+          description: Verified now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainResponse'
+  /domains/{id}/actions/issue_certificate:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: issueDomainCertificate
+      tags:
+      - domains
+      responses:
+        '202':
+          description: Issuance started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CertificateResponse'
+        '422':
+          $ref: '#/components/responses/Error'
+  /dns_providers:
+    get:
+      operationId: listDNSProviders
+      tags:
+      - domains
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - dns_providers
+                - kinds
+                properties:
+                  dns_providers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DNSProvider'
+                  kinds:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DNSProviderKind'
+    post:
+      operationId: createDNSProvider
+      tags:
+      - domains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DNSProviderInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - dns_provider
+                properties:
+                  dns_provider:
+                    $ref: '#/components/schemas/DNSProvider'
+        '422':
+          $ref: '#/components/responses/Error'
+  /dns_providers/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: deleteDNSProvider
+      tags:
+      - domains
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          $ref: '#/components/responses/Error'
+  /dns_providers/{id}/zones:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: listDNSZones
+      tags:
+      - domains
+      responses:
+        '200':
+          description: Zones
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - zones
+                properties:
+                  zones:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - name
+                      properties:
+                        name:
+                          type: string
+  /dns_providers/{id}/zones/{zone}/records:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    - name: zone
+      in: path
+      required: true
+      schema:
+        type: string
+    get:
+      operationId: listDNSRecords
+      tags:
+      - domains
+      responses:
+        '200':
+          description: Records
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - records
+                properties:
+                  records:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DNSRecord'
+    post:
+      operationId: createDNSRecord
+      tags:
+      - domains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DNSRecord'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - record
+                properties:
+                  record:
+                    $ref: '#/components/schemas/DNSRecord'
+        '422':
+          $ref: '#/components/responses/Error'
+    delete:
+      operationId: deleteDNSRecord
+      tags:
+      - domains
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DNSRecord'
+      responses:
+        '204':
+          description: Deleted
+  /nodes:
+    get:
+      operationId: listNodes
+      tags:
+      - system
+      responses:
+        '200':
+          description: Nodes
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - nodes
+                properties:
+                  nodes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+  /nodes/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    patch:
+      operationId: updateNode
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NodeUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - node
+                properties:
+                  node:
+                    $ref: '#/components/schemas/Node'
+  /nodes/{id}/ips:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: addNodeIP
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - address
+              properties:
+                address:
+                  type: string
+                label:
+                  type: string
+      responses:
+        '201':
+          description: Added
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - node
+                properties:
+                  node:
+                    $ref: '#/components/schemas/Node'
+        '422':
+          $ref: '#/components/responses/Error'
+  /nodes/{id}/ips/{ipid}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    - name: ipid
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    delete:
+      operationId: deleteNodeIP
+      tags:
+      - system
+      responses:
+        '204':
+          description: Deleted
+        '409':
+          $ref: '#/components/responses/Error'
+  /nodes/{id}/revisions:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    get:
+      operationId: listRevisions
+      tags:
+      - system
+      responses:
+        '200':
+          description: Revisions
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - revisions
+                properties:
+                  revisions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Revision'
+  /nodes/{id}/revisions/{rev}/diff:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    - name: rev
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    get:
+      operationId: diffRevision
+      tags:
+      - system
+      parameters:
+      - name: against
+        in: query
+        schema:
+          type: integer
+          format: int64
+      responses:
+        '200':
+          description: Unified diff
+          content:
+            text/plain:
+              schema:
+                type: string
+  /nodes/{id}/revisions/{rev}/actions/rollback:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    - name: rev
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    post:
+      operationId: rollbackRevision
+      tags:
+      - system
+      responses:
+        '202':
+          description: Rollback applied
+        '422':
+          $ref: '#/components/responses/Error'
+  /events:
+    get:
+      operationId: streamEvents
+      tags:
+      - system
+      responses:
+        '200':
+          description: SSE stream of Event objects (event name = kind)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /events/history:
+    get:
+      operationId: listEvents
+      tags:
+      - system
+      parameters:
+      - name: frontend_id
+        in: query
+        schema: &id001
+          type: integer
+          format: int64
+      - name: backend_id
+        in: query
+        schema: *id001
+      - name: kind
+        in: query
+        schema:
+          type: string
+      - name: limit
+        in: query
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - events
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Event'
+  /audit:
+    get:
+      operationId: listAudit
+      tags:
+      - system
+      parameters:
+      - name: limit
+        in: query
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Audit
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - audit
+                properties:
+                  audit:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEntry'
+  /users:
+    get:
+      operationId: listUsers
+      tags:
+      - system
+      responses:
+        '200':
+          description: Users
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - users
+                properties:
+                  users:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+    post:
+      operationId: createUser
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - user
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+        '422':
+          $ref: '#/components/responses/Error'
+  /users/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: deleteUser
+      tags:
+      - system
+      responses:
+        '204':
+          description: Deleted
+  /api_tokens:
+    get:
+      operationId: listAPITokens
+      tags:
+      - system
+      responses:
+        '200':
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - api_tokens
+                properties:
+                  api_tokens:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/APIToken'
+    post:
+      operationId: createAPIToken
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/APITokenCreate'
+      responses:
+        '201':
+          description: Created; `token` is shown once
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - api_token
+                - token
+                properties:
+                  api_token:
+                    $ref: '#/components/schemas/APIToken'
+                  token:
+                    type: string
+        '422':
+          $ref: '#/components/responses/Error'
+  /api_tokens/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: deleteAPIToken
+      tags:
+      - system
+      responses:
+        '204':
+          description: Revoked
+  /notification_channels:
+    get:
+      operationId: listChannels
+      tags:
+      - system
+      responses:
+        '200':
+          description: Channels
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - notification_channels
+                - kinds
+                properties:
+                  notification_channels:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NotificationChannel'
+                  kinds:
+                    type: object
+                    additionalProperties:
+                      type: array
+                      items:
+                        type: object
+                        required:
+                        - name
+                        - label
+                        - secret
+                        properties:
+                          name:
+                            type: string
+                          label:
+                            type: string
+                          secret:
+                            type: boolean
+    post:
+      operationId: createChannel
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationChannelInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - notification_channel
+                properties:
+                  notification_channel:
+                    $ref: '#/components/schemas/NotificationChannel'
+        '422':
+          $ref: '#/components/responses/Error'
+  /notification_channels/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: deleteChannel
+      tags:
+      - system
+      responses:
+        '204':
+          description: Deleted
+  /notification_channels/{id}/actions/test:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    post:
+      operationId: testChannel
+      tags:
+      - system
+      responses:
+        '204':
+          description: Test message delivered
+        '502':
+          $ref: '#/components/responses/Error'
+  /alert_rules:
+    get:
+      operationId: listAlertRules
+      tags:
+      - system
+      responses:
+        '200':
+          description: Rules
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - alert_rules
+                properties:
+                  alert_rules:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AlertRule'
+    post:
+      operationId: createAlertRule
+      tags:
+      - system
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlertRuleInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - alert_rule
+                properties:
+                  alert_rule:
+                    $ref: '#/components/schemas/AlertRule'
+        '422':
+          $ref: '#/components/responses/Error'
+  /alert_rules/{id}:
+    parameters:
+    - $ref: '#/components/parameters/Id'
+    delete:
+      operationId: deleteAlertRule
+      tags:
+      - system
+      responses:
+        '204':
+          description: Deleted
+  /frontends:
+    get:
+      operationId: listFrontends
+      tags:
+      - frontends
+      parameters:
+      - name: label_selector
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - frontends
+                properties:
+                  frontends:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Frontend'
+    post:
+      operationId: createFrontend
+      tags:
+      - frontends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontendInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - frontend
+                properties:
+                  frontend:
+                    $ref: '#/components/schemas/Frontend'
+        '422': &id002
+          $ref: '#/components/responses/Error'
+  /frontends/{id}:
+    parameters:
+    - &id003
+      $ref: '#/components/parameters/Id'
+    get:
+      operationId: getFrontend
+      tags:
+      - frontends
+      responses:
+        '200':
+          description: Frontend
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - frontend
+                properties:
+                  frontend:
+                    $ref: '#/components/schemas/Frontend'
+        '404': *id002
+    put:
+      operationId: updateFrontend
+      tags:
+      - frontends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontendInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - frontend
+                properties:
+                  frontend:
+                    $ref: '#/components/schemas/Frontend'
+        '409': *id002
+        '422': *id002
+    patch:
+      operationId: patchFrontend
+      tags:
+      - frontends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FrontendPatch'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - frontend
+                properties:
+                  frontend:
+                    $ref: '#/components/schemas/Frontend'
+        '422': *id002
+    delete:
+      operationId: deleteFrontend
+      tags:
+      - frontends
+      responses:
+        '204':
+          description: Deleted
+        '423': *id002
+  /frontends/{id}/config:
+    parameters:
+    - *id003
+    get:
+      operationId: getFrontendConfig
+      tags:
+      - frontends
+      responses:
+        '200':
+          description: Rendered HAProxy sections of this frontend (and the backends it uses)
+          content:
+            text/plain:
+              schema:
+                type: string
+  /frontends/{id}/metrics:
+    parameters:
+    - *id003
+    get:
+      operationId: getFrontendMetrics
+      tags:
+      - frontends
+      parameters: &id004
+      - name: type
+        in: query
+        schema:
+          type: string
+        description: comma separated series names
+      - name: start
+        in: query
+        schema: *id001
+      - name: end
+        in: query
+        schema: *id001
+      - name: step
+        in: query
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Columnar series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+  /frontends/{id}/metrics/stream:
+    parameters:
+    - *id003
+    get:
+      operationId: streamFrontendMetrics
+      tags:
+      - frontends
+      responses:
+        '200':
+          description: 'SSE: event `metrics.tick`, data MetricsPoint'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /frontends/{id}/logs/stream:
+    parameters:
+    - *id003
+    get:
+      operationId: streamFrontendLogs
+      tags:
+      - frontends
+      responses:
+        '200':
+          description: 'SSE: event `log`, data {ts, text}; off unless LOXY_LIVE_LOGS is set'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404': *id002
+  /apply/retry:
+    post:
+      operationId: retryApply
+      tags:
+      - system
+      responses:
+        '202':
+          description: Queued
+  /backends:
+    get:
+      operationId: listBackends
+      tags:
+      - backends
+      parameters:
+      - name: label_selector
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - backends
+                properties:
+                  backends:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Backend'
+    post:
+      operationId: createBackend
+      tags:
+      - backends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackendInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - backend
+                properties:
+                  backend:
+                    $ref: '#/components/schemas/Backend'
+        '422': *id002
+  /backends/{id}:
+    parameters:
+    - *id003
+    get:
+      operationId: getBackend
+      tags:
+      - backends
+      responses:
+        '200':
+          description: Backend
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - backend
+                properties:
+                  backend:
+                    $ref: '#/components/schemas/Backend'
+        '404': *id002
+    put:
+      operationId: updateBackend
+      tags:
+      - backends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackendInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - backend
+                properties:
+                  backend:
+                    $ref: '#/components/schemas/Backend'
+        '409': *id002
+        '422': *id002
+    delete:
+      operationId: deleteBackend
+      tags:
+      - backends
+      responses:
+        '204':
+          description: Deleted
+        '409': *id002
+  /backends/{id}/status:
+    parameters:
+    - *id003
+    get:
+      operationId: getBackendStatus
+      tags:
+      - backends
+      responses:
+        '200':
+          description: Health of every server
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendHealth'
+  /backends/{id}/metrics:
+    parameters:
+    - *id003
+    get:
+      operationId: getBackendMetrics
+      tags:
+      - backends
+      parameters: *id004
+      responses:
+        '200':
+          description: Columnar series
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+  /backends/{id}/servers:
+    parameters:
+    - *id003
+    get:
+      operationId: listBackendServers
+      tags:
+      - backends
+      responses:
+        '200':
+          description: Servers
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - servers
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BackendServer'
+    post:
+      operationId: createBackendServers
+      tags:
+      - backends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackendServersCreate'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - servers
+                properties:
+                  servers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BackendServer'
+        '422': *id002
+  /backends/{id}/servers/{sid}:
+    parameters:
+    - *id003
+    - name: sid
+      in: path
+      required: true
+      schema: *id001
+    patch:
+      operationId: updateBackendServer
+      tags:
+      - backends
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackendServerUpdate'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - server
+                properties:
+                  server:
+                    $ref: '#/components/schemas/BackendServer'
+    delete:
+      operationId: deleteBackendServer
+      tags:
+      - backends
+      responses:
+        '204':
+          description: Removal started (graceful drain)
+  /hosts:
+    get:
+      operationId: listHosts
+      tags:
+      - inventory
+      responses:
+        '200':
+          description: List
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - hosts
+                properties:
+                  hosts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Host'
+    post:
+      operationId: createHost
+      tags:
+      - inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostInput'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - host
+                properties:
+                  host:
+                    $ref: '#/components/schemas/Host'
+        '422': *id002
+  /hosts/{id}:
+    parameters:
+    - *id003
+    patch:
+      operationId: updateHost
+      tags:
+      - inventory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HostInput'
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - host
+                properties:
+                  host:
+                    $ref: '#/components/schemas/Host'
+    delete:
+      operationId: deleteHost
+      tags:
+      - inventory
+      responses:
+        '204':
+          description: Deleted
+        '409': *id002
+  /label_selector/preview:
+    get:
+      operationId: previewLabelSelector
+      tags:
+      - inventory
+      parameters:
+      - name: selector
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Matching hosts
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - hosts
+                properties:
+                  hosts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Host'
+        '422': *id002
+  /overview:
+    get:
+      operationId: getOverview
+      tags:
+      - system
+      responses:
+        '200':
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Overview'
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: __Host-loxy_session
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    Status:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+        version:
+          type: string
+    ErrorResponse:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: object
+          required:
+          - code
+          - message
+          properties:
+            code:
+              type: string
+              enum:
+              - invalid_input
+              - conflict
+              - not_found
+              - forbidden
+              - unauthorized
+              - rate_limited
+              - apply_failed
+              - internal
+              - totp_required
+            message:
+              type: string
+            details:
+              type: object
+              properties:
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                    - name
+                    - messages
+                    properties:
+                      name:
+                        type: string
+                      messages:
+                        type: array
+                        items:
+                          type: string
+    Labels:
+      type: object
+      additionalProperties:
+        type: string
+    LoginRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        totp:
+          type: string
+          description: 6-digit code, required when 2FA is enabled (401 with code totp_required otherwise)
+    ChangePasswordRequest:
+      type: object
+      required:
+      - current_password
+      - new_password
+      properties:
+        current_password:
+          type: string
+        new_password:
+          type: string
+    User:
+      type: object
+      required:
+      - id
+      - email
+      - role
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+        role:
+          type: string
+          enum:
+          - owner
+          - admin
+          - operator
+          - viewer
+        created_at:
+          type: integer
+          format: int64
+        last_login_at:
+          type: integer
+          format: int64
+          nullable: true
+        totp_enabled:
+          type: boolean
+    UserCreate:
+      type: object
+      required:
+      - email
+      - password
+      - role
+      properties:
+        email:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum:
+          - admin
+          - operator
+          - viewer
+    SessionResponse:
+      type: object
+      required:
+      - user
+      - csrf_token
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        csrf_token:
+          type: string
+    HealthSummary:
+      type: object
+      required:
+      - status
+      - healthy
+      - total
+      - messages
+      properties:
+        status:
+          type: string
+          enum:
+          - healthy
+          - degraded
+          - unhealthy
+          - unknown
+        healthy:
+          type: integer
+        total:
+          type: integer
+        messages:
+          type: array
+          items:
+            type: string
+    HealthCheck:
+      type: object
+      properties:
+        protocol:
+          type: string
+          enum:
+          - tcp
+          - http
+          - https
+        port:
+          type: integer
+          nullable: true
+          description: check port; null = each server's own port
+        interval_s:
+          type: integer
+        timeout_s:
+          type: integer
+        retries:
+          type: integer
+        http:
+          type: object
+          nullable: true
+          properties:
+            domain:
+              type: string
+              nullable: true
+            path:
+              type: string
+            response:
+              type: string
+              nullable: true
+            status_codes:
+              type: array
+              items:
+                type: string
+            tls_verify:
+              type: boolean
+    Certificate:
+      type: object
+      required:
+      - id
+      - name
+      - type
+      - domains
+      - status
+      - used_by
+      - labels
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+          - uploaded
+          - managed
+        domains:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - issued
+          - renewing
+          - failed
+        challenge:
+          type: string
+          enum:
+          - http01
+          - dns01
+          nullable: true
+        dns_provider_id:
+          type: integer
+          format: int64
+          nullable: true
+        key_type:
+          type: string
+        issuer:
+          type: string
+          nullable: true
+        serial:
+          type: string
+          nullable: true
+        fingerprint_sha256:
+          type: string
+          nullable: true
+        not_before:
+          type: integer
+          format: int64
+          nullable: true
+        not_after:
+          type: integer
+          format: int64
+          nullable: true
+        last_error:
+          type: string
+          nullable: true
+        used_by:
+          type: array
+          items:
+            type: integer
+            format: int64
+          description: service ids
+        labels:
+          $ref: '#/components/schemas/Labels'
+        created_at:
+          type: integer
+          format: int64
+    CertificateCreate:
+      type: object
+      required:
+      - name
+      - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+          - uploaded
+          - managed
+        certificate:
+          type: string
+          description: PEM leaf (uploaded)
+        chain:
+          type: string
+        private_key:
+          type: string
+        domains:
+          type: array
+          items:
+            type: string
+        challenge:
+          type: string
+          enum:
+          - http01
+          - dns01
+        dns_provider_id:
+          type: integer
+          format: int64
+        key_type:
+          type: string
+          enum:
+          - ecdsa256
+          - rsa2048
+          - rsa4096
+        labels:
+          $ref: '#/components/schemas/Labels'
+    CertificateResponse:
+      type: object
+      required:
+      - certificate
+      properties:
+        certificate:
+          $ref: '#/components/schemas/Certificate'
+    DNSRequiredRecord:
+      type: object
+      required:
+      - type
+      - name
+      - value
+      - ttl
+      properties:
+        type:
+          type: string
+        name:
+          type: string
+        value:
+          type: string
+        ttl:
+          type: integer
+    Domain:
+      type: object
+      required:
+      - id
+      - fqdn
+      - status
+      - auto_records
+      - required_records
+      - observed
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        fqdn:
+          type: string
+        dns_provider_id:
+          type: integer
+          format: int64
+          nullable: true
+        zone:
+          type: string
+          nullable: true
+        auto_records:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - unknown
+          - ok
+          - wrong_ip
+          - missing
+          - error
+        status_detail:
+          type: string
+          nullable: true
+        required_records:
+          type: array
+          items:
+            $ref: '#/components/schemas/DNSRequiredRecord'
+        observed:
+          type: object
+          required:
+          - a
+          - aaaa
+          properties:
+            a:
+              type: array
+              items:
+                type: string
+            aaaa:
+              type: array
+              items:
+                type: string
+        checked_at:
+          type: integer
+          format: int64
+          nullable: true
+        certificate_id:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: integer
+          format: int64
+        frontend_id: &id005
+          type: integer
+          format: int64
+          nullable: true
+    DomainInput:
+      type: object
+      properties:
+        fqdn:
+          type: string
+        dns_provider_id:
+          type: integer
+          format: int64
+          nullable: true
+        auto_records:
+          type: boolean
+        frontend_id: *id005
+    DomainResponse:
+      type: object
+      required:
+      - domain
+      properties:
+        domain:
+          $ref: '#/components/schemas/Domain'
+    DNSProviderKind:
+      type: object
+      required:
+      - kind
+      - label
+      - fields
+      properties:
+        kind:
+          type: string
+        label:
+          type: string
+        fields:
+          type: array
+          items:
+            type: object
+            required:
+            - name
+            - label
+            - secret
+            properties:
+              name:
+                type: string
+              label:
+                type: string
+              secret:
+                type: boolean
+              help:
+                type: string
+    DNSProvider:
+      type: object
+      required:
+      - id
+      - name
+      - kind
+      - status
+      - configured
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        kind:
+          type: string
+        status:
+          type: string
+          enum:
+          - ok
+          - error
+          - unknown
+        last_error:
+          type: string
+          nullable: true
+        configured:
+          type: boolean
+        created_at:
+          type: integer
+          format: int64
+    DNSProviderInput:
+      type: object
+      required:
+      - name
+      - kind
+      - credentials
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+        credentials:
+          type: object
+          additionalProperties:
+            type: string
+    DNSRecord:
+      type: object
+      required:
+      - type
+      - name
+      - value
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+          enum:
+          - A
+          - AAAA
+          - CNAME
+          - TXT
+          - MX
+          - CAA
+          - SRV
+          - NS
+        name:
+          type: string
+          description: relative to the zone, @ for apex
+        value:
+          type: string
+          description: RDATA in zone-file presentation format
+        ttl:
+          type: integer
+        managed:
+          type: boolean
+    NodeIP:
+      type: object
+      required:
+      - id
+      - address
+      - family
+      properties:
+        id: *id001
+        address:
+          type: string
+        family:
+          type: integer
+        label:
+          type: string
+    Node:
+      type: object
+      required:
+      - id
+      - name
+      - status
+      - ips
+      - desired_version
+      - applied_version
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        status:
+          type: string
+        haproxy_version:
+          type: string
+        haproxy_running_version:
+          type: string
+        loxy_version:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        uptime_s:
+          type: integer
+          format: int64
+        reloads:
+          type: integer
+        ips:
+          type: array
+          items:
+            $ref: '#/components/schemas/NodeIP'
+        desired_version:
+          type: integer
+          format: int64
+        applied_version:
+          type: integer
+          format: int64
+    NodeUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+    Revision:
+      type: object
+      required:
+      - id
+      - revision
+      - kind
+      - result
+      - duration_ms
+      - sha256
+      - created_at
+      - pinned
+      properties:
+        id:
+          type: integer
+          format: int64
+        revision:
+          type: integer
+          format: int64
+        desired_version:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+          - runtime
+          - reload
+          - rollback
+          - bootstrap
+        result:
+          type: string
+          enum:
+          - ok
+          - failed
+        duration_ms:
+          type: integer
+        sha256:
+          type: string
+        haproxy_output:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+        pinned:
+          type: boolean
+    Metrics:
+      type: object
+      required:
+      - start
+      - end
+      - step
+      - timestamps
+      - series
+      properties:
+        start:
+          type: integer
+          format: int64
+        end:
+          type: integer
+          format: int64
+        step:
+          type: integer
+        timestamps:
+          type: array
+          items:
+            type: integer
+            format: int64
+        series:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: number
+              nullable: true
+    MetricsPoint:
+      type: object
+      required:
+      - ts
+      properties:
+        ts:
+          type: integer
+          format: int64
+        open_connections:
+          type: number
+        connections_per_second:
+          type: number
+        requests_per_second:
+          type: number
+        bandwidth.in:
+          type: number
+        bandwidth.out:
+          type: number
+    Event:
+      type: object
+      required:
+      - id
+      - ts
+      - kind
+      - severity
+      - message
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          type: integer
+          format: int64
+        kind:
+          type: string
+        severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        frontend_id: *id005
+        backend_id: *id005
+    AuditEntry:
+      type: object
+      required:
+      - id
+      - ts
+      - action
+      - resource_type
+      properties:
+        id:
+          type: integer
+          format: int64
+        ts:
+          type: integer
+          format: int64
+        actor:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
+        action:
+          type: string
+        resource_type:
+          type: string
+        resource_id:
+          type: integer
+          format: int64
+          nullable: true
+        before:
+          type: object
+          additionalProperties: true
+          nullable: true
+        after:
+          type: object
+          additionalProperties: true
+          nullable: true
+    APIToken:
+      type: object
+      required:
+      - id
+      - name
+      - prefix
+      - role
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        prefix:
+          type: string
+        role:
+          type: string
+          enum:
+          - admin
+          - operator
+          - viewer
+        expires_at:
+          type: integer
+          format: int64
+          nullable: true
+        last_used_at:
+          type: integer
+          format: int64
+          nullable: true
+        created_at:
+          type: integer
+          format: int64
+    APITokenCreate:
+      type: object
+      required:
+      - name
+      - role
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+          enum:
+          - admin
+          - operator
+          - viewer
+        expires_in_days:
+          type: integer
+    NotificationChannel:
+      type: object
+      required:
+      - id
+      - name
+      - kind
+      - enabled
+      - created_at
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+          - webhook
+          - email
+          - telegram
+          - slack
+        enabled:
+          type: boolean
+        created_at:
+          type: integer
+          format: int64
+    NotificationChannelInput:
+      type: object
+      required:
+      - name
+      - kind
+      - config
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum:
+          - webhook
+          - email
+          - telegram
+          - slack
+        config:
+          type: object
+          additionalProperties:
+            type: string
+    AlertRule:
+      type: object
+      required:
+      - id
+      - event_kinds
+      - label_filter
+      - channel_id
+      - min_severity
+      - cooldown_s
+      properties:
+        id:
+          type: integer
+          format: int64
+        event_kinds:
+          type: array
+          items:
+            type: string
+        channel_id:
+          type: integer
+          format: int64
+        min_severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+        cooldown_s:
+          type: integer
+        label_filter:
+          type: string
+          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
+    AlertRuleInput:
+      type: object
+      required:
+      - channel_id
+      properties:
+        event_kinds:
+          type: array
+          items:
+            type: string
+          description: e.g. server.health.changed, apply.*; empty = all
+        channel_id:
+          type: integer
+          format: int64
+        min_severity:
+          type: string
+          enum:
+          - info
+          - warning
+          - error
+        cooldown_s:
+          type: integer
+        label_filter:
+          type: string
+          description: label selector on frontend/backend labels; node-wide events (apply, backup) are not filtered by it
+    Bind:
+      type: object
+      required:
+      - address
+      - port
+      properties:
+        address:
+          type: string
+          description: IP address, or "*" for all interfaces
+        port:
+          type: integer
+    Route:
+      type: object
+      required:
+      - backend_id
+      properties:
+        id: *id001
+        hosts:
+          type: array
+          items:
+            type: string
+          description: Host header match; "*.example.com" matches subdomains
+        path_prefix:
+          type: string
+          description: e.g. /api; empty = any path
+        backend_id: *id001
+    FrontendInput:
+      type: object
+      required:
+      - name
+      - mode
+      - binds
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum:
+          - http
+          - tcp
+        tls:
+          type: boolean
+          description: terminate TLS (http mode); requires certificates
+        binds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bind'
+        certificates:
+          type: array
+          items:
+            type: integer
+            format: int64
+        http_redirect:
+          type: boolean
+          description: 'tls only: also listen on :80 and redirect to https'
+        default_backend_id:
+          type: integer
+          format: int64
+          nullable: true
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+        timeout_client_s:
+          type: integer
+        maxconn:
+          type: integer
+          description: 0 = unlimited
+        forwarded_headers:
+          type: boolean
+          description: 'http: X-Forwarded-For/Proto/Port'
+        enabled:
+          type: boolean
+        labels:
+          $ref: '#/components/schemas/Labels'
+    FrontendPatch:
+      type: object
+      properties:
+        name:
+          type: string
+        labels:
+          $ref: '#/components/schemas/Labels'
+        maintenance:
+          type: boolean
+        enabled:
+          type: boolean
+        description:
+          type: string
+    Frontend:
+      type: object
+      required:
+      - id
+      - name
+      - version
+      - mode
+      - tls
+      - binds
+      - certificates
+      - http_redirect
+      - default_backend_id
+      - routes
+      - timeout_client_s
+      - maxconn
+      - forwarded_headers
+      - enabled
+      - maintenance
+      - labels
+      - status
+      - created_at
+      - stats
+      - health
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum:
+          - http
+          - tcp
+        tls:
+          type: boolean
+          description: terminate TLS (http mode); requires certificates
+        binds:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bind'
+        certificates:
+          type: array
+          items:
+            type: integer
+            format: int64
+        http_redirect:
+          type: boolean
+          description: 'tls only: also listen on :80 and redirect to https'
+        default_backend_id:
+          type: integer
+          format: int64
+          nullable: true
+        routes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Route'
+        timeout_client_s:
+          type: integer
+        maxconn:
+          type: integer
+          description: 0 = unlimited
+        forwarded_headers:
+          type: boolean
+          description: 'http: X-Forwarded-For/Proto/Port'
+        enabled:
+          type: boolean
+        labels:
+          $ref: '#/components/schemas/Labels'
+        id: *id001
+        version: *id001
+        maintenance:
+          type: boolean
+        status:
+          type: string
+          enum:
+          - active
+          - applying
+          - apply_error
+        last_error: &id006
+          type: string
+          nullable: true
+        created_at: *id001
+        stats:
+          type: object
+          required:
+          - open_connections
+          - requests_per_second
+          - bytes_out_per_second
+          properties:
+            open_connections:
+              type: number
+            requests_per_second:
+              type: number
+            bytes_out_per_second:
+              type: number
+        health:
+          $ref: '#/components/schemas/HealthSummary'
+    BackendInput:
+      type: object
+      required:
+      - name
+      - mode
+      - port
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum:
+          - http
+          - tcp
+        algorithm:
+          type: string
+          enum:
+          - roundrobin
+          - leastconn
+          - source
+          - random
+        port:
+          type: integer
+          description: default server port
+        health_check:
+          $ref: '#/components/schemas/HealthCheck'
+        sticky_sessions:
+          type: boolean
+        cookie_name:
+          type: string
+        cookie_lifetime_s:
+          type: integer
+        proxy_protocol:
+          type: string
+          enum:
+          - none
+          - v1
+          - v2
+        timeout_server_s:
+          type: integer
+        labels:
+          $ref: '#/components/schemas/Labels'
+    Backend:
+      type: object
+      required:
+      - id
+      - name
+      - version
+      - mode
+      - algorithm
+      - port
+      - health_check
+      - sticky_sessions
+      - cookie_name
+      - cookie_lifetime_s
+      - proxy_protocol
+      - timeout_server_s
+      - labels
+      - created_at
+      - used_by
+      - servers_count
+      - health
+      - stats
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        mode:
+          type: string
+          enum:
+          - http
+          - tcp
+        algorithm:
+          type: string
+          enum:
+          - roundrobin
+          - leastconn
+          - source
+          - random
+        port:
+          type: integer
+          description: default server port
+        health_check:
+          $ref: '#/components/schemas/HealthCheck'
+        sticky_sessions:
+          type: boolean
+        cookie_name:
+          type: string
+        cookie_lifetime_s:
+          type: integer
+        proxy_protocol:
+          type: string
+          enum:
+          - none
+          - v1
+          - v2
+        timeout_server_s:
+          type: integer
+        labels:
+          $ref: '#/components/schemas/Labels'
+        id: *id001
+        version: *id001
+        created_at: *id001
+        used_by:
+          type: array
+          items: *id001
+          description: frontend ids
+        servers_count:
+          type: integer
+        health:
+          $ref: '#/components/schemas/HealthSummary'
+        stats:
+          type: object
+          required:
+          - sessions
+          - queue
+          - response_time_ms
+          properties:
+            sessions:
+              type: number
+            queue:
+              type: number
+            response_time_ms:
+              type: number
+    BackendServerInput:
+      type: object
+      required:
+      - type
+      properties:
+        type:
+          type: string
+          enum:
+          - ip
+          - host
+          - label_selector
+        ip:
+          type: string
+        host_id: *id001
+        label_selector:
+          type: string
+        port:
+          type: integer
+          description: override the backend port
+        use_private_ip:
+          type: boolean
+        weight:
+          type: integer
+        backup:
+          type: boolean
+    BackendServersCreate:
+      type: object
+      required:
+      - servers
+      properties:
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/BackendServerInput'
+    BackendServerUpdate:
+      type: object
+      properties:
+        weight:
+          type: integer
+        admin_state:
+          type: string
+          enum:
+          - ready
+          - drain
+          - maint
+        backup:
+          type: boolean
+    ResolvedServer:
+      type: object
+      required:
+      - slot_id
+      - address
+      - port
+      - status
+      properties:
+        slot_id: *id001
+        host_id: *id005
+        name: *id006
+        address:
+          type: string
+        port:
+          type: integer
+        status:
+          type: string
+          enum:
+          - healthy
+          - unhealthy
+          - maintenance
+          - draining
+          - unknown
+        check:
+          type: string
+        sessions:
+          type: number
+    BackendServer:
+      type: object
+      required:
+      - id
+      - backend_id
+      - type
+      - use_private_ip
+      - weight
+      - backup
+      - admin_state
+      - resolved
+      properties:
+        id: *id001
+        backend_id: *id001
+        type:
+          type: string
+          enum:
+          - ip
+          - host
+          - label_selector
+        ip: *id006
+        host_id: *id005
+        label_selector: *id006
+        port:
+          type: integer
+          nullable: true
+        use_private_ip:
+          type: boolean
+        weight:
+          type: integer
+        backup:
+          type: boolean
+        admin_state:
+          type: string
+          enum:
+          - ready
+          - drain
+          - maint
+        removing:
+          type: boolean
+        resolved:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedServer'
+    BackendHealth:
+      type: object
+      required:
+      - summary
+      - servers
+      properties:
+        summary:
+          $ref: '#/components/schemas/HealthSummary'
+        servers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResolvedServer'
+    HostInput:
+      type: object
+      properties:
+        name:
+          type: string
+        ipv4: *id006
+        ipv6: *id006
+        private_ipv4: *id006
+        labels:
+          $ref: '#/components/schemas/Labels'
+        notes:
+          type: string
+    Host:
+      type: object
+      required:
+      - id
+      - name
+      - labels
+      properties:
+        id: *id001
+        name:
+          type: string
+        ipv4: *id006
+        ipv6: *id006
+        private_ipv4: *id006
+        labels:
+          $ref: '#/components/schemas/Labels'
+        notes:
+          type: string
+        used_by:
+          type: array
+          items: *id001
+          description: backend ids
+    Overview:
+      type: object
+      required:
+      - frontends
+      - backends
+      - servers
+      - certificates
+      - node
+      properties:
+        frontends:
+          type: object
+          required:
+          - total
+          - apply_errors
+          properties:
+            total:
+              type: integer
+            apply_errors:
+              type: integer
+        backends:
+          type: object
+          required:
+          - total
+          - healthy
+          - degraded
+          - unhealthy
+          properties:
+            total:
+              type: integer
+            healthy:
+              type: integer
+            degraded:
+              type: integer
+            unhealthy:
+              type: integer
+        servers:
+          type: object
+          required:
+          - total
+          - healthy
+          properties:
+            total:
+              type: integer
+            healthy:
+              type: integer
+        certificates:
+          type: object
+          required:
+          - total
+          - expiring_soon
+          - failed
+          properties:
+            total:
+              type: integer
+            expiring_soon:
+              type: integer
+            failed:
+              type: integer
+        node:
+          $ref: '#/components/schemas/Node'
+        traffic:
+          type: object
+          required:
+          - open_connections
+          - requests_per_second
+          - bytes_in_per_second
+          - bytes_out_per_second
+          properties:
+            open_connections:
+              type: number
+            requests_per_second:
+              type: number
+            bytes_in_per_second:
+              type: number
+            bytes_out_per_second:
+              type: number

@@ -1,0 +1,10 @@
+.git
+**/node_modules
+web/build
+web/.svelte-kit
+bin
+data
+run
+.dev
+*.db
+coverage.out

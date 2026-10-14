@@ -1,0 +1,30 @@
+# Phase 3 placeholder (INSTRUCTIONS.md §15): node agent only. Not functional yet.
+# On worker nodes the panel is remote; the local loxy runs in `agent` mode and
+# applies NodeState pushed by the panel. Sketch:
+#
+# name: loxy-agent
+# services:
+#   loxy:
+#     image: ghcr.io/2shiraz/loxy:${LOXY_VERSION}-haproxy${HAPROXY_VERSION}
+#     command: ["agent"]
+#     network_mode: host
+#     restart: unless-stopped
+#     read_only: true
+#     env_file: .env                      # LOXY_PANEL_URL, LOXY_ENROLL_TOKEN, LOXY_SECRET_KEY, ...
+#     volumes:
+#       - ./data/haproxy-conf:/usr/local/etc/haproxy
+#       - ./data/haproxy-state:/var/lib/haproxy
+#       - ./run/haproxy:/run/haproxy
+#       - ./data/loxy:/var/lib/loxy
+#     tmpfs: [/tmp]
+#     healthcheck:
+#       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/healthz"]
+#       interval: 5s
+#       timeout: 2s
+#       retries: 12
+#
+#   haproxy:
+#     image: haproxy:${HAPROXY_VERSION}-alpine
+#     # identical to the haproxy service in compose.yml
+#     depends_on:
+#       loxy: { condition: service_healthy }

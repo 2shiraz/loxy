@@ -1,0 +1,253 @@
+//go:build integration
+
+package integration
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/cookiejar"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/2shiraz/loxy/internal/app"
+	"github.com/2shiraz/loxy/internal/config"
+	"github.com/2shiraz/loxy/internal/testutil"
+)
+
+// echoServer starts a tiny HTTP responder container answering `body` on :9001.
+func echoServer(t *testing.T, dir, body string) string {
+	cfg := filepath.Join(dir, body+".cfg")
+	_ = os.WriteFile(cfg, []byte("defaults\n  mode http\n  timeout client 30s\n  timeout server 30s\n  timeout connect 5s\nfrontend f\n  bind :9001\n  http-request return status 200 content-type text/plain string \""+body+"\"\n"), 0o644)
+	name := fmt.Sprintf("loxy-it-be-%s-%d", body, time.Now().UnixNano())
+	if out, err := exec.Command("docker", "run", "-d", "--name", name, "-v", cfg+":/b.cfg:ro", testutil.HAProxyImage, "haproxy", "-f", "/b.cfg").CombinedOutput(); err != nil {
+		t.Fatalf("backend: %v %s", err, out)
+	}
+	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
+	out, _ := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name).Output()
+	return strings.TrimSpace(string(out))
+}
+
+type client struct {
+	t    *testing.T
+	base string
+	hc   *http.Client
+	csrf string
+}
+
+func (c *client) do(method, path string, body any) (int, map[string]any) {
+	var rd io.Reader
+	if body != nil {
+		b, _ := json.Marshal(body)
+		rd = bytes.NewReader(b)
+	}
+	req, _ := http.NewRequest(method, c.base+"/api/v1"+path, rd)
+	if c.csrf != "" {
+		req.Header.Set("X-LOXY-CSRF", c.csrf)
+	}
+	resp, err := c.hc.Do(req)
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var m map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&m)
+	return resp.StatusCode, m
+}
+
+type stack struct {
+	a    *app.App
+	c    *client
+	dir  string
+	haIP string
+}
+
+// startStack builds the app with temp dirs, applies bootstrap, starts HAProxy and logs in.
+func startStack(t *testing.T, tweak func(*config.Config)) *stack {
+	dockerOK(t)
+	dir := t.TempDir()
+	for _, d := range []string{"conf", "run", "state", "data"} {
+		_ = os.MkdirAll(filepath.Join(dir, d), 0o777)
+		_ = os.Chmod(filepath.Join(dir, d), 0o777)
+	}
+	wrapper := filepath.Join(dir, "haproxy.sh")
+	_ = os.WriteFile(wrapper, []byte("#!/bin/sh\nexec docker run --rm --network none --user 0:0 -v "+dir+":"+dir+":ro "+testutil.HAProxyImage+" haproxy \"$@\"\n"), 0o755)
+	t.Setenv("LOXY_OWNER_PASSWORD", "integration-test-pw")
+	t.Setenv("LOXY_HAPROXY_MAXCONN", "4000")
+	t.Setenv("LOXY_DRAIN_TIMEOUT", "2s")
+	cfg := &config.Config{Listen: "127.0.0.1:0", PanelPort: 18443, DataDir: filepath.Join(dir, "data"), HAProxyConfDir: filepath.Join(dir, "conf"),
+		HAProxyRunDir: filepath.Join(dir, "run"), HAProxyStateDir: filepath.Join(dir, "state"), HAProxyBin: wrapper, StatsInterval: time.Second,
+		Dev: true, ACMEDirectory: "https://127.0.0.1:1/dir", SecretKey: make([]byte, 32)}
+	if tweak != nil {
+		tweak(cfg)
+	}
+	a, err := app.New(cfg, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if err := a.Rec.Apply(ctx, "test"); err != nil {
+		t.Fatal(err)
+	}
+	name := fmt.Sprintf("loxy-it-apply-%d", time.Now().UnixNano())
+	if out, err := exec.Command("docker", "run", "-d", "--name", name, "--user", "0:0", "--group-add", "1500", "-v", dir+":"+dir,
+		testutil.HAProxyImage, "haproxy", "-W", "-db", "-S", filepath.Join(dir, "run", "master.sock")+",mode,660,gid,1500",
+		"-f", filepath.Join(dir, "conf", "live", "haproxy.cfg")).CombinedOutput(); err != nil {
+		t.Fatalf("%v %s", err, out)
+	}
+	t.Cleanup(func() {
+		if t.Failed() {
+			out, _ := exec.Command("docker", "logs", name).CombinedOutput()
+			t.Logf("haproxy logs:\n%s", out)
+		}
+		_ = exec.Command("docker", "rm", "-f", name).Run()
+	})
+	out, _ := exec.Command("docker", "inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name).Output()
+	haIP := strings.TrimSpace(string(out))
+	waitFor(t, 15*time.Second, "admin socket", func() bool { _, err := os.Stat(filepath.Join(dir, "run", "admin.sock")); return err == nil })
+	go a.Metrics.Run(ctx)
+
+	srv := httptest.NewServer(a.API.Handler())
+	t.Cleanup(srv.Close)
+	jar, _ := cookiejar.New(nil)
+	c := &client{t: t, base: srv.URL, hc: &http.Client{Jar: jar}}
+	st, body := c.do("POST", "/auth/login", map[string]any{"email": "admin@loxy.local", "password": "integration-test-pw"})
+	if st != 200 {
+		t.Fatalf("login %d %v", st, body)
+	}
+	c.csrf = body["csrf_token"].(string)
+	return &stack{a: a, c: c, dir: dir, haIP: haIP}
+}
+
+// TestApplyPathZeroDowntime drives the real API + reconciler against HAProxy 3.4:
+// create a backend + frontend (reload), add/remove servers (runtime, no reload), repeated
+// reloads under load.
+func TestApplyPathZeroDowntime(t *testing.T) {
+	s := startStack(t, nil)
+	a, c, dir, haIP := s.a, s.c, s.dir, s.haIP
+	ctx := context.Background()
+	b1, b2 := echoServer(t, dir, "one"), echoServer(t, dir, "two")
+	var st int
+	var body map[string]any
+	beSpec := func(alg string) map[string]any {
+		return map[string]any{"name": "it", "mode": "http", "port": 9001, "algorithm": alg,
+			"health_check": map[string]any{"protocol": "http", "interval_s": 3, "timeout_s": 1, "retries": 1, "http": map[string]any{"path": "/"}}}
+	}
+	st, body = c.do("POST", "/backends", beSpec("roundrobin"))
+	if st != 201 {
+		t.Fatalf("create backend %d %v", st, body)
+	}
+	beID := int64(body["backend"].(map[string]any)["id"].(float64))
+	if st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b1}}}); st != 201 {
+		t.Fatalf("add server %d %v", st, body)
+	}
+	st, body = c.do("POST", "/frontends", map[string]any{"name": "it", "mode": "http", "binds": []any{map[string]any{"address": "*", "port": 8080}},
+		"default_backend_id": beID})
+	if st != 201 {
+		t.Fatalf("create frontend %d %v", st, body)
+	}
+	apply := func(wantKind string) {
+		t.Helper()
+		if err := a.Rec.Apply(ctx, "test"); err != nil {
+			t.Fatal(err)
+		}
+		revs, _ := a.Store.Q.ListRevisions(ctx, 1)
+		if wantKind != "" && revs[0].Kind != wantKind {
+			t.Fatalf("expected %s apply, got %s (%s)", wantKind, revs[0].Kind, revs[0].HaproxyOutput)
+		}
+	}
+	apply("reload")
+	url := fmt.Sprintf("http://%s:8080/", haIP)
+	waitFor(t, 10*time.Second, "frontend serving", func() bool {
+		r, err := http.Get(url)
+		if err != nil {
+			return false
+		}
+		r.Body.Close()
+		return r.StatusCode == 200
+	})
+
+	// Load generator.
+	var okN, failN atomic.Int64
+	var lastErr atomic.Value
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// One keep-alive connection per worker: the shared default transport keeps only
+			// 2 idle conns per host, so the other workers would dial per request and exhaust
+			// ephemeral ports on fast runners ("cannot assign requested address").
+			hc := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{MaxIdleConnsPerHost: 1, IdleConnTimeout: time.Minute}}
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				r, err := hc.Get(url)
+				if err != nil {
+					failN.Add(1)
+					lastErr.Store(err.Error())
+					continue
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+				if r.StatusCode != 200 {
+					failN.Add(1)
+					lastErr.Store(fmt.Sprint("status ", r.StatusCode))
+					continue
+				}
+				okN.Add(1)
+			}
+		}()
+	}
+	// Runtime: add and remove a server under load — no reload allowed.
+	st, body = c.do("POST", fmt.Sprintf("/backends/%d/servers", beID), map[string]any{"servers": []any{map[string]any{"type": "ip", "ip": b2}}})
+	if st != 201 {
+		t.Fatalf("add server %d %v", st, body)
+	}
+	apply("runtime")
+	time.Sleep(4 * time.Second) // let the new server pass its first check
+	sid := int64(body["servers"].([]any)[0].(map[string]any)["id"].(float64))
+	st, _ = c.do("DELETE", fmt.Sprintf("/backends/%d/servers/%d", beID, sid), nil)
+	if st != 204 && st != 202 {
+		t.Fatalf("delete server %d", st)
+	}
+	apply("runtime") // drain
+	waitFor(t, 10*time.Second, "server removed", func() bool { return a.Snap.Get().Backend(beID).Server(sid) == nil })
+	apply("runtime") // del server
+	// Repeated reloads under load (algorithm flip forces a reload).
+	reloads := 20
+	if v := os.Getenv("LOXY_IT_RELOADS"); v != "" {
+		fmt.Sscan(v, &reloads)
+	}
+	algs := []string{"leastconn", "roundrobin"}
+	for i := 0; i < reloads; i++ {
+		if st, b := c.do("PUT", fmt.Sprintf("/backends/%d", beID), beSpec(algs[i%2])); st != 200 {
+			t.Fatalf("patch %d %v", st, b)
+		}
+		apply("reload")
+	}
+	time.Sleep(time.Second)
+	close(stop)
+	wg.Wait()
+	t.Logf("requests ok=%d failed=%d over %d reloads + runtime add/remove", okN.Load(), failN.Load(), reloads)
+	if failN.Load() != 0 {
+		t.Fatalf("%d failed requests (last: %v)", failN.Load(), lastErr.Load())
+	}
+	if okN.Load() < 100 {
+		t.Fatalf("load generator too slow: %d", okN.Load())
+	}
+}

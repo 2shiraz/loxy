@@ -1,0 +1,28 @@
+{
+  "name": "loxy-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build && node scripts/postbuild.mjs",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "gen": "openapi-typescript ../api/openapi.yaml -o src/lib/api/schema.d.ts",
+    "size": "node scripts/bundle-size.mjs"
+  },
+  "dependencies": {
+    "openapi-fetch": "0.17.0",
+    "uplot": "1.6.32"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-static": "3.0.10",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "6.2.4",
+    "openapi-typescript": "7.13.0",
+    "svelte": "5.57.2",
+    "svelte-check": "4.7.6",
+    "typescript": "5.9.3",
+    "vite": "7.3.7"
+  }
+}

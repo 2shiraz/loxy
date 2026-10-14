@@ -1,0 +1,42 @@
+name: loxy
+services:
+  loxy:
+    image: ghcr.io/2shiraz/loxy:${LOXY_VERSION}-haproxy${HAPROXY_VERSION}
+    network_mode: host
+    restart: unless-stopped
+    read_only: true
+    env_file: .env
+    volumes:
+      - ./data/haproxy-conf:/usr/local/etc/haproxy      # revisions + live symlink (rw for loxy)
+      - ./data/haproxy-state:/var/lib/haproxy           # server-state file
+      - ./run/haproxy:/run/haproxy                      # sockets
+      - ./data/loxy:/var/lib/loxy                       # loxy.db, backups
+    tmpfs: [/tmp]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/healthz"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+
+  haproxy:
+    image: haproxy:${HAPROXY_VERSION}-alpine
+    network_mode: host
+    restart: unless-stopped
+    user: "0:0"
+    group_add: ["1500"]
+    entrypoint: ["haproxy", "-W", "-db",
+                 "-S", "/run/haproxy/master.sock,mode,660,gid,1500",
+                 "-f", "/usr/local/etc/haproxy/live/haproxy.cfg"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, KILL, CHOWN]
+    ulimits:
+      nofile: { soft: 1048576, hard: 1048576 }
+    volumes:
+      - ./data/haproxy-conf:/usr/local/etc/haproxy:ro
+      - ./data/haproxy-state:/var/lib/haproxy
+      - ./run/haproxy:/run/haproxy
+    depends_on:
+      loxy: { condition: service_healthy }
+    logging:
+      driver: local
+      options: { max-size: "10m", max-file: "3" }

@@ -1,0 +1,35 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - misspell
+    - bodyclose
+  settings:
+    errcheck:
+      # Closing read-side resources and writing to hashes/HTTP streams: errors are not actionable.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (*database/sql.DB).Close
+        - (*github.com/2shiraz/loxy/internal/store.Store).Close
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Fprintln
+        - fmt.Sscan
+  exclusions:
+    generated: lax
+    paths:
+      - internal/store/db
+      - internal/webui/dist
+      - web
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax
