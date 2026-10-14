@@ -428,3 +428,15 @@ func TestReviewRegressions(t *testing.T) {
 		t.Fatal("owner session revoked")
 	}
 }
+
+// live.tick carries per-project status, health and traffic for real-time pages.
+func TestLiveSnapshot(t *testing.T) {
+	c, a := setup(t)
+	login(c)
+	id, _ := mkProject(c, "live", "10.0.0.5")
+	snap := a.API.LiveSnapshotForTest()
+	ps := snap["projects"].([]map[string]any)
+	if len(ps) != 1 || ps[0]["id"].(int64) != int64(id) || ps[0]["health_sig"] == "" || snap["traffic"] == nil {
+		t.Fatalf("live snapshot %v", snap)
+	}
+}

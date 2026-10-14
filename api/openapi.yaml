@@ -697,7 +697,11 @@ paths:
       - system
       responses:
         '200':
-          description: SSE stream of Event objects (event name = kind)
+          description: "SSE stream of Event objects (event name = kind). Every 2 s an ephemeral `live.tick` event carries
+            data = {ts, projects: [{id, status, maintenance, version, health: {status, healthy, total}, health_sig, stats: {open_connections,
+            requests_per_second, bytes_in_per_second, bytes_out_per_second, response_time_ms}}], traffic: {open_connections, requests_per_second,
+            bytes_in_per_second, bytes_out_per_second}, node: {status, applied_version, desired_version}}; health_sig changes whenever
+            any target check of that project changes."
           content:
             text/event-stream:
               schema:

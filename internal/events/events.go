@@ -65,7 +65,9 @@ func (h *Hub) Publish(e Event) {
 	if e.ID == 0 {
 		e.ID = -h.seq
 	}
-	h.replay = append(h.replay, e)
+	if !e.Ephemeral { // live ticks are superseded every few seconds: never replay them
+		h.replay = append(h.replay, e)
+	}
 	cut := time.Now().Add(-2 * time.Minute).UnixMilli()
 	i := 0
 	for i < len(h.replay) && h.replay[i].TS < cut {

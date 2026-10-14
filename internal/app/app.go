@@ -336,6 +336,7 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	go a.Issuer.RunScheduler(ctx)
 	go a.API.RunDomainLoop(ctx)
+	go a.API.RunLiveTicker(ctx)
 	go a.API.Notifier.Run(ctx)
 	go a.runBackups(ctx)
 	if a.API.Logs != nil {
