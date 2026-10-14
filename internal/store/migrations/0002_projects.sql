@@ -136,3 +136,5 @@ DROP TABLE server_slots;
 DROP TABLE backend_servers;
 DROP TABLE backends;
 DELETE FROM metrics_1m;
+-- Health events are now per target of a project.
+UPDATE alert_rules SET event_kinds = replace(event_kinds, 'server.health.changed', 'target.health.changed');

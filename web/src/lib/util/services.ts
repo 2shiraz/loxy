@@ -81,7 +81,7 @@ export function validateService(s: ServiceInput, others: { listen_port: number }
   }
   if (!okPort(s.destination_port)) e.destination_port = 'Port must be 1–65535';
   const to = Number(s.timeout_s ?? 60);
-  if (!(to >= 1 && to <= 3600)) e.timeout_s = 'Timeout must be 1–3600 s';
+  if (!(to >= 1 && to <= 86400)) e.timeout_s = 'Timeout must be 1–86400 s';
   if (s.sticky_sessions) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(s.cookie_name ?? '')) e.cookie_name = 'Letters, digits, - and _ only';
     if (!(Number(s.cookie_lifetime_s) >= 1)) e.cookie_lifetime_s = 'Must be at least 1 s';

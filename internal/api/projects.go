@@ -210,7 +210,16 @@ func (s *Server) DeleteProject(w http.ResponseWriter, r *http.Request, id gen.Id
 		fail(w, err)
 		return
 	}
+	doms := s.Snap.Get().DomainsOf(id)
+	for _, d := range doms {
+		s.removeManagedRecords(r.Context(), d)
+	}
 	if err := s.mutate(r, "project.delete", "project", func() int64 { return id }, map[string]any{"name": p.Name}, func(q *db.Queries) error {
+		for _, d := range doms {
+			if err := q.DeleteDomain(r.Context(), d.ID); err != nil {
+				return err
+			}
+		}
 		return q.DeleteBalancer(r.Context(), id)
 	}); err != nil {
 		fail(w, err)

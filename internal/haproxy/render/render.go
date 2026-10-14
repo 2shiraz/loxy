@@ -304,7 +304,7 @@ func Render(in Input) (*Output, error) {
 	}
 	bes := append([]*state.Backend(nil), in.Backends...)
 	sort.Slice(bes, func(i, j int) bool { return bes[i].ID < bes[j].ID })
-	tlsOnly := tlsOnlyBackends(in.Frontends)
+	tlsOnly := tlsOnlyBackends(in.Frontends, in.Domains)
 	for _, b := range bes {
 		sec, err := renderBackend(&in, b, tlsOnly)
 		if err != nil {
@@ -523,8 +523,6 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 				"http-request set-header X-Forwarded-Proto "+proto,
 				"http-request set-header X-Forwarded-Port %[dst_port]")
 		}
-		fe.Lines = append(fe.Lines, fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }",
-			path.Join(in.Root, "errors", "maint.http"), f.ID, maintMap))
 		for _, r := range f.Routes {
 			cond, err := routeCond(r)
 			if err != nil {
@@ -559,7 +557,7 @@ func renderFrontend(in *Input, f *state.Frontend, usedCerts map[int64]bool, need
 
 // tlsOnlyBackends returns the backends that are used, and only by enabled frontends that
 // terminate TLS: their sticky cookie can be marked secure (§7.5).
-func tlsOnlyBackends(fes []*state.Frontend) map[int64]bool {
+func tlsOnlyBackends(fes []*state.Frontend, domains []DomainRoute) map[int64]bool {
 	out := map[int64]bool{}
 	for _, f := range fes {
 		if f.Enabled == 0 {
@@ -572,6 +570,12 @@ func tlsOnlyBackends(fes []*state.Frontend) map[int64]bool {
 			}
 		}
 	}
+	// Plain-HTTP domain traffic (no issued certificate or HTTPS off) reaches the backend too.
+	for _, d := range domains {
+		if !d.HTTPS {
+			out[d.BackendID] = false
+		}
+	}
 	return out
 }
 
@@ -582,9 +586,9 @@ func renderBackend(in *Input, b *state.Backend, tlsOnly map[int64]bool) (section
 	}
 	be := section{Header: fmt.Sprintf("backend %s from %s", BackendName(b.ID), mode)}
 	be.Lines = append(be.Lines, "balance "+b.Algorithm)
-	if b.Mode == "http" && slices.ContainsFunc(in.Domains, func(d DomainRoute) bool { return d.BackendID == b.ID }) {
-		// Domain traffic reaches this backend through sys_http/sys_https, not fe_<id>: apply the
-		// project's maintenance mode here too (same map key as the service frontend).
+	if b.Mode == "http" {
+		// Maintenance lives in the backend so it covers every way in: the service port (fe_<id>)
+		// and domains (sys_http/sys_https). Same map key as the service id.
 		maintMap := MaintMapPath(in.Root)
 		be.Lines = append(be.Lines, fmt.Sprintf("http-request return status 503 content-type text/html file %s if { str(%d),map(opt@%s) -m found }",
 			path.Join(in.Root, "errors", "maint.http"), b.ID, maintMap))

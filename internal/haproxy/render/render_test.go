@@ -98,8 +98,12 @@ func TestSecureCookieOnlyWhenAllFrontendsTLS(t *testing.T) {
 	plain := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 2, Mode: "http", Enabled: 1, DefaultBackendID: be(6)}, Routes: []state.Route{{BackendID: 5}}}
 	off := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 3, Mode: "http", Enabled: 0, DefaultBackendID: be(7)}}
 	tlsOnly := &state.Frontend{FrontendCfg: state.FrontendCfg{ID: 4, Mode: "http", Tls: 1, Enabled: 1, DefaultBackendID: be(7)}}
-	got := tlsOnlyBackends([]*state.Frontend{tls, plain, off, tlsOnly})
+	got := tlsOnlyBackends([]*state.Frontend{tls, plain, off, tlsOnly}, nil)
 	if got[5] || got[6] || !got[7] {
 		t.Fatalf("tlsOnly = %v (5: shared with plain HTTP, 6: plain only, 7: TLS + disabled plain)", got)
+	}
+	// a plain-HTTP domain (no certificate yet) also reaches backend 7: no secure cookie
+	if got = tlsOnlyBackends([]*state.Frontend{tlsOnly}, []DomainRoute{{Host: "a.example.com", BackendID: 7}}); got[7] {
+		t.Fatalf("plain domain kept secure: %v", got)
 	}
 }

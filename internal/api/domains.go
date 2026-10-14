@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -261,10 +262,15 @@ func (s *Server) respondDomain(w http.ResponseWriter, status int, id int64) {
 }
 
 // domainRefs validates project / service / provider references; returns the detected zone.
-func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors) string {
+func (s *Server) domainRefs(ctx context.Context, fqdn string, in gen.DomainInput, fe model.FieldErrors, create bool) string {
 	snap := s.Snap.Get()
+	if s.Cfg.PanelPort == 80 || s.Cfg.PanelPort == 443 {
+		fe.Add("fqdn", fmt.Sprintf("the Loxy panel uses :%d, which domains need; move it with LOXY_PANEL_PORT", s.Cfg.PanelPort))
+	}
 	if in.ProjectId == nil || *in.ProjectId == 0 {
-		fe.Add("project_id", "required")
+		if create {
+			fe.Add("project_id", "required")
+		}
 	} else if p := snap.Project(*in.ProjectId); p == nil {
 		fe.Add("project_id", "unknown project")
 	} else if in.ServiceId != nil && *in.ServiceId != 0 {
@@ -319,7 +325,7 @@ func (s *Server) CreateDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	zone := ""
 	if fe.Empty() {
-		zone = s.domainRefs(r.Context(), fqdn, in, fe)
+		zone = s.domainRefs(r.Context(), fqdn, in, fe, true)
 	}
 	if !fe.Empty() {
 		fail(w, errInput(fe))
@@ -357,6 +363,9 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		DnsProviderId: nullI64(d.DnsProviderID), AutoRecords: ptr(d.AutoRecords != 0)}
 	if in.ProjectId != nil {
 		merged.ProjectId = in.ProjectId
+		if *in.ProjectId == 0 {
+			merged.ProjectId = nil // detach
+		}
 		if in.ServiceId == nil && (d.BalancerID.Int64 != *in.ProjectId) {
 			merged.ServiceId = nil // the old service belongs to the other project
 		}
@@ -377,7 +386,7 @@ func (s *Server) UpdateDomain(w http.ResponseWriter, r *http.Request, id gen.Id)
 		merged.AutoRecords = in.AutoRecords
 	}
 	fe := model.FieldErrors{}
-	zone := s.domainRefs(r.Context(), d.Fqdn, merged, fe)
+	zone := s.domainRefs(r.Context(), d.Fqdn, merged, fe, false)
 	if !fe.Empty() {
 		fail(w, errInput(fe))
 		return
@@ -462,9 +471,19 @@ func (s *Server) autoIssue(ctx context.Context, d *state.Domain) error {
 	if d.DnsProviderID.Valid {
 		challenge, pid = "dns01", d.DnsProviderID
 	}
+	s.issueMu.Lock() // one automatic issuance decision at a time (create, verify and the loop race)
+	defer s.issueMu.Unlock()
+	name := d.Fqdn
+	if r := []rune(name); len(r) > 64 {
+		name = string(r[:61]) + "..."
+	}
 	var certID int64
 	err := s.Store.Tx(ctx, func(q *db.Queries) error {
-		c, err := q.CreateCertificate(ctx, db.CreateCertificateParams{Name: d.Fqdn, Type: "managed", Domains: jsonStr([]string{d.Fqdn}), KeyType: "ecdsa256",
+		cur, err := q.GetDomain(ctx, d.ID)
+		if err != nil || cur.CertificateID.Valid || cur.Https == 0 || !cur.BalancerID.Valid {
+			return errSkip // gone, already has a certificate, or no longer wants one
+		}
+		c, err := q.CreateCertificate(ctx, db.CreateCertificateParams{Name: name, Type: "managed", Domains: jsonStr([]string{d.Fqdn}), KeyType: "ecdsa256",
 			Challenge: challenge, DnsProviderID: pid, Status: "pending", Labels: "{}", CreatedAt: nowMs()})
 		if err != nil {
 			return err
@@ -479,6 +498,9 @@ func (s *Server) autoIssue(ctx context.Context, d *state.Domain) error {
 		return q.CreateAudit(ctx, db.CreateAuditParams{Ts: nowMs(), Actor: "system", Action: "domain.issue_certificate",
 			ResourceType: "domain", ResourceID: sql.NullInt64{Int64: d.ID, Valid: true}, After: sql.NullString{String: jsonStr(map[string]any{"certificate_id": certID}), Valid: true}})
 	})
+	if errors.Is(err, errSkip) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -488,6 +510,8 @@ func (s *Server) autoIssue(ctx context.Context, d *state.Domain) error {
 	}
 	return nil
 }
+
+var errSkip = errors.New("skip")
 
 func (s *Server) IssueDomainCertificate(w http.ResponseWriter, r *http.Request, id gen.Id) {
 	d := s.domain(id)

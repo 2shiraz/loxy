@@ -73,9 +73,6 @@ func Load() (*Config, error) {
 	if c.PanelPort, err = strconv.Atoi(env("LOXY_PANEL_PORT", "8443")); err != nil || c.PanelPort < 1 || c.PanelPort > 65535 {
 		return nil, fmt.Errorf("LOXY_PANEL_PORT: invalid port")
 	}
-	if c.PanelPort == 80 || c.PanelPort == 443 {
-		return nil, fmt.Errorf("LOXY_PANEL_PORT: 80 and 443 are reserved for project domains")
-	}
 	if c.StatsInterval, err = time.ParseDuration(env("LOXY_STATS_INTERVAL", "1s")); err != nil || c.StatsInterval < 100*time.Millisecond {
 		return nil, fmt.Errorf("LOXY_STATS_INTERVAL: invalid duration")
 	}

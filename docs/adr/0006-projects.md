@@ -82,8 +82,8 @@ works.
   afterwards); events are copied without their frontend/backend ids. Only
   pre-release databases with a `load_balancers` table are refused, with a clear
   error.
-- Deleting a project detaches its domains (`ON DELETE SET NULL`); the domain is
-  kept with no project.
+- Deleting a project deletes its domains (their auto-managed DNS records are
+  removed first); `ON DELETE SET NULL` only remains as a safety net.
 - Frontends, backends, binds, routes and default backends are no longer
   user-visible. The read-only Config view still shows the rendered HAProxy text.
 - No per-address binds: services listen on all addresses of the node. Port
@@ -96,9 +96,7 @@ works.
 - A target is rendered in every service backend of its project, so target
   runtime ops multiply by the number of services (still one command per
   backend; no reload).
-- Maintenance for http/https services is rendered in `fe_<S>` and, when a
-  domain routes to the service, also in `be_<S>`, so domain traffic is covered
-  (new VERIFY item); tcp keeps `tcp-request connection reject` in `fe_<S>`.
+- Maintenance for http/https services is rendered in `be_<S>` (one rule that covers the service port and domain traffic); tcp services reject in `fe_<S>`.
 - Exact-host `use_backend` rules are rendered before wildcard ones. Deleting the
   last http/https service of a project with domains, or switching it to tcp,
   returns 409. `LOXY_PANEL_PORT` 80/443 is refused at start. Automatic ports

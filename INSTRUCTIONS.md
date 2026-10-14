@@ -77,7 +77,7 @@ Users see projects, targets, services and domains. The renderer compiles them in
 | PROXY protocol | service column | `send-proxy`/`send-proxy-v2` **and** `check-send-proxy` on the server lines of `be_<S>` |
 | Target: IP / host / label selector | `targets`, resolved into `target_slots` | In **every** `be_<S>` of the project: `server s<T>` (IP) or `server s<T>x<H>` (host / selector match) with `id <slot id>`, port = target port override or the service's destination port; added/removed at runtime as dynamic servers |
 | Domain (hostname → project / service, https) | `domains` | Shared `frontend sys_http` (:80) and `frontend sys_https` (:443): `use_backend be_<S> if { req.hdr(host),field(1,:),lower -m str <fqdn> }`; ACME HTTP‑01 answers and 301 → https in `sys_http`; domain certificates in `sys_https.lst` |
-| Maintenance | `balancers.maintenance` | `opt@maint.map` keyed by service id: http/https → `http-request return status 503` in `fe_<S>`, and also in `be_<S>` when a domain routes to that backend (so domain traffic is covered); tcp → `tcp-request connection reject` in `fe_<S>` |
+| Maintenance | `balancers.maintenance` | `opt@maint.map` keyed by service id: http/https → `http-request return status 503` in `be_<S>` (covers the service port and domain traffic); tcp → `tcp-request connection reject` in `fe_<S>` |
 | Host (inventory) | `hosts` | Address source for host/selector targets only |
 | Labels | JSON column on projects, hosts, certificates | Selectors, list filters and alert‑rule filters only; never rendered |
 | Node addresses | `node_addresses` | Not rendered; endpoint URLs and DNS required records for domains |
@@ -491,7 +491,7 @@ Notes:
 - Unknown hosts get 404 from `http-request return` (evaluated before `use_backend`), so no extra backend section is needed.
 - Host conditions: each FQDN becomes one `-m str` pattern on the lower‑cased Host without port; `*.example.com` becomes `-m end .example.com`. Domains of the same service share one `use_backend` condition (patterns OR‑ed, sorted by FQDN). `use_backend` rules with only exact patterns MUST come before rules with wildcard patterns, so an exact domain of one project wins over a wildcard of another.
 - A domain routes to `be_<service_id>` of its service (default: the project's first http/https service by `position`). Domains of a project without an http/https service, and detached domains, are not rendered.
-- `maint.map` is an `opt@` map keyed by **service id**: present on disk in the revision **and** updated at runtime with `add map`/`del map`, so maintenance is instant and survives reloads. Turning a project's maintenance on adds one entry per service. http/https services answer 503 from `fe_<S>` (the service port) and, when at least one domain routes to the service, also from `be_<S>` (traffic arriving through `sys_http`/`sys_https`; **VERIFY** `http-request return` with an `opt@` map lookup in a backend section); tcp services reject the connection in `fe_<S>`. `virt@acme_http01` is a virtual (memory‑only) map because challenge tokens are ephemeral; the reconciler re‑pushes pending tokens after every reload.
+- `maint.map` is an `opt@` map keyed by **service id**: present on disk in the revision **and** updated at runtime with `add map`/`del map`, so maintenance is instant and survives reloads. Turning a project's maintenance on adds one entry per service. http/https services answer 503 from `be_<S>`, which covers the service port and traffic arriving through `sys_http`/`sys_https` (verified, `docs/haproxy-notes.md`); tcp services reject the connection in `fe_<S>`. `virt@acme_http01` is a virtual (memory‑only) map because challenge tokens are ephemeral; the reconciler re‑pushes pending tokens after every reload.
 - `timeout client` / `timeout server` are always rendered from the service's `timeout_s` (default 60).
 - Targets are rendered in every service backend of their project, with port = the target's port override, else the service's `destination_port`.
 
@@ -502,7 +502,7 @@ Notes:
 | Field | Rendering |
 |---|---|
 | algorithm | `balance roundrobin|leastconn|source|random` in every `be_<S>` of the project — rendered **explicitly** |
-| maintenance | one `maint.map` entry per service; 503 rule in `fe_<S>` and, for services with domains, in `be_<S>` (§7.4) |
+| maintenance | one `maint.map` entry per service; 503 rule in `be_<S>` for http/https, connection reject in `fe_<S>` for tcp (§7.4) |
 | name, description, labels | never rendered |
 
 **Service fields**
@@ -686,7 +686,7 @@ Tabs: **Overview · Graphs · Targets · Services · Domains · Logs · Settings
 **Settings**
 - Name, description, labels, algorithm (note that Source makes target changes reload‑class), maintenance mode (explains: http 503 page, tcp connections rejected; applies to ports and domains).
 - **Config** (read‑only): rendered sections of this project (`fe_<S>`, `be_<S>` of all services, plus the `sys_http`/`sys_https` lines for its domains) from `GET /projects/{id}/config`, with "Copy" and "Download".
-- **Danger zone:** Delete project — confirm by typing the name; removes all services and targets (reload), detaches its domains through `ON DELETE SET NULL` on `domains.balancer_id` (the domain stays, with no project, on the global Domains page; auto‑managed records are removed), keeps metrics for 7 days then purges, audit entry. Certificates are kept.
+- **Danger zone:** Delete project — confirm by typing the name; removes all services, targets and its domains (reload; auto‑managed DNS records are removed first; `ON DELETE SET NULL` on `domains.balancer_id` remains only as a safety net), keeps metrics for 7 days then purges, audit entry. Certificates are kept.
 
 ### 8.5 Hosts (inventory, `/hosts`)
 - CRUD of hosts: name, IPv4, IPv6, private IPv4, labels, notes. Bulk import from CSV (`name,ipv4,ipv6,private_ipv4,labels`).

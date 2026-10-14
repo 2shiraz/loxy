@@ -258,6 +258,7 @@ type Snapshot struct {
 	Backends  []*Backend
 
 	projByID map[int64]*Project
+	domsByP  map[int64][]*Domain
 	svcProj  map[int64]*Project
 	feByID   map[int64]*Frontend
 	beByID   map[int64]*Backend
@@ -299,13 +300,25 @@ func (s *Snapshot) BackendsOnNode(nodeID int64) []*Backend {
 
 // DomainsOf returns the domains attached to a project.
 func (s *Snapshot) DomainsOf(projectID int64) []*Domain {
-	var out []*Domain
+	if s.domsByP == nil {
+		var out []*Domain
+		for _, d := range s.Domains {
+			if d.BalancerID.Valid && d.BalancerID.Int64 == projectID {
+				out = append(out, d)
+			}
+		}
+		return out
+	}
+	return s.domsByP[projectID]
+}
+
+func (s *Snapshot) indexDomains() {
+	s.domsByP = map[int64][]*Domain{}
 	for _, d := range s.Domains {
-		if d.BalancerID.Valid && d.BalancerID.Int64 == projectID {
-			out = append(out, d)
+		if d.BalancerID.Valid {
+			s.domsByP[d.BalancerID.Int64] = append(s.domsByP[d.BalancerID.Int64], d)
 		}
 	}
-	return out
 }
 
 // DomainService resolves the service a domain routes to: its explicit service, else the
@@ -448,6 +461,7 @@ func Load(ctx context.Context, q *db.Queries, box *secrets.Box) (*Snapshot, erro
 		_ = json.Unmarshal([]byte(d.Observed), &x.Observed)
 		s.Domains = append(s.Domains, x)
 	}
+	s.indexDomains()
 	for _, p := range s.Projects {
 		for _, sv := range p.Services {
 			fe, be := Compile(p, sv)
@@ -625,6 +639,7 @@ func TestSnapshot(fes []*Frontend, bes []*Backend, certs ...*Cert) *Snapshot {
 func TestProjects(ps []*Project, domains []*Domain, certs ...*Cert) *Snapshot {
 	s := newSnapshot()
 	s.Projects, s.Domains, s.Certs = ps, domains, certs
+	s.indexDomains()
 	for _, c := range certs {
 		s.certByID[c.ID] = c
 	}
