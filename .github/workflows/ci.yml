@@ -72,7 +72,9 @@ jobs:
           go install github.com/letsencrypt/pebble/v2/cmd/pebble-challtestsrv@v2.10.1
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - name: integration tests
-        run: make test-integration
+        # HAProxy sockets are `660 root:1500` (as in production, where loxy runs with gid 1500);
+        # the runner user is not in that group, so run the suite as root.
+        run: sudo -E env "PATH=$PATH" "HOME=$HOME" make test-integration
 
   image:
     runs-on: ubuntu-latest
