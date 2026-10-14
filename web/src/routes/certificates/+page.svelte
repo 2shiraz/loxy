@@ -96,19 +96,19 @@
     <button class="btn primary" onclick={() => (mOpen = true)}>Create managed certificate</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
-    <table class="tbl">
+    <table class="tbl cards certs">
       <thead><tr><th>Name</th><th>Type</th><th>Domains</th><th>Status</th><th>Expires in</th><th class="right">Used by</th><th>Labels</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each certs.data as c (c.id)}
           {@const ex = expiry(c)}
           <tr class="clickable" onclick={() => (sel = c)}>
-            <td><button class="linklike nm" onclick={(e) => { e.stopPropagation(); sel = c; }}>{c.name}</button></td>
-            <td class="small">{c.type === 'managed' ? 'Managed' : 'Uploaded'}</td>
-            <td class="mono small doms" title={c.domains.join(', ')}>{c.domains.slice(0, 2).join(', ')}{c.domains.length > 2 ? ` +${c.domains.length - 2}` : ''}</td>
-            <td><span title={c.last_error ?? ''}><HealthBadge status={c.status} /></span></td>
-            <td class="small {ex.cls}">{ex.text}</td>
-            <td class="right">{c.used_by.length} service{c.used_by.length === 1 ? '' : 's'}</td>
-            <td><LabelChips labels={c.labels} max={2} /></td>
+            <td class="lead"><button class="linklike nm" onclick={(e) => { e.stopPropagation(); sel = c; }}>{c.name}</button></td>
+            <td class="small" data-label="Type">{c.type === 'managed' ? 'Managed' : 'Uploaded'}</td>
+            <td class="mono small doms" data-label="Domains" title={c.domains.join(', ')}>{c.domains.slice(0, 2).join(', ')}{c.domains.length > 2 ? ` +${c.domains.length - 2}` : ''}</td>
+            <td data-label="Status"><span title={c.last_error ?? ''}><HealthBadge status={c.status} /></span></td>
+            <td class="small {ex.cls}" data-label="Expires in">{ex.text}</td>
+            <td class="right" data-label="Used by">{c.used_by.length} service{c.used_by.length === 1 ? '' : 's'}</td>
+            <td data-label="Labels" class:hide-sm={!Object.keys(c.labels ?? {}).length}><LabelChips labels={c.labels} max={2} /></td>
             <td class="actions" onclick={(e) => e.stopPropagation()}>
               <Menu label="Actions for {c.name}" items={[
                 { label: 'Details', onclick: () => (sel = c) },
@@ -213,4 +213,10 @@
   .doms { max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
   .file { cursor: pointer; }
   legend { margin-bottom: 6px; padding: 0; }
+  @media (max-width: 699px) {
+    .certs :global(tr) { position: relative; }
+    .certs :global(td.actions) { position: absolute; top: 4px; right: 4px; padding: 0; }
+    .certs :global(td.lead) { padding-right: 52px; }
+    .doms { max-width: 60%; }
+  }
 </style>

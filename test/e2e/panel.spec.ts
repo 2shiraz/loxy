@@ -29,8 +29,8 @@ test('project: create via wizard, serve traffic, maintenance, delete', async ({ 
   await page.goto('/projects/new');
   await page.getByLabel('Name', { exact: true }).fill(name);
   await page.getByLabel('Addresses, one per line').fill(serverIP);
-  await page.getByLabel('Listen port').fill(String(port));
-  await page.getByLabel('Destination port').fill('9001');
+  await page.getByLabel('Public port', { exact: true }).fill(String(port));
+  await page.getByLabel('Server port', { exact: true }).fill('9001');
   await page.getByRole('button', { name: 'Create project' }).click();
   await expect(page).toHaveURL(/\/projects\/\d+\/overview$/);
   const base = page.url().replace(/\/overview$/, '');

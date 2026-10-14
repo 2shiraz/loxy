@@ -84,7 +84,7 @@
           </dl>
           <dl class="kv">
             <dt>Config version</dt>
-            <dd class="mono small">applied {n.applied_version} · desired {n.desired_version}{#if n.applied_version === n.desired_version} <span class="ok-text">in sync</span>{/if}</dd>
+            <dd class="mono small">applied {n.applied_version} · desired {n.desired_version}{#if n.applied_version === n.desired_version}<span class="ok-text sync">in sync</span>{/if}</dd>
             <dt>Features</dt><dd><span class="row-wrap">{#each n.features ?? [] as f (f)}<span class="chip">{f}</span>{:else}<span class="muted">—</span>{/each}</span></dd>
           </dl>
         </div>
@@ -177,4 +177,6 @@
 <style>
   .iph { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 20px 0 10px; }
   .iph.top { margin-top: 0; }
+  .sync { margin-left: 8px; font-family: var(--font); }
+  .kv { align-content: start; }
 </style>

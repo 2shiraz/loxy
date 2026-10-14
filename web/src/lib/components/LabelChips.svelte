@@ -7,7 +7,7 @@
 {#if entries.length}
   <span class="chips">
     {#each entries.slice(0, max) as [k, v] (k)}
-      <span class="chip"><b>{k}</b>{#if v}={v}{/if}</span>
+      <span class="chip"><span><b>{k}</b>{v ? `=${v}` : ""}</span></span>
     {/each}
     {#if entries.length > max}<span class="chip">+{entries.length - max}</span>{/if}
   </span>

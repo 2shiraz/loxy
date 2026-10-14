@@ -3,6 +3,7 @@
   import { getProject } from '$lib/stores/project';
   import { resource } from '$lib/stores/resource.svelte';
   import { confirm } from '$lib/stores/confirm.svelte';
+  import { checkText } from '$lib/util/format';
   import { newService, toInput, serviceTitle, hcSummary, serviceFieldErrors } from '$lib/util/services';
   import Icon from '$lib/components/Icon.svelte';
   import Menu from '$lib/components/Menu.svelte';
@@ -132,7 +133,7 @@
             {#if s.certificates.length}<dt>Certificates</dt><dd>{s.certificates.map(certName).join(', ')}</dd>{/if}
           </dl>
           {#if s.health.status !== 'healthy' && s.health.messages.length}
-            <ul class="msgs">{#each s.health.messages.slice(0, 3) as m (m)}<li class="mono xs">{m}</li>{/each}</ul>
+            <ul class="msgs">{#each s.health.messages.slice(0, 3) as m (m)}<li class="small" title={m}>{checkText(m)}</li>{/each}</ul>
           {/if}
           {#if s.health.total === 0}<p class="muted small">No targets to check. <a href="{base}/targets">Add targets</a></p>{/if}
         {/if}

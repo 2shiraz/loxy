@@ -72,11 +72,11 @@
 <style>
   .empty { display: flex; align-items: center; gap: 8px; }
   .dom { padding: 0; }
-  .dom summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; cursor: pointer; list-style: none; }
+  .dom summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 52px; padding: 12px 18px; cursor: pointer; list-style: none; }
   .dom summary::-webkit-details-marker { display: none; }
-  .dom summary::before { content: '▸'; color: var(--muted); font-size: 11px; transition: transform 120ms var(--ease-out); }
-  .dom[open] summary::before { transform: rotate(90deg); }
+  .dom summary::before { content: ''; width: 7px; height: 7px; margin: 0 4px 0 2px; border-right: 1.75px solid var(--muted); border-bottom: 1.75px solid var(--muted); transform: rotate(-45deg); transition: transform 160ms var(--ease-out); flex: none; }
+  .dom[open] summary::before { transform: rotate(45deg); }
   .dom summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; border-radius: var(--radius); }
   .fq { font-weight: 600; overflow-wrap: anywhere; }
-  .body { padding: 4px 16px 16px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .body { padding: 4px 18px 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 </style>

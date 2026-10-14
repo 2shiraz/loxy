@@ -24,7 +24,7 @@
   let { id, serviceId, types, charts }: { id: number; serviceId?: number; types: string; charts: ChartDef[] } = $props();
 
   const ALL = [
-    { id: 'live', label: 'Live', sec: 300, step: 1 },
+    { id: 'live', label: 'Live', sec: 900, step: 1 },
     { id: '30m', label: '30 min', sec: 1800, step: 5 },
     { id: '1h', label: '1 h', sec: 3600, step: 10 },
     { id: '6h', label: '6 h', sec: 21600, step: 60 },
@@ -32,6 +32,7 @@
     { id: '7d', label: '7 d', sec: 604800, step: 1800 },
     { id: '30d', label: '30 d', sec: 2592000, step: 7200 }
   ];
+  const LIVE_POINTS = 900;
   const streams = $derived(serviceId == null);
   const ranges = $derived(streams ? ALL : ALL.slice(1));
   const keys = $derived([...new Set(charts.flatMap((c) => c.series.map((s) => s.key)))]);
@@ -76,7 +77,7 @@
       nts.push(p.ts);
       for (const k of keys) nd[k].push(p[k] ?? null);
     }
-    const cut = Math.max(0, nts.length - 300);
+    const cut = Math.max(0, nts.length - LIVE_POINTS);
     ts = nts.slice(cut);
     for (const k of keys) nd[k] = nd[k].slice(cut);
     data = nd;
@@ -120,7 +121,7 @@
       </button>
     {/each}
   </div>
-  {#if range === 'live'}<span class="muted xs">Rolling 5 minutes, 1 s resolution. Pauses while you hover a chart.</span>{/if}
+  {#if range === 'live'}<span class="muted xs note">Last 15 minutes, one point per second. Hover a chart to hold it still.</span>{/if}
 </div>
 
 {#if error}
@@ -132,17 +133,24 @@
 {:else}
   <div class="charts">
     {#each shown as c (c.title)}
-      <Chart title={c.title} {ts} series={c.series.map((s) => ({ label: s.label, color: s.color, values: data[s.key] ?? [] }))} fmt={c.fmt} {onhover} />
+      <Chart title={c.title} {ts} series={c.series.map((s) => ({ label: s.label, color: s.color, values: data[s.key] ?? [] }))} fmt={c.fmt} {onhover} xWindow={range === 'live' ? 900 : undefined} />
     {/each}
   </div>
 {/if}
 
 <style>
-  .bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
-  .seg { display: inline-flex; padding: 2px; background: var(--surface-2); border-radius: 8px; overflow-x: auto; max-width: 100%; }
-  .seg button { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; padding: 5px 11px; border-radius: 6px; color: var(--muted); cursor: pointer; font-weight: 500; font-size: var(--fs-sm); white-space: nowrap; }
-  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border-strong); }
-  .ld { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
-  .ld.on { background: var(--ok); }
-  .charts { display: flex; flex-direction: column; gap: 12px; }
+  .bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 16px; }
+  .seg { display: inline-flex; padding: 3px; background: var(--surface-2); border-radius: 10px; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .seg button {
+    display: inline-flex; align-items: center; gap: 7px; border: 0; background: none; height: 32px; padding: 0 12px; border-radius: 7px;
+    color: var(--muted); cursor: pointer; font-weight: 550; font-size: var(--fs-sm); white-space: nowrap; flex: none;
+    transition: color 120ms ease, background-color 120ms ease;
+  }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px var(--border); }
+  .ld { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .ld.on { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); animation: ldp 2s ease-in-out infinite; }
+  @keyframes ldp { 50% { box-shadow: 0 0 0 5px transparent; } }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 16px; }
+  @media (max-width: 699px) { .note { flex-basis: 100%; } }
 </style>

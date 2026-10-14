@@ -11,8 +11,9 @@
     fmt = (v: number) => String(v),
     syncKey = 'loxy',
     height = 180,
-    onhover
-  }: { title: string; ts: number[]; series: S[]; fmt?: (v: number) => string; syncKey?: string; height?: number; onhover?: (h: boolean) => void } = $props();
+    onhover,
+    xWindow
+  }: { title: string; ts: number[]; series: S[]; fmt?: (v: number) => string; syncKey?: string; height?: number; onhover?: (h: boolean) => void; xWindow?: number } = $props();
 
   let el: HTMLDivElement | undefined = $state();
   let u: uPlotT | null = null;
@@ -31,12 +32,12 @@
       height,
       legend: { show: false },
       cursor: { sync: { key: syncKey }, points: { size: 6 }, drag: { x: false, y: false } },
-      scales: { x: { time: true }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
+      scales: { x: { time: true, ...(xWindow ? { range: (_u: uPlotT, _min: number, max: number): uPlotT.Range.MinMax => [max - xWindow, max] } : {}) }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
       axes: [
-        { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px ui-sans-serif, system-ui', size: 28 },
-        { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px ui-sans-serif, system-ui', size: 56, values: (_u, vals) => vals.map((v) => fmt(v)) }
+        { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px "Hanken Grotesk", ui-sans-serif, system-ui', size: 40 },
+        { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px "Hanken Grotesk", ui-sans-serif, system-ui', size: 60, values: (_u, vals) => vals.map((v) => fmt(v)) }
       ],
-      series: [{}, ...series.map((s) => ({ label: s.label, stroke: css(s.color), width: 1.5, fill: css(s.color) + '1f', points: { show: false } }))],
+      series: [{}, ...series.map((s) => ({ label: s.label, stroke: css(s.color), width: 1.75, fill: css(s.color) + '1a', points: { show: false } }))],
       hooks: {
         setCursor: [(uu) => {
           const i = uu.cursor.idx;
@@ -90,12 +91,14 @@
 </section>
 
 <style>
-  .chart { padding: 12px 14px 8px; }
-  .head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
-  h3 { font-size: var(--fs-md); }
+  .chart { padding: 16px 16px 10px; min-width: 0; }
+  .head { display: flex; align-items: center; gap: 8px 14px; flex-wrap: wrap; margin-bottom: 10px; min-height: 24px; }
+  h3 { font-size: var(--fs-md); font-weight: 600; }
+  .when { font-variant-numeric: tabular-nums; }
   .lg { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
-  .lg i { width: 8px; height: 8px; border-radius: 2px; }
-  .lg b { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .lg i { width: 10px; height: 3px; border-radius: 2px; }
+  .lg b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
   .plot { width: 100%; }
   .plot :global(.u-select) { background: var(--surface-3); }
+  .plot :global(.u-cursor-x), .plot :global(.u-cursor-y) { border-color: var(--border-strong) !important; }
 </style>

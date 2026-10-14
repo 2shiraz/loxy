@@ -41,7 +41,11 @@
     pause: 'M8 5v14M16 5v14',
     triangleUp: 'M12 5l8 14H4l8-14Z',
     circle: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Z',
-    minus: 'M5 12h14'
+    minus: 'M5 12h14',
+    panel: 'M4 5h16v14H4zM9 5v14',
+    route: 'M3 12h6m0 0 8-6m-8 6h8m-8 0 8 6M17 6h4M17 12h4M17 18h4',
+    arrowRight: 'M5 12h14M13 6l6 6-6 6',
+    zap: 'M13 3 5 14h6l-1 7 8-11h-6l1-7Z'
   };
   export type IconName = keyof typeof P;
 </script>
@@ -57,7 +61,7 @@
   viewBox="0 0 24 24"
   fill="none"
   stroke="currentColor"
-  stroke-width="1.75"
+  stroke-width={name === "more" ? 3 : 1.75}
   stroke-linecap="round"
   stroke-linejoin="round"
   role={label ? 'img' : undefined}

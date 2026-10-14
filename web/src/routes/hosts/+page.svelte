@@ -75,7 +75,7 @@
 
 <label class="search">
   <Icon name="search" size={14} /><span class="sr-only">Search hosts</span>
-  <input class="input" placeholder="Search name or IP, or filter env=prod" bind:value={q} spellcheck="false" />
+  <input class="input" placeholder="Search name or IP, or filter env=prod…" bind:value={q} spellcheck="false" />
 </label>
 
 {#if hosts.error && !hosts.data}<ErrorBox message={hosts.error} onretry={hosts.reload} />
@@ -84,17 +84,17 @@
   <div class="card"><EmptyState icon="host" title="No hosts yet" text="Add the machines that should receive traffic. Labels let projects pick them up automatically."><button class="btn primary" onclick={() => openForm()}>Add host</button></EmptyState></div>
 {:else}
   <div class="table-wrap">
-    <table class="tbl">
+    <table class="tbl cards hosts">
       <thead><tr><th>Name</th><th>IPv4</th><th>IPv6</th><th>Private IPv4</th><th>Labels</th><th>Used by</th><th><span class="sr-only">Actions</span></th></tr></thead>
       <tbody>
         {#each rows as s (s.id)}
           <tr>
-            <td><b class="nm">{s.name}</b>{#if s.notes}<div class="xs muted note" title={s.notes}>{s.notes}</div>{/if}</td>
-            <td><CopyText text={s.ipv4} /></td>
-            <td><CopyText text={s.ipv6} /></td>
-            <td><CopyText text={s.private_ipv4} /></td>
-            <td><LabelChips labels={s.labels} max={4} /></td>
-            <td class="small">{#if s.used_by?.length}{#each s.used_by as b, i (b)}{i ? ', ' : ''}<a href="/projects/{b}/targets">{projectName(b)}</a>{/each}{:else}<span class="muted">—</span>{/if}</td>
+            <td class="lead"><b class="nm">{s.name}</b>{#if s.notes}<div class="xs muted note" title={s.notes}>{s.notes}</div>{/if}</td>
+            <td data-label="IPv4"><CopyText text={s.ipv4} /></td>
+            <td data-label="IPv6" class:hide-sm={!s.ipv6}><CopyText text={s.ipv6} /></td>
+            <td data-label="Private IPv4" class:hide-sm={!s.private_ipv4}><CopyText text={s.private_ipv4} /></td>
+            <td data-label="Labels" class:hide-sm={!Object.keys(s.labels ?? {}).length}><LabelChips labels={s.labels} max={4} /></td>
+            <td class="small" data-label="Used by">{#if s.used_by?.length}{#each s.used_by as b, i (b)}{i ? ', ' : ''}<a href="/projects/{b}/targets">{projectName(b)}</a>{/each}{:else}<span class="muted">—</span>{/if}</td>
             <td class="actions"><Menu label="Actions for {s.name}" items={[{ label: 'Edit', onclick: () => openForm(s) }, { label: 'Delete', onclick: () => remove(s), danger: true, separator: true }]} /></td>
           </tr>
         {:else}
@@ -141,4 +141,9 @@
   .search .input { padding-left: 30px; }
   .nm { font-weight: 500; }
   .note { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  @media (max-width: 699px) {
+    .hosts :global(tr) { position: relative; }
+    .hosts :global(td.actions) { position: absolute; top: 4px; right: 4px; padding: 0; }
+    .hosts :global(td.lead) { flex-direction: column; align-items: flex-start; padding-right: 52px; }
+  }
 </style>

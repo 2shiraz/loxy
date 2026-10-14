@@ -4,6 +4,7 @@
   import { resource } from '$lib/stores/resource.svelte';
   import { confirm } from '$lib/stores/confirm.svelte';
   import { protoLabel } from '$lib/util/services';
+  import { checkText } from '$lib/util/format';
   import Icon from '$lib/components/Icon.svelte';
   import Menu, { type MenuItem } from '$lib/components/Menu.svelte';
   import Modal from '$lib/components/Modal.svelte';
@@ -18,11 +19,8 @@
 
   const targets = resource(async () => (await unwrap(api.GET('/projects/{id}/targets', { params: { path: { id } } }))).targets, { deps: () => id, keys: () => [`p:${id}`, 'p:*'] });
   const services = resource(async () => (await unwrap(api.GET('/projects/{id}/services', { params: { path: { id } } }))).services, { deps: () => id, keys: () => [`p:${id}`] });
-  // Health checks change without events (e.g. a new target's first checks): refresh while visible.
-  $effect(() => {
-    const t = setInterval(() => { if (!document.hidden) void targets.reload(); }, 5000);
-    return () => clearInterval(t);
-  });
+  // No polling: the live tick carries a per-project health_sig; when any check of this
+  // project flips, the live store bumps `p:<id>` and this resource refetches.
   const svcLabel = (sid: number) => {
     const s = services.data?.find((x) => x.id === sid);
     return s ? `${protoLabel(s.protocol)} :${s.listen_port}` : `#${sid}`;
@@ -105,10 +103,10 @@
 <svelte:head><title>Targets · {ctx.project?.name ?? 'Project'} · Loxy</title></svelte:head>
 
 <div class="toolbar">
-  <p class="section-intro" style:margin="0">The servers this project sends traffic to. Health is checked per service.</p>
+  <p class="section-intro intro">Targets are the servers that receive this project's traffic. Loxy checks each one and only sends traffic to those that answer.</p>
   <span class="spacer"></span>
-  {#if total}<span class="muted small">{healthy} of {total} healthy</span>{/if}
-  <button class="btn primary" onclick={openAdd}><Icon name="plus" size={14} />Add targets</button>
+  {#if total}<span class="sum small" class:ok={healthy === total}><b>{healthy}</b> of {total} healthy</span>{/if}
+  {#if targets.data?.length}<button class="btn primary" onclick={openAdd}><Icon name="plus" size={14} />Add targets</button>{/if}
 </div>
 
 {#snippet adminBadge(t: Target)}
@@ -153,25 +151,25 @@
                   </span>
                 </td>
               {/if}
-              <td class="mono small">
+              <td class="mono small addr" data-label="Address">
                 {#if r}{#if t.type === 'label_selector' && r.name}<span class="rn">{r.name}</span>{/if}<span class="mono">{r.address}</span>{:else}<span class="muted">{t.type === 'label_selector' ? 'No hosts match yet' : '—'}</span>{/if}
               </td>
-              <td>{#if r}<HealthBadge status={r.status} />{:else}<HealthBadge status="unknown" />{/if}</td>
-              <td><div class="checks">
+              <td data-label="Status">{#if r}<HealthBadge status={r.status} />{:else}<HealthBadge status="unknown" />{/if}</td>
+              <td data-label={multiSvc ? 'Checks' : 'Last check'} class="ckcell"><div class="checks">
                 {#if r?.checks.length}
                   {#if multiSvc}
                     {#each r.checks as c (c.service_id)}
-                      <span class="ck {c.status}" title={c.check ?? c.status}>
+                      <span class="ck {c.status}" title={c.check ? `${checkText(c.check)} (${c.check})` : c.status}>
                         <Icon name={c.status === 'healthy' ? 'check' : c.status === 'unhealthy' ? 'x' : 'minus'} size={11} />{svcLabel(c.service_id)}
                       </span>
                     {/each}
                   {:else}
-                    <span class="mono xs muted">{r.checks[0].check ?? '—'}</span>
+                    <span class="xs muted" title={r.checks[0].check ?? ''}>{r.checks[0].check ? checkText(r.checks[0].check) : '—'}</span>
                   {/if}
                 {:else}<span class="muted xs">—</span>{/if}
               </div></td>
               {#if i === 0}
-                <td rowspan={rows.length} class="right">{t.weight}</td>
+                <td rowspan={rows.length} class="right" data-label="Weight">{t.weight}</td>
                 <td rowspan={rows.length} class="actions"><Menu items={items(t)} label="Actions for {describe(t)}" /></td>
               {/if}
             </tr>
@@ -209,7 +207,10 @@
 </Modal>
 
 <style>
-  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .intro { margin: 0; flex: 1 1 360px; }
+  .sum { color: var(--muted); white-space: nowrap; }
+  .sum b { color: var(--warn); font-weight: 650; }
+  .sum.ok b { color: var(--ok); }
   .tt tbody + tbody { border-top: 1px solid var(--border-strong); }
   .tt tbody.removing { opacity: 0.6; }
   .tcell { vertical-align: top; }
@@ -222,4 +223,22 @@
   .ck.healthy { color: var(--ok); }
   .ck.unhealthy { color: var(--err); }
   .actions { vertical-align: top; text-align: right; }
+  .tt tbody { transition: opacity 200ms ease; }
+
+  /* Phones: each target becomes a card; extra addresses stack inside it. */
+  @media (max-width: 699px) {
+    .table-wrap { border: 0; background: transparent; overflow: visible; border-radius: 0; }
+    .tt, .tt tbody, .tt tr, .tt td { display: block; }
+    .tt thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .tt { display: flex; flex-direction: column; gap: 10px; }
+    .tt tbody { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 0; }
+    .tt tbody + tbody { border-top: 1px solid var(--border); }
+    .tt tr + tr { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 4px; }
+    .tt td { border: 0; padding: 6px 16px; white-space: normal; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: right; }
+    .tt td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-sm); font-family: var(--font); flex: none; }
+    .tt td.tcell { display: block; text-align: left; padding: 10px 56px 6px 16px; }
+    .tt td.actions { position: absolute; top: 6px; right: 6px; padding: 0; width: auto; display: block; }
+    .tt td.ckcell .checks { justify-content: flex-end; }
+    .tt td.addr { overflow-wrap: anywhere; }
+  }
 </style>

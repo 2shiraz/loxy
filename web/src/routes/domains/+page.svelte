@@ -65,16 +65,16 @@
   </div>
 {:else}
   <div class="table-wrap">
-    <table class="tbl">
+    <table class="tbl cards">
       <thead><tr><th>Domain</th><th>Project</th><th>DNS</th><th>Certificate</th><th>Last checked</th></tr></thead>
       <tbody>
         {#each domains.data as d (d.id)}
           <tr class="clickable" onclick={() => open(d)}>
-            <td><button class="linklike name mono" onclick={(e) => { e.stopPropagation(); open(d); }}>{d.fqdn}</button></td>
-            <td>{#if d.project_id}<a href="/projects/{d.project_id}/domains" onclick={(e) => e.stopPropagation()}>{projectName(d.project_id)}</a>{:else}—{/if}</td>
-            <td><DomainStatus status={d.status} /></td>
-            <td class="small">{certState(d)}</td>
-            <td class="muted small">{relTime(d.checked_at)}</td>
+            <td class="lead"><button class="linklike name mono" onclick={(e) => { e.stopPropagation(); open(d); }}>{d.fqdn}</button></td>
+            <td data-label="Project">{#if d.project_id}<a href="/projects/{d.project_id}/domains" onclick={(e) => e.stopPropagation()}>{projectName(d.project_id)}</a>{:else}—{/if}</td>
+            <td data-label="DNS"><DomainStatus status={d.status} /></td>
+            <td class="small" data-label="Certificate">{certState(d)}</td>
+            <td class="muted small" data-label="Last checked">{relTime(d.checked_at)}</td>
           </tr>
         {/each}
       </tbody>

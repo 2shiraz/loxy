@@ -4,7 +4,7 @@
   import { api, unwrap } from '$lib/api/client';
   import { resource } from '$lib/stores/resource.svelte';
   import { EVENT_KINDS } from '$lib/stores/live.svelte';
-  import { dateTime, relTime } from '$lib/util/format';
+  import { dateTime, relTime, eventText } from '$lib/util/format';
   import Tabs from '$lib/components/Tabs.svelte';
   import Icon from '$lib/components/Icon.svelte';
   import Skeleton from '$lib/components/Skeleton.svelte';
@@ -63,7 +63,7 @@
         {#each shownEvents as e (e.id)}
           <li>
             <span class="sev {e.severity}"><Icon name={sevIcon(e.severity)} size={13} label={e.severity} /></span>
-            <span class="msg">{e.message}</span>
+            <span class="msg" title={e.message}>{eventText(e.message)}</span>
             <span class="mono xs muted kind">{e.kind}</span>
             {#if e.project_id && !projectId}<a class="xs" href="/projects/{e.project_id}/overview">{projectName(e.project_id)}</a>{/if}
             <time class="xs muted" datetime={new Date(e.ts).toISOString()} title={dateTime(e.ts)}>{relTime(e.ts)}</time>
