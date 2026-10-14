@@ -259,8 +259,11 @@ func clientIP(r *http.Request) string {
 	host, _, _ := net.SplitHostPort(r.RemoteAddr)
 	// Only trust X-Forwarded-For from the local HAProxy sys_panel frontend.
 	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			return strings.TrimSpace(strings.Split(xff, ",")[0])
+		// HAProxy (option forwardfor) appends the real peer as the LAST entry; earlier
+		// entries are client-controlled and must not be trusted.
+		if vals := r.Header.Values("X-Forwarded-For"); len(vals) > 0 {
+			parts := strings.Split(vals[len(vals)-1], ",")
+			return strings.TrimSpace(parts[len(parts)-1])
 		}
 	}
 	return host
