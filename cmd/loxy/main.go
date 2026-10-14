@@ -32,6 +32,8 @@ Usage:
   loxy restore <file>          restore loxy.db from a backup (stop loxy first)
   loxy admin reset-password    set a new random owner password
   loxy version                 print the version
+  loxy api METHOD PATH [JSON]  call the REST API (env LOXY_URL, LOXY_TOKEN)
+  loxy lb ls                   list load balancers (env LOXY_URL, LOXY_TOKEN)
   loxy panel | agent           multi-node modes (Phase 3, not available yet)
 `
 
@@ -61,6 +63,10 @@ func run(cmd string, args []string) error {
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 		return nil
+	case "api":
+		return runAPI(args)
+	case "lb":
+		return runLB(args)
 	case "panel", "agent":
 		return fmt.Errorf("%s mode is part of Phase 3 and not implemented yet; use all-in-one", cmd)
 	}
