@@ -12,3 +12,6 @@ Key rules (details in the spec):
 - User input never goes raw into `haproxy.cfg` (§14.4).
 - Performance budgets in §1.4 are acceptance criteria.
 - Open questions in §21: use the bracketed defaults unless the owner says otherwise, and list the choices made in the PR description.
+
+## Design process (frontend)
+Use the project skills in `.claude/skills/` for all UI work (spec §13): `frontend-design`, `ui-ux-pro-max`, `emil-design-eng` for direction; follow `web-design-guidelines`; run `critique` → `polish` → `quieter` → `harden` on every screen before calling it done.
