@@ -1,0 +1,27 @@
+{{.Comment}}
+global
+{{- range .Global}}
+    {{.}}
+{{- end}}
+{{range .Defaults}}
+{{.Header}}
+{{- range .Lines}}
+    {{.}}
+{{- end}}
+{{end}}
+# ---------- system ----------
+{{- range .System}}
+{{.Header}}
+{{- range .Lines}}
+    {{.}}
+{{- end}}
+{{end}}
+{{- range .LBs}}
+{{.Comment}}
+{{- range .Sections}}
+{{.Header}}
+{{- range .Lines}}
+    {{.}}
+{{- end}}
+{{end}}
+{{- end}}

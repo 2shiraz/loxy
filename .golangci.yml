@@ -1,0 +1,22 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard
+  enable:
+    - misspell
+    - bodyclose
+  exclusions:
+    generated: lax
+    paths:
+      - internal/store/db
+      - internal/webui/dist
+      - web
+
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    generated: lax

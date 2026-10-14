@@ -1,0 +1,88 @@
+package render
+
+import (
+	"context"
+	"flag"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/2shiraz/loxy/internal/certs"
+	"github.com/2shiraz/loxy/internal/haproxy/validate"
+	"github.com/2shiraz/loxy/internal/testutil"
+)
+
+var update = flag.Bool("update", false, "update golden files")
+
+func input(t *testing.T, root string) Input {
+	c, k, err := certs.SelfSigned("app.example.com", []string{"app.example.com"}, 24*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lbs, cf := fixture(c, k)
+	return Input{
+		Root: root, NodeID: 1, Revision: 123, DesiredVersion: 456, PanelPort: 8443, PanelAllow: []string{"10.0.0.0/8", "192.0.2.1"},
+		Promex: true, LBs: lbs, Cert: cf, PanelPEM: c + k, PlaceholderPEM: c + k,
+	}
+}
+
+func TestGolden(t *testing.T) {
+	out, err := Render(input(t, "/usr/local/etc/haproxy/live"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	golden := filepath.Join("testdata", "reference.cfg")
+	if *update {
+		if err := os.WriteFile(golden, out.Files["haproxy.cfg"], 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(want) != out.Config() {
+		t.Fatalf("golden mismatch; run go test ./internal/haproxy/render -update\n--- got ---\n%s", out.Config())
+	}
+	for _, f := range []string{"crt-lists/s31.lst", "certs/12.pem", "maps/maint.map", "maps/panel_allow.lst", "errors/maint.http"} {
+		if _, ok := out.Files[f]; !ok {
+			t.Errorf("missing file %s", f)
+		}
+	}
+	if got := string(out.Files["maps/maint.map"]); got != "8 1\n" {
+		t.Errorf("maint map %q", got)
+	}
+	sec := LBSections(out.Config(), 8)
+	if !strings.Contains(sec, "frontend lb8_s40_fe") || strings.Contains(sec, "lb7_") {
+		t.Errorf("LBSections wrong:\n%s", sec)
+	}
+}
+
+// TestHAProxyCheck validates the rendered tree with the pinned HAProxy binary (§18).
+func TestHAProxyCheck(t *testing.T) {
+	dir := t.TempDir()
+	out, err := Render(input(t, dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	WriteTree(t, dir, out)
+	v := &validate.Validator{Cmd: testutil.HAProxyCmd(t, dir)}
+	if msg, err := v.Check(context.Background(), filepath.Join(dir, "haproxy.cfg")); err != nil {
+		t.Fatalf("%v\n%s\n%s", err, msg, out.Config())
+	}
+}
+
+func WriteTree(t testing.TB, dir string, out *Output) {
+	t.Helper()
+	for p, b := range out.Files {
+		fp := filepath.Join(dir, p)
+		if err := os.MkdirAll(filepath.Dir(fp), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(fp, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

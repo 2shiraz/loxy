@@ -1,0 +1,1117 @@
+openapi: 3.0.3
+info:
+  title: Loxy API
+  version: 1.0.0
+  description: |
+    REST API of Loxy, a managed load balancer panel on HAProxy 3.4.
+    Shapes deliberately mirror the Hetzner Cloud API. Session cookie or
+    `Authorization: Bearer loxy_<prefix>_<secret>`. Mutating requests with a
+    session cookie must send `X-LOXY-CSRF`.
+servers:
+  - url: /api/v1
+security:
+  - session: []
+  - bearer: []
+tags:
+  - name: auth
+  - name: load_balancers
+  - name: certificates
+  - name: domains
+  - name: inventory
+  - name: system
+
+paths:
+  /healthz:
+    get:
+      operationId: healthz
+      tags: [system]
+      security: []
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+  /readyz:
+    get:
+      operationId: readyz
+      tags: [system]
+      security: []
+      responses:
+        "200": { description: Ready, content: { application/json: { schema: { $ref: "#/components/schemas/Status" } } } }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoginRequest" } } }
+      responses:
+        "200": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      responses:
+        "204": { description: Logged out }
+  /auth/me:
+    get:
+      operationId: me
+      tags: [auth]
+      responses:
+        "200": { description: Current user, content: { application/json: { schema: { $ref: "#/components/schemas/SessionResponse" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ChangePasswordRequest" } } }
+      responses:
+        "204": { description: Changed }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /load_balancers:
+    get:
+      operationId: listLoadBalancers
+      tags: [load_balancers]
+      parameters:
+        - { name: label_selector, in: query, schema: { type: string } }
+        - { name: name, in: query, schema: { type: string } }
+      responses:
+        "200": { description: List, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerList" } } } }
+    post:
+      operationId: createLoadBalancer
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getLoadBalancer
+      tags: [load_balancers]
+      responses:
+        "200": { description: LB, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateLoadBalancer
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteLoadBalancer
+      tags: [load_balancers]
+      responses:
+        "204": { description: Deleted }
+        "423": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/actions/change_plan:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: changePlan
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [plan_id], properties: { plan_id: { type: integer, format: int64 } } } } }
+      responses:
+        "200": { description: Changed, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/actions/enable_public_interface:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: enablePublicInterface
+      tags: [load_balancers]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+  /load_balancers/{id}/actions/disable_public_interface:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: disablePublicInterface
+      tags: [load_balancers]
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/actions/attach_to_network:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: attachToNetwork
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AttachNetwork" } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/actions/detach_from_network:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: detachFromNetwork
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [network_id], properties: { network_id: { type: integer, format: int64 } } } } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/LoadBalancerResponse" } } } }
+  /load_balancers/{id}/actions/retry_apply:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: retryApply
+      tags: [load_balancers]
+      responses:
+        "202": { description: Queued }
+  /load_balancers/{id}/status:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getLoadBalancerStatus
+      tags: [load_balancers]
+      responses:
+        "200": { description: Health tree, content: { application/json: { schema: { $ref: "#/components/schemas/HealthTree" } } } }
+  /load_balancers/{id}/config:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getLoadBalancerConfig
+      tags: [load_balancers]
+      responses:
+        "200": { description: HAProxy sections of this LB, content: { text/plain: { schema: { type: string } } } }
+  /load_balancers/{id}/metrics:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getLoadBalancerMetrics
+      tags: [load_balancers]
+      parameters:
+        - { name: type, in: query, schema: { type: string }, description: "comma separated: open_connections,connections_per_second,requests_per_second,bandwidth" }
+        - { name: start, in: query, schema: { type: integer, format: int64 }, description: unix seconds }
+        - { name: end, in: query, schema: { type: integer, format: int64 } }
+        - { name: step, in: query, schema: { type: integer } }
+        - { name: service_id, in: query, schema: { type: integer, format: int64 } }
+      responses:
+        "200": { description: Columnar series, content: { application/json: { schema: { $ref: "#/components/schemas/Metrics" } } } }
+  /load_balancers/{id}/metrics/stream:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: streamLoadBalancerMetrics
+      tags: [load_balancers]
+      responses:
+        "200": { description: "SSE: event `metrics.tick`, data MetricsPoint", content: { text/event-stream: { schema: { type: string } } } }
+
+  /load_balancers/{id}/services:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: listServices
+      tags: [load_balancers]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [services], properties: { services: { type: array, items: { $ref: "#/components/schemas/Service" } } } } } } }
+    post:
+      operationId: createService
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ServiceInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/ServiceResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/services/{sid}:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: sid, in: path, required: true, schema: { type: integer, format: int64 } }]
+    get:
+      operationId: getService
+      tags: [load_balancers]
+      responses:
+        "200": { description: Service, content: { application/json: { schema: { $ref: "#/components/schemas/ServiceResponse" } } } }
+    put:
+      operationId: updateService
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ServiceInput" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/ServiceResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteService
+      tags: [load_balancers]
+      responses:
+        "204": { description: Deleted }
+
+  /load_balancers/{id}/targets:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: listTargets
+      tags: [load_balancers]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [targets], properties: { targets: { type: array, items: { $ref: "#/components/schemas/Target" } } } } } } }
+    post:
+      operationId: createTargets
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TargetsCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [targets], properties: { targets: { type: array, items: { $ref: "#/components/schemas/Target" } } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /load_balancers/{id}/targets/{tid}:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: tid, in: path, required: true, schema: { type: integer, format: int64 } }]
+    patch:
+      operationId: updateTarget
+      tags: [load_balancers]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/TargetUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { type: object, required: [target], properties: { target: { $ref: "#/components/schemas/Target" } } } } } }
+    delete:
+      operationId: deleteTarget
+      tags: [load_balancers]
+      responses:
+        "204": { description: Removal started (graceful drain) }
+
+  /label_selector/preview:
+    get:
+      operationId: previewLabelSelector
+      tags: [inventory]
+      parameters: [{ name: selector, in: query, required: true, schema: { type: string } }]
+      responses:
+        "200": { description: Matches, content: { application/json: { schema: { type: object, required: [servers], properties: { servers: { type: array, items: { $ref: "#/components/schemas/Server" } } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /plans:
+    get:
+      operationId: listPlans
+      tags: [system]
+      responses:
+        "200": { description: Plans, content: { application/json: { schema: { type: object, required: [plans], properties: { plans: { type: array, items: { $ref: "#/components/schemas/Plan" } } } } } } }
+
+  /certificates:
+    get:
+      operationId: listCertificates
+      tags: [certificates]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [certificates], properties: { certificates: { type: array, items: { $ref: "#/components/schemas/Certificate" } } } } } } }
+    post:
+      operationId: createCertificate
+      tags: [certificates]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CertificateCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/CertificateResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /certificates/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getCertificate
+      tags: [certificates]
+      responses:
+        "200": { description: Cert, content: { application/json: { schema: { $ref: "#/components/schemas/CertificateResponse" } } } }
+    patch:
+      operationId: updateCertificate
+      tags: [certificates]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, properties: { name: { type: string }, labels: { $ref: "#/components/schemas/Labels" } } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/CertificateResponse" } } } }
+    delete:
+      operationId: deleteCertificate
+      tags: [certificates]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+  /certificates/{id}/actions/renew:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: renewCertificate
+      tags: [certificates]
+      responses:
+        "202": { description: Renewal started }
+
+  /domains:
+    get:
+      operationId: listDomains
+      tags: [domains]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [domains], properties: { domains: { type: array, items: { $ref: "#/components/schemas/Domain" } } } } } } }
+    post:
+      operationId: createDomain
+      tags: [domains]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DomainInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/DomainResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /domains/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: getDomain
+      tags: [domains]
+      responses:
+        "200": { description: Domain, content: { application/json: { schema: { $ref: "#/components/schemas/DomainResponse" } } } }
+    patch:
+      operationId: updateDomain
+      tags: [domains]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DomainInput" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/DomainResponse" } } } }
+    delete:
+      operationId: deleteDomain
+      tags: [domains]
+      responses:
+        "204": { description: Deleted }
+  /domains/{id}/actions/verify:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: verifyDomain
+      tags: [domains]
+      responses:
+        "200": { description: Verified now, content: { application/json: { schema: { $ref: "#/components/schemas/DomainResponse" } } } }
+  /domains/{id}/actions/issue_certificate:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: issueDomainCertificate
+      tags: [domains]
+      responses:
+        "202": { description: Issuance started, content: { application/json: { schema: { $ref: "#/components/schemas/CertificateResponse" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /dns_providers:
+    get:
+      operationId: listDNSProviders
+      tags: [domains]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [dns_providers, kinds], properties: { dns_providers: { type: array, items: { $ref: "#/components/schemas/DNSProvider" } }, kinds: { type: array, items: { $ref: "#/components/schemas/DNSProviderKind" } } } } } } }
+    post:
+      operationId: createDNSProvider
+      tags: [domains]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DNSProviderInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [dns_provider], properties: { dns_provider: { $ref: "#/components/schemas/DNSProvider" } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /dns_providers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      operationId: deleteDNSProvider
+      tags: [domains]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+  /dns_providers/{id}/zones:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: listDNSZones
+      tags: [domains]
+      responses:
+        "200": { description: Zones, content: { application/json: { schema: { type: object, required: [zones], properties: { zones: { type: array, items: { type: object, required: [name], properties: { name: { type: string } } } } } } } } }
+  /dns_providers/{id}/zones/{zone}/records:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: zone, in: path, required: true, schema: { type: string } }]
+    get:
+      operationId: listDNSRecords
+      tags: [domains]
+      responses:
+        "200": { description: Records, content: { application/json: { schema: { type: object, required: [records], properties: { records: { type: array, items: { $ref: "#/components/schemas/DNSRecord" } } } } } } }
+    post:
+      operationId: createDNSRecord
+      tags: [domains]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DNSRecord" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [record], properties: { record: { $ref: "#/components/schemas/DNSRecord" } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteDNSRecord
+      tags: [domains]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DNSRecord" } } }
+      responses:
+        "204": { description: Deleted }
+
+  /servers:
+    get:
+      operationId: listServers
+      tags: [inventory]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [servers], properties: { servers: { type: array, items: { $ref: "#/components/schemas/Server" } } } } } } }
+    post:
+      operationId: createServer
+      tags: [inventory]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ServerInput" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [server], properties: { server: { $ref: "#/components/schemas/Server" } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /servers/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      operationId: updateServer
+      tags: [inventory]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ServerInput" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { type: object, required: [server], properties: { server: { $ref: "#/components/schemas/Server" } } } } } }
+    delete:
+      operationId: deleteServer
+      tags: [inventory]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /networks:
+    get:
+      operationId: listNetworks
+      tags: [inventory]
+      responses:
+        "200": { description: List, content: { application/json: { schema: { type: object, required: [networks], properties: { networks: { type: array, items: { $ref: "#/components/schemas/Network" } } } } } } }
+    post:
+      operationId: createNetwork
+      tags: [inventory]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [name, cidr], properties: { name: { type: string }, cidr: { type: string } } } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [network], properties: { network: { $ref: "#/components/schemas/Network" } } } } } }
+  /networks/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      operationId: deleteNetwork
+      tags: [inventory]
+      responses:
+        "204": { description: Deleted }
+
+  /nodes:
+    get:
+      operationId: listNodes
+      tags: [system]
+      responses:
+        "200": { description: Nodes, content: { application/json: { schema: { type: object, required: [nodes], properties: { nodes: { type: array, items: { $ref: "#/components/schemas/Node" } } } } } } }
+  /nodes/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    patch:
+      operationId: updateNode
+      tags: [system]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NodeUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { type: object, required: [node], properties: { node: { $ref: "#/components/schemas/Node" } } } } } }
+  /nodes/{id}/ips:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    post:
+      operationId: addNodeIP
+      tags: [system]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [address], properties: { address: { type: string }, kind: { type: string, enum: [primary, additional, failover, private] } } } } }
+      responses:
+        "201": { description: Added, content: { application/json: { schema: { type: object, required: [node], properties: { node: { $ref: "#/components/schemas/Node" } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /nodes/{id}/ips/{ipid}:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: ipid, in: path, required: true, schema: { type: integer, format: int64 } }]
+    delete:
+      operationId: deleteNodeIP
+      tags: [system]
+      responses:
+        "204": { description: Deleted }
+        "409": { $ref: "#/components/responses/Error" }
+  /nodes/{id}/revisions:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: listRevisions
+      tags: [system]
+      responses:
+        "200": { description: Revisions, content: { application/json: { schema: { type: object, required: [revisions], properties: { revisions: { type: array, items: { $ref: "#/components/schemas/Revision" } } } } } } }
+  /nodes/{id}/revisions/{rev}/diff:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: rev, in: path, required: true, schema: { type: integer, format: int64 } }]
+    get:
+      operationId: diffRevision
+      tags: [system]
+      parameters: [{ name: against, in: query, schema: { type: integer, format: int64 } }]
+      responses:
+        "200": { description: Unified diff, content: { text/plain: { schema: { type: string } } } }
+  /nodes/{id}/revisions/{rev}/actions/rollback:
+    parameters: [{ $ref: "#/components/parameters/Id" }, { name: rev, in: path, required: true, schema: { type: integer, format: int64 } }]
+    post:
+      operationId: rollbackRevision
+      tags: [system]
+      responses:
+        "202": { description: Rollback applied }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /events:
+    get:
+      operationId: streamEvents
+      tags: [system]
+      responses:
+        "200": { description: "SSE stream of Event objects (event name = kind)", content: { text/event-stream: { schema: { type: string } } } }
+  /events/history:
+    get:
+      operationId: listEvents
+      tags: [system]
+      parameters:
+        - { name: lb_id, in: query, schema: { type: integer, format: int64 } }
+        - { name: kind, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer } }
+      responses:
+        "200": { description: Events, content: { application/json: { schema: { type: object, required: [events], properties: { events: { type: array, items: { $ref: "#/components/schemas/Event" } } } } } } }
+  /audit:
+    get:
+      operationId: listAudit
+      tags: [system]
+      parameters: [{ name: limit, in: query, schema: { type: integer } }]
+      responses:
+        "200": { description: Audit, content: { application/json: { schema: { type: object, required: [audit], properties: { audit: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } } } } } } }
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [system]
+      responses:
+        "200": { description: Users, content: { application/json: { schema: { type: object, required: [users], properties: { users: { type: array, items: { $ref: "#/components/schemas/User" } } } } } } }
+    post:
+      operationId: createUser
+      tags: [system]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UserCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { type: object, required: [user], properties: { user: { $ref: "#/components/schemas/User" } } } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /users/{id}:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    delete:
+      operationId: deleteUser
+      tags: [system]
+      responses:
+        "204": { description: Deleted }
+
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: __Host-loxy_session }
+    bearer: { type: http, scheme: bearer }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+  schemas:
+    Status:
+      type: object
+      required: [status]
+      properties: { status: { type: string }, version: { type: string } }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, enum: [invalid_input, quota_exceeded, conflict, protected, not_found, forbidden, unauthorized, rate_limited, apply_failed, internal] }
+            message: { type: string }
+            details:
+              type: object
+              properties:
+                fields:
+                  type: array
+                  items: { type: object, required: [name, messages], properties: { name: { type: string }, messages: { type: array, items: { type: string } } } }
+    Labels:
+      type: object
+      additionalProperties: { type: string }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties: { email: { type: string }, password: { type: string } }
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties: { current_password: { type: string }, new_password: { type: string } }
+    User:
+      type: object
+      required: [id, email, role, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        email: { type: string }
+        role: { type: string, enum: [owner, admin, operator, viewer] }
+        created_at: { type: integer, format: int64 }
+        last_login_at: { type: integer, format: int64, nullable: true }
+    UserCreate:
+      type: object
+      required: [email, password, role]
+      properties: { email: { type: string }, password: { type: string }, role: { type: string, enum: [admin, operator, viewer] } }
+    SessionResponse:
+      type: object
+      required: [user, csrf_token]
+      properties: { user: { $ref: "#/components/schemas/User" }, csrf_token: { type: string } }
+
+    Plan:
+      type: object
+      required: [id, name, max_connections, max_services, max_targets, max_certificates, traffic_quota_bytes]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        max_connections: { type: integer }
+        max_services: { type: integer }
+        max_targets: { type: integer }
+        max_certificates: { type: integer }
+        traffic_quota_bytes: { type: integer, format: int64 }
+        price_monthly_cents: { type: integer, nullable: true }
+        currency: { type: string }
+    Location:
+      type: object
+      properties: { city: { type: string }, country: { type: string }, network_zone: { type: string }, lat: { type: number }, lon: { type: number } }
+    LoadBalancer:
+      type: object
+      required: [id, name, version, plan, location, public_net, private_net, algorithm, delete_protected, maintenance, labels, status, created_at, usage, health, node_id]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        version: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        plan: { $ref: "#/components/schemas/Plan" }
+        location: { $ref: "#/components/schemas/Location" }
+        public_net:
+          type: object
+          required: [enabled]
+          properties: { enabled: { type: boolean }, ipv4: { type: string, nullable: true }, ipv6: { type: string, nullable: true } }
+        private_net:
+          type: array
+          items: { type: object, required: [network_id, ip], properties: { network_id: { type: integer, format: int64 }, ip: { type: string } } }
+        algorithm: { type: string, enum: [roundrobin, leastconn, source, random] }
+        delete_protected: { type: boolean }
+        maintenance: { type: boolean }
+        labels: { $ref: "#/components/schemas/Labels" }
+        status: { type: string, enum: [active, applying, apply_error] }
+        last_error: { type: string, nullable: true }
+        created_at: { type: integer, format: int64 }
+        usage:
+          type: object
+          required: [targets, services, certificates, open_connections, traffic_out_month_bytes]
+          properties:
+            targets: { type: integer }
+            services: { type: integer }
+            certificates: { type: integer }
+            open_connections: { type: integer }
+            traffic_out_month_bytes: { type: integer, format: int64 }
+        health: { $ref: "#/components/schemas/HealthSummary" }
+    LoadBalancerResponse:
+      type: object
+      required: [load_balancer]
+      properties: { load_balancer: { $ref: "#/components/schemas/LoadBalancer" } }
+    LoadBalancerList:
+      type: object
+      required: [load_balancers]
+      properties: { load_balancers: { type: array, items: { $ref: "#/components/schemas/LoadBalancer" } } }
+    LoadBalancerCreate:
+      type: object
+      required: [name, plan_id]
+      properties:
+        name: { type: string }
+        plan_id: { type: integer, format: int64 }
+        node_id: { type: integer, format: int64 }
+        algorithm: { type: string, enum: [roundrobin, leastconn, source, random] }
+        ipv4_id: { type: integer, format: int64, description: "IP from the node pool; omitted = auto-assign a free one, none free = shared node address" }
+        ipv6_id: { type: integer, format: int64 }
+        public_enabled: { type: boolean }
+        labels: { $ref: "#/components/schemas/Labels" }
+        services: { type: array, items: { $ref: "#/components/schemas/ServiceInput" } }
+        targets: { type: array, items: { $ref: "#/components/schemas/TargetInput" } }
+    LoadBalancerUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        labels: { $ref: "#/components/schemas/Labels" }
+        algorithm: { type: string, enum: [roundrobin, leastconn, source, random] }
+        delete_protected: { type: boolean }
+        maintenance: { type: boolean }
+    AttachNetwork:
+      type: object
+      required: [network_id, ip]
+      properties: { network_id: { type: integer, format: int64 }, ip: { type: string } }
+
+    HealthSummary:
+      type: object
+      required: [status, healthy, total, messages]
+      properties:
+        status: { type: string, enum: [healthy, degraded, unhealthy, unknown] }
+        healthy: { type: integer }
+        total: { type: integer }
+        messages: { type: array, items: { type: string } }
+    CheckStatus:
+      type: object
+      required: [target_id, slot_id, address, status]
+      properties:
+        target_id: { type: integer, format: int64 }
+        slot_id: { type: integer, format: int64 }
+        server_id: { type: integer, format: int64, nullable: true }
+        name: { type: string, nullable: true }
+        address: { type: string }
+        status: { type: string, enum: [healthy, unhealthy, maintenance, draining, unknown] }
+        check: { type: string, description: "e.g. L7OK/200 in 3ms" }
+    HealthTree:
+      type: object
+      required: [summary, services]
+      properties:
+        summary: { $ref: "#/components/schemas/HealthSummary" }
+        services:
+          type: array
+          items:
+            type: object
+            required: [service_id, healthy, total, checks]
+            properties:
+              service_id: { type: integer, format: int64 }
+              healthy: { type: integer }
+              total: { type: integer }
+              checks: { type: array, items: { $ref: "#/components/schemas/CheckStatus" } }
+
+    ServiceHTTP:
+      type: object
+      properties:
+        redirect_http: { type: boolean }
+        timeout_s: { type: integer }
+        certificates: { type: array, items: { type: integer, format: int64 } }
+        sticky_sessions: { type: boolean }
+        cookie_name: { type: string }
+        cookie_lifetime_s: { type: integer }
+    HealthCheck:
+      type: object
+      properties:
+        protocol: { type: string, enum: [tcp, http, https] }
+        port: { type: integer }
+        interval_s: { type: integer }
+        timeout_s: { type: integer }
+        retries: { type: integer }
+        http:
+          type: object
+          nullable: true
+          properties:
+            domain: { type: string, nullable: true }
+            path: { type: string }
+            response: { type: string, nullable: true }
+            status_codes: { type: array, items: { type: string } }
+            tls_verify: { type: boolean }
+    ServiceInput:
+      type: object
+      required: [protocol, listen_port, destination_port]
+      properties:
+        protocol: { type: string, enum: [tcp, http, https] }
+        listen_port: { type: integer }
+        destination_port: { type: integer }
+        proxy_protocol: { type: string, enum: [none, v1, v2] }
+        http: { $ref: "#/components/schemas/ServiceHTTP" }
+        health_check: { $ref: "#/components/schemas/HealthCheck" }
+    Service:
+      type: object
+      required: [id, lb_id, version, protocol, listen_port, destination_port, proxy_protocol, http, health_check]
+      properties:
+        id: { type: integer, format: int64 }
+        lb_id: { type: integer, format: int64 }
+        version: { type: integer, format: int64 }
+        protocol: { type: string, enum: [tcp, http, https] }
+        listen_port: { type: integer }
+        destination_port: { type: integer }
+        proxy_protocol: { type: string, enum: [none, v1, v2] }
+        http: { $ref: "#/components/schemas/ServiceHTTP" }
+        health_check: { $ref: "#/components/schemas/HealthCheck" }
+    ServiceResponse:
+      type: object
+      required: [service]
+      properties: { service: { $ref: "#/components/schemas/Service" } }
+
+    TargetInput:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [server, label_selector, ip] }
+        server_id: { type: integer, format: int64 }
+        label_selector: { type: string }
+        ip: { type: string }
+        use_private_ip: { type: boolean }
+        weight: { type: integer }
+        backup: { type: boolean }
+    TargetsCreate:
+      type: object
+      required: [targets]
+      properties: { targets: { type: array, items: { $ref: "#/components/schemas/TargetInput" } } }
+    TargetUpdate:
+      type: object
+      properties:
+        weight: { type: integer }
+        admin_state: { type: string, enum: [ready, drain, maint] }
+        backup: { type: boolean }
+    Target:
+      type: object
+      required: [id, type, use_private_ip, weight, backup, admin_state, resolved]
+      properties:
+        id: { type: integer, format: int64 }
+        type: { type: string, enum: [server, label_selector, ip] }
+        server_id: { type: integer, format: int64, nullable: true }
+        label_selector: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        use_private_ip: { type: boolean }
+        weight: { type: integer }
+        backup: { type: boolean }
+        admin_state: { type: string, enum: [ready, drain, maint] }
+        removing: { type: boolean }
+        resolved:
+          type: array
+          items:
+            type: object
+            required: [slot_id, address, healthy, total]
+            properties:
+              slot_id: { type: integer, format: int64 }
+              server_id: { type: integer, format: int64, nullable: true }
+              name: { type: string, nullable: true }
+              address: { type: string }
+              public_ip: { type: string, nullable: true }
+              private_ip: { type: string, nullable: true }
+              healthy: { type: integer }
+              total: { type: integer }
+
+    Certificate:
+      type: object
+      required: [id, name, type, domains, status, used_by, labels, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        type: { type: string, enum: [uploaded, managed] }
+        domains: { type: array, items: { type: string } }
+        status: { type: string, enum: [pending, issued, renewing, failed] }
+        challenge: { type: string, enum: [http01, dns01], nullable: true }
+        dns_provider_id: { type: integer, format: int64, nullable: true }
+        key_type: { type: string }
+        issuer: { type: string, nullable: true }
+        serial: { type: string, nullable: true }
+        fingerprint_sha256: { type: string, nullable: true }
+        not_before: { type: integer, format: int64, nullable: true }
+        not_after: { type: integer, format: int64, nullable: true }
+        last_error: { type: string, nullable: true }
+        used_by: { type: array, items: { type: integer, format: int64 }, description: service ids }
+        labels: { $ref: "#/components/schemas/Labels" }
+        created_at: { type: integer, format: int64 }
+    CertificateCreate:
+      type: object
+      required: [name, type]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [uploaded, managed] }
+        certificate: { type: string, description: PEM leaf (uploaded) }
+        chain: { type: string }
+        private_key: { type: string }
+        domains: { type: array, items: { type: string } }
+        challenge: { type: string, enum: [http01, dns01] }
+        dns_provider_id: { type: integer, format: int64 }
+        key_type: { type: string, enum: [ecdsa256, rsa2048, rsa4096] }
+        labels: { $ref: "#/components/schemas/Labels" }
+    CertificateResponse:
+      type: object
+      required: [certificate]
+      properties: { certificate: { $ref: "#/components/schemas/Certificate" } }
+
+    DNSRequiredRecord:
+      type: object
+      required: [type, name, value, ttl]
+      properties: { type: { type: string }, name: { type: string }, value: { type: string }, ttl: { type: integer } }
+    Domain:
+      type: object
+      required: [id, fqdn, status, auto_records, required_records, observed, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        fqdn: { type: string }
+        lb_id: { type: integer, format: int64, nullable: true }
+        service_id: { type: integer, format: int64, nullable: true }
+        dns_provider_id: { type: integer, format: int64, nullable: true }
+        zone: { type: string, nullable: true }
+        auto_records: { type: boolean }
+        status: { type: string, enum: [unknown, ok, wrong_ip, missing, error] }
+        status_detail: { type: string, nullable: true }
+        required_records: { type: array, items: { $ref: "#/components/schemas/DNSRequiredRecord" } }
+        observed:
+          type: object
+          required: [a, aaaa]
+          properties: { a: { type: array, items: { type: string } }, aaaa: { type: array, items: { type: string } } }
+        checked_at: { type: integer, format: int64, nullable: true }
+        certificate_id: { type: integer, format: int64, nullable: true }
+        created_at: { type: integer, format: int64 }
+    DomainInput:
+      type: object
+      properties:
+        fqdn: { type: string }
+        lb_id: { type: integer, format: int64, nullable: true }
+        service_id: { type: integer, format: int64, nullable: true }
+        dns_provider_id: { type: integer, format: int64, nullable: true }
+        auto_records: { type: boolean }
+    DomainResponse:
+      type: object
+      required: [domain]
+      properties: { domain: { $ref: "#/components/schemas/Domain" } }
+    DNSProviderKind:
+      type: object
+      required: [kind, label, fields]
+      properties:
+        kind: { type: string }
+        label: { type: string }
+        fields:
+          type: array
+          items: { type: object, required: [name, label, secret], properties: { name: { type: string }, label: { type: string }, secret: { type: boolean }, help: { type: string } } }
+    DNSProvider:
+      type: object
+      required: [id, name, kind, status, configured, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        kind: { type: string }
+        status: { type: string, enum: [ok, error, unknown] }
+        last_error: { type: string, nullable: true }
+        configured: { type: boolean }
+        created_at: { type: integer, format: int64 }
+    DNSProviderInput:
+      type: object
+      required: [name, kind, credentials]
+      properties:
+        name: { type: string }
+        kind: { type: string }
+        credentials: { type: object, additionalProperties: { type: string } }
+    DNSRecord:
+      type: object
+      required: [type, name, value]
+      properties:
+        id: { type: string }
+        type: { type: string, enum: [A, AAAA, CNAME, TXT, MX, CAA, SRV, NS] }
+        name: { type: string, description: "relative to the zone, @ for apex" }
+        value: { type: string, description: "RDATA in zone-file presentation format" }
+        ttl: { type: integer }
+        managed: { type: boolean }
+
+    ServerInput:
+      type: object
+      properties:
+        name: { type: string }
+        public_ipv4: { type: string, nullable: true }
+        public_ipv6: { type: string, nullable: true }
+        private_ipv4: { type: string, nullable: true }
+        labels: { $ref: "#/components/schemas/Labels" }
+        notes: { type: string }
+    Server:
+      type: object
+      required: [id, name, labels, source]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        public_ipv4: { type: string, nullable: true }
+        public_ipv6: { type: string, nullable: true }
+        private_ipv4: { type: string, nullable: true }
+        labels: { $ref: "#/components/schemas/Labels" }
+        notes: { type: string }
+        source: { type: string }
+    Network:
+      type: object
+      required: [id, name, cidr]
+      properties: { id: { type: integer, format: int64 }, name: { type: string }, cidr: { type: string } }
+
+    NodeIP:
+      type: object
+      required: [id, address, family, kind]
+      properties:
+        id: { type: integer, format: int64 }
+        address: { type: string }
+        family: { type: integer }
+        kind: { type: string }
+        assigned_lb_id: { type: integer, format: int64, nullable: true }
+    Node:
+      type: object
+      required: [id, name, status, location, ips, desired_version, applied_version]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        status: { type: string }
+        haproxy_version: { type: string }
+        haproxy_running_version: { type: string }
+        loxy_version: { type: string }
+        features: { type: array, items: { type: string } }
+        uptime_s: { type: integer, format: int64 }
+        reloads: { type: integer }
+        location: { $ref: "#/components/schemas/Location" }
+        ips: { type: array, items: { $ref: "#/components/schemas/NodeIP" } }
+        desired_version: { type: integer, format: int64 }
+        applied_version: { type: integer, format: int64 }
+    NodeUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        location: { $ref: "#/components/schemas/Location" }
+    Revision:
+      type: object
+      required: [id, revision, kind, result, duration_ms, sha256, created_at, pinned]
+      properties:
+        id: { type: integer, format: int64 }
+        revision: { type: integer, format: int64 }
+        desired_version: { type: integer, format: int64 }
+        kind: { type: string, enum: [runtime, reload, rollback, bootstrap] }
+        result: { type: string, enum: [ok, failed] }
+        duration_ms: { type: integer }
+        sha256: { type: string }
+        haproxy_output: { type: string }
+        created_at: { type: integer, format: int64 }
+        pinned: { type: boolean }
+
+    Metrics:
+      type: object
+      required: [start, end, step, timestamps, series]
+      properties:
+        start: { type: integer, format: int64 }
+        end: { type: integer, format: int64 }
+        step: { type: integer }
+        timestamps: { type: array, items: { type: integer, format: int64 } }
+        series: { type: object, additionalProperties: { type: array, items: { type: number, nullable: true } } }
+    MetricsPoint:
+      type: object
+      required: [ts]
+      properties:
+        ts: { type: integer, format: int64 }
+        open_connections: { type: number }
+        connections_per_second: { type: number }
+        requests_per_second: { type: number }
+        bandwidth.in: { type: number }
+        bandwidth.out: { type: number }
+
+    Event:
+      type: object
+      required: [id, ts, kind, severity, message]
+      properties:
+        id: { type: integer, format: int64 }
+        ts: { type: integer, format: int64 }
+        lb_id: { type: integer, format: int64, nullable: true }
+        kind: { type: string }
+        severity: { type: string, enum: [info, warning, error] }
+        message: { type: string }
+        data: { type: object, additionalProperties: true }
+    AuditEntry:
+      type: object
+      required: [id, ts, action, resource_type]
+      properties:
+        id: { type: integer, format: int64 }
+        ts: { type: integer, format: int64 }
+        actor: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        action: { type: string }
+        resource_type: { type: string }
+        resource_id: { type: integer, format: int64, nullable: true }
+        before: { type: object, additionalProperties: true, nullable: true }
+        after: { type: object, additionalProperties: true, nullable: true }

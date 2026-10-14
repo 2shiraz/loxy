@@ -1,0 +1,20 @@
+# build output
+bin/
+coverage.out
+*.db
+
+# local runtime state
+.dev/
+data/
+run/
+.env
+
+# web
+web/node_modules/
+web/build/
+web/.svelte-kit/
+
+# embedded SPA (built by `make web`; placeholder kept)
+internal/webui/dist/*
+!internal/webui/dist/.gitkeep
+!internal/webui/dist/index.html
