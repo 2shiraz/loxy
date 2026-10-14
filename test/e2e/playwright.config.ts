@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
 // Runs against a live Loxy (`make dev`, or any all-in-one) — set LOXY_URL, LOXY_EMAIL, LOXY_PASSWORD,
-// and LOXY_TARGET_IP (a reachable backend serving HTTP on :9001) / LOXY_LB_HOST (where LB ports answer).
+// LOXY_SERVER_IP (a reachable server answering HTTP on :9001) and LOXY_HAPROXY_HOST (where frontend ports answer).
 export default defineConfig({
   testDir: '.',
   timeout: 60_000,
