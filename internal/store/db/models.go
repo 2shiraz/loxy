@@ -16,6 +16,15 @@ type AcmeAccount struct {
 	Registration string
 }
 
+type AlertRule struct {
+	ID          int64
+	EventKinds  string
+	LbFilter    string
+	ChannelID   int64
+	MinSeverity string
+	CooldownS   int64
+}
+
 type ApiToken struct {
 	ID         int64
 	ProjectID  int64
@@ -25,6 +34,7 @@ type ApiToken struct {
 	Role       string
 	ExpiresAt  sql.NullInt64
 	LastUsedAt sql.NullInt64
+	CreatedAt  int64
 }
 
 type AuditLog struct {
@@ -208,6 +218,15 @@ type Node struct {
 	LastSeenAt      sql.NullInt64
 	DesiredVersion  int64
 	AppliedVersion  int64
+}
+
+type NotificationChannel struct {
+	ID        int64
+	Name      string
+	Kind      string
+	ConfigEnc []byte
+	Enabled   int64
+	CreatedAt int64
 }
 
 type Plan struct {

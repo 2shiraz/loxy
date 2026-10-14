@@ -313,6 +313,7 @@ func (r *Reconciler) Apply(ctx context.Context, by string) error {
 		HaproxyOutput: truncate(output, 16000), StateJson: "{}", CreatedBy: by, CreatedAt: time.Now().UnixMilli()}); err != nil {
 		slog.Warn("record revision", "err", err)
 	}
+	Stats.record(kind, "ok", time.Since(start).Milliseconds())
 	r.succeed(ctx, snap, desired)
 	r.Hub.Publish(events.Event{Kind: "config.applied", Message: fmt.Sprintf("Revision %d applied (%s) in %d ms", rev, kind, time.Since(start).Milliseconds()),
 		Data: map[string]any{"revision": rev, "kind": kind}})
@@ -352,6 +353,7 @@ func (r *Reconciler) fail(ctx context.Context, snap *state.Snapshot, rev, desire
 		Kind: kind, Result: "failed", DurationMs: time.Since(start).Milliseconds(), HaproxyOutput: truncate(msg, 16000),
 		StateJson: "{}", CreatedBy: by, CreatedAt: time.Now().UnixMilli()})
 	_ = os.RemoveAll(r.FS.RevDir(rev))
+	Stats.record(kind, "failed", time.Since(start).Milliseconds())
 	for _, lb := range snap.LBsOnNode(r.Opt.NodeID) {
 		_ = q.SetLoadBalancerStatus(ctx, db.SetLoadBalancerStatusParams{Status: "apply_error", LastError: sql.NullString{String: truncate(msg, 4000), Valid: true}, ID: lb.ID})
 		r.Hub.Publish(events.Event{Kind: "lb.apply.failed", LBID: events.I64(lb.ID), Severity: "error", Message: "Apply failed: " + firstLine(msg)})

@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
 	"github.com/2shiraz/loxy/internal/metrics"
 	"github.com/2shiraz/loxy/internal/model"
+	"github.com/2shiraz/loxy/internal/notify"
 	"github.com/2shiraz/loxy/internal/reconcile"
 	"github.com/2shiraz/loxy/internal/secrets"
 	"github.com/2shiraz/loxy/internal/state"
@@ -45,6 +47,7 @@ type Server struct {
 	Limiter  *auth.Limiter
 	NodeInfo func() (version string, features []string)
 	Drain    func(lbID, targetID int64)
+	Notifier *notify.Notifier
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
@@ -56,6 +59,7 @@ const userKey ctxKey = 1
 type principal struct {
 	User      db.User
 	SessionID string
+	TokenID   int64
 }
 
 func userFrom(r *http.Request) *principal {
@@ -74,6 +78,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/api/", s.middleware(api))
 	mux.HandleFunc("GET /healthz", s.Healthz)
+	mux.HandleFunc("GET /metrics", s.promMetrics)
 	if s.Static != nil {
 		mux.Handle("/", s.Static)
 	}
@@ -112,6 +117,18 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if p, present := s.bearer(r); present {
+			if p == nil {
+				writeErr(w, 401, "unauthorized", "invalid or expired API token", nil)
+				return
+			}
+			if !auth.Allows(p.User.Role, requiredRole(r)) {
+				writeErr(w, 403, "forbidden", "token role does not allow this action", nil)
+				return
+			}
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), userKey, p)))
+			return
+		}
 		c, err := r.Cookie(s.cookieName())
 		if err != nil {
 			writeErr(w, 401, "unauthorized", "authentication required", nil)
@@ -137,22 +154,33 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			writeErr(w, 403, "forbidden", "missing or invalid CSRF token", nil)
 			return
 		}
-		need := "viewer"
-		if mutating {
-			need = "operator"
-			if strings.HasPrefix(r.URL.Path, "/api/v1/users") || strings.HasPrefix(r.URL.Path, "/api/v1/nodes") {
-				need = "admin"
-			}
-			if r.URL.Path == "/api/v1/auth/logout" || r.URL.Path == "/api/v1/auth/password" {
-				need = "viewer"
-			}
-		}
-		if !auth.Allows(u.Role, need) {
+		if !auth.Allows(u.Role, requiredRole(r)) {
 			writeErr(w, 403, "forbidden", "your role does not allow this action", nil)
 			return
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, userKey, &principal{User: u, SessionID: c.Value})))
 	})
+}
+
+var adminPrefixes = []string{"/api/v1/users", "/api/v1/nodes", "/api/v1/api_tokens", "/api/v1/notification_channels", "/api/v1/alert_rules"}
+
+// requiredRole maps a request to the minimum role (§14.2).
+func requiredRole(r *http.Request) string {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/api_tokens") || strings.HasPrefix(r.URL.Path, "/api/v1/notification_channels") {
+			return "admin"
+		}
+		return "viewer"
+	}
+	if r.URL.Path == "/api/v1/auth/logout" || r.URL.Path == "/api/v1/auth/password" {
+		return "viewer"
+	}
+	for _, p := range adminPrefixes {
+		if strings.HasPrefix(r.URL.Path, p) {
+			return "admin"
+		}
+	}
+	return "operator"
 }
 
 // ---------- helpers ----------
@@ -259,13 +287,7 @@ func (s *Server) mutate(r *http.Request, action, resType string, resID func() in
 		if _, err := q.BumpDesiredVersion(ctx, 1); err != nil {
 			return err
 		}
-		p := userFrom(r)
-		var uid sql.NullInt64
-		actor := ""
-		if p != nil {
-			uid = sql.NullInt64{Int64: p.User.ID, Valid: true}
-			actor = p.User.Email
-		}
+		uid, tid, actor := actorOf(r)
 		var rid sql.NullInt64
 		if resID != nil {
 			rid = sql.NullInt64{Int64: resID(), Valid: true}
@@ -274,7 +296,7 @@ func (s *Server) mutate(r *http.Request, action, resType string, resID func() in
 		if after != nil {
 			afterJ = sql.NullString{String: jsonStr(after), Valid: true}
 		}
-		return q.CreateAudit(ctx, db.CreateAuditParams{Ts: nowMs(), ActorUserID: uid, Actor: actor, Ip: clientIP(r), Action: action,
+		return q.CreateAudit(ctx, db.CreateAuditParams{Ts: nowMs(), ActorUserID: uid, ActorTokenID: tid, Actor: actor, Ip: clientIP(r), Action: action,
 			ResourceType: resType, ResourceID: rid, After: afterJ})
 	})
 	if err != nil {
@@ -329,4 +351,41 @@ func i64(v *int64) sql.NullInt64 {
 		return sql.NullInt64{}
 	}
 	return sql.NullInt64{Int64: *v, Valid: true}
+}
+
+func actorOf(r *http.Request) (uid, tid sql.NullInt64, actor string) {
+	p := userFrom(r)
+	if p == nil {
+		return
+	}
+	actor = p.User.Email
+	if p.TokenID != 0 {
+		tid = sql.NullInt64{Int64: p.TokenID, Valid: true}
+	} else {
+		uid = sql.NullInt64{Int64: p.User.ID, Valid: true}
+	}
+	return
+}
+
+// promMetrics exposes controller metrics (loopback only; never exposed through sys_panel).
+func (s *Server) promMetrics(w http.ResponseWriter, r *http.Request) {
+	host, _, _ := net.SplitHostPort(r.RemoteAddr)
+	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() || r.Header.Get("X-Forwarded-For") != "" {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
+	reconcile.Stats.WriteProm(w)
+	snap := s.Snap.Get()
+	_, _ = w.Write([]byte("# TYPE loxy_load_balancers gauge\nloxy_load_balancers " + strconv.Itoa(len(snap.LBs)) + "\n"))
+	if s.Metrics != nil {
+		_, reloads, last := s.Metrics.Info()
+		_, _ = w.Write([]byte("# TYPE loxy_haproxy_worker_restarts_total counter\nloxy_haproxy_worker_restarts_total " + strconv.Itoa(reloads) + "\n"))
+		_, _ = w.Write([]byte("# TYPE loxy_stats_last_poll_timestamp_seconds gauge\nloxy_stats_last_poll_timestamp_seconds " + strconv.FormatInt(last.Unix(), 10) + "\n"))
+	}
+	for _, c := range snap.Certs {
+		if c.NotAfter.Valid {
+			_, _ = w.Write([]byte("loxy_certificate_not_after_seconds{id=\"" + strconv.FormatInt(c.ID, 10) + "\"} " + strconv.FormatInt(c.NotAfter.Int64/1000, 10) + "\n"))
+		}
+	}
 }

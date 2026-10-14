@@ -31,6 +31,7 @@ import (
 	"github.com/2shiraz/loxy/internal/haproxy/runtime"
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
 	"github.com/2shiraz/loxy/internal/metrics"
+	"github.com/2shiraz/loxy/internal/notify"
 	"github.com/2shiraz/loxy/internal/reconcile"
 	"github.com/2shiraz/loxy/internal/secrets"
 	"github.com/2shiraz/loxy/internal/state"
@@ -165,6 +166,12 @@ func New(cfg *config.Config, version string) (*App, error) {
 			a.Hub.Publish(events.Event{Kind: "certificate.updated", Message: fmt.Sprintf("Certificate %d updated", id), Ephemeral: true, Data: map[string]any{"certificate_id": id}})
 		}}
 	a.API.Issuer = a.Issuer
+	a.API.Notifier = notify.New(st.Q, box, a.Hub, func(id int64) map[string]string {
+		if lb := a.Snap.Get().LB(id); lb != nil {
+			return lb.Labels
+		}
+		return nil
+	})
 	a.API.Drain = a.drain
 	return a, nil
 }
@@ -297,6 +304,8 @@ func (a *App) Run(ctx context.Context) error {
 	}
 	go a.Issuer.RunScheduler(ctx)
 	go a.API.RunDomainLoop(ctx)
+	go a.API.Notifier.Run(ctx)
+	go a.runBackups(ctx)
 	srv := &http.Server{Addr: a.Cfg.Listen, Handler: a.API.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() {
@@ -314,5 +323,43 @@ func (a *App) Run(ctx context.Context) error {
 			return nil
 		}
 		return err
+	}
+}
+
+// Backup writes an online copy of the database (VACUUM INTO) and keeps the newest `keep`.
+func Backup(st *store.Store, dir string, keep int) (string, error) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", err
+	}
+	dst := filepath.Join(dir, "loxy-"+time.Now().UTC().Format("20060102-150405")+".db")
+	if _, err := st.DB.Exec(`VACUUM INTO ?`, dst); err != nil {
+		return "", err
+	}
+	ents, _ := filepath.Glob(filepath.Join(dir, "loxy-*.db"))
+	for i := 0; i < len(ents)-keep; i++ {
+		_ = os.Remove(ents[i])
+	}
+	return dst, nil
+}
+
+// runBackups takes a nightly backup (§16.6), keeping 14.
+func (a *App) runBackups(ctx context.Context) {
+	for {
+		now := time.Now()
+		next := time.Date(now.Year(), now.Month(), now.Day(), 3, 17, 0, 0, time.Local)
+		if !next.After(now) {
+			next = next.Add(24 * time.Hour)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Until(next)):
+		}
+		if p, err := Backup(a.Store, filepath.Join(a.Cfg.DataDir, "backups"), 14); err != nil {
+			slog.Error("nightly backup failed", "err", err)
+			a.Hub.Publish(events.Event{Kind: "backup.failed", Severity: "error", Message: err.Error()})
+		} else {
+			slog.Info("nightly backup", "file", p)
+		}
 	}
 }

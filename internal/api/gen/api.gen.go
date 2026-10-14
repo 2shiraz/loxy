@@ -13,6 +13,90 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for APITokenRole.
+const (
+	APITokenRoleAdmin    APITokenRole = "admin"
+	APITokenRoleOperator APITokenRole = "operator"
+	APITokenRoleViewer   APITokenRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the APITokenRole enum.
+func (e APITokenRole) Valid() bool {
+	switch e {
+	case APITokenRoleAdmin:
+		return true
+	case APITokenRoleOperator:
+		return true
+	case APITokenRoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for APITokenCreateRole.
+const (
+	APITokenCreateRoleAdmin    APITokenCreateRole = "admin"
+	APITokenCreateRoleOperator APITokenCreateRole = "operator"
+	APITokenCreateRoleViewer   APITokenCreateRole = "viewer"
+)
+
+// Valid indicates whether the value is a known member of the APITokenCreateRole enum.
+func (e APITokenCreateRole) Valid() bool {
+	switch e {
+	case APITokenCreateRoleAdmin:
+		return true
+	case APITokenCreateRoleOperator:
+		return true
+	case APITokenCreateRoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AlertRuleMinSeverity.
+const (
+	AlertRuleMinSeverityError   AlertRuleMinSeverity = "error"
+	AlertRuleMinSeverityInfo    AlertRuleMinSeverity = "info"
+	AlertRuleMinSeverityWarning AlertRuleMinSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the AlertRuleMinSeverity enum.
+func (e AlertRuleMinSeverity) Valid() bool {
+	switch e {
+	case AlertRuleMinSeverityError:
+		return true
+	case AlertRuleMinSeverityInfo:
+		return true
+	case AlertRuleMinSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AlertRuleInputMinSeverity.
+const (
+	AlertRuleInputMinSeverityError   AlertRuleInputMinSeverity = "error"
+	AlertRuleInputMinSeverityInfo    AlertRuleInputMinSeverity = "info"
+	AlertRuleInputMinSeverityWarning AlertRuleInputMinSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the AlertRuleInputMinSeverity enum.
+func (e AlertRuleInputMinSeverity) Valid() bool {
+	switch e {
+	case AlertRuleInputMinSeverityError:
+		return true
+	case AlertRuleInputMinSeverityInfo:
+		return true
+	case AlertRuleInputMinSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CertificateChallenge.
 const (
 	CertificateChallengeDns01  CertificateChallenge = "dns01"
@@ -442,6 +526,54 @@ func (e LoadBalancerUpdateAlgorithm) Valid() bool {
 	}
 }
 
+// Defines values for NotificationChannelKind.
+const (
+	NotificationChannelKindEmail    NotificationChannelKind = "email"
+	NotificationChannelKindSlack    NotificationChannelKind = "slack"
+	NotificationChannelKindTelegram NotificationChannelKind = "telegram"
+	NotificationChannelKindWebhook  NotificationChannelKind = "webhook"
+)
+
+// Valid indicates whether the value is a known member of the NotificationChannelKind enum.
+func (e NotificationChannelKind) Valid() bool {
+	switch e {
+	case NotificationChannelKindEmail:
+		return true
+	case NotificationChannelKindSlack:
+		return true
+	case NotificationChannelKindTelegram:
+		return true
+	case NotificationChannelKindWebhook:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for NotificationChannelInputKind.
+const (
+	NotificationChannelInputKindEmail    NotificationChannelInputKind = "email"
+	NotificationChannelInputKindSlack    NotificationChannelInputKind = "slack"
+	NotificationChannelInputKindTelegram NotificationChannelInputKind = "telegram"
+	NotificationChannelInputKindWebhook  NotificationChannelInputKind = "webhook"
+)
+
+// Valid indicates whether the value is a known member of the NotificationChannelInputKind enum.
+func (e NotificationChannelInputKind) Valid() bool {
+	switch e {
+	case NotificationChannelInputKindEmail:
+		return true
+	case NotificationChannelInputKindSlack:
+		return true
+	case NotificationChannelInputKindTelegram:
+		return true
+	case NotificationChannelInputKindWebhook:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RevisionKind.
 const (
 	Bootstrap RevisionKind = "bootstrap"
@@ -720,6 +852,59 @@ func (e AddNodeIPJSONBodyKind) Valid() bool {
 		return false
 	}
 }
+
+// APIToken defines model for APIToken.
+type APIToken struct {
+	CreatedAt  int64        `json:"created_at"`
+	ExpiresAt  *int64       `json:"expires_at,omitempty"`
+	Id         int64        `json:"id"`
+	LastUsedAt *int64       `json:"last_used_at,omitempty"`
+	Name       string       `json:"name"`
+	Prefix     string       `json:"prefix"`
+	Role       APITokenRole `json:"role"`
+}
+
+// APITokenRole defines model for APIToken.Role.
+type APITokenRole string
+
+// APITokenCreate defines model for APITokenCreate.
+type APITokenCreate struct {
+	ExpiresInDays *int               `json:"expires_in_days,omitempty"`
+	Name          string             `json:"name"`
+	Role          APITokenCreateRole `json:"role"`
+}
+
+// APITokenCreateRole defines model for APITokenCreate.Role.
+type APITokenCreateRole string
+
+// AlertRule defines model for AlertRule.
+type AlertRule struct {
+	ChannelId   int64                `json:"channel_id"`
+	CooldownS   int                  `json:"cooldown_s"`
+	EventKinds  []string             `json:"event_kinds"`
+	Id          int64                `json:"id"`
+	LbFilter    string               `json:"lb_filter"`
+	MinSeverity AlertRuleMinSeverity `json:"min_severity"`
+}
+
+// AlertRuleMinSeverity defines model for AlertRule.MinSeverity.
+type AlertRuleMinSeverity string
+
+// AlertRuleInput defines model for AlertRuleInput.
+type AlertRuleInput struct {
+	ChannelId int64 `json:"channel_id"`
+	CooldownS *int  `json:"cooldown_s,omitempty"`
+
+	// EventKinds e.g. target.health.changed, lb.apply.*; empty = all
+	EventKinds *[]string `json:"event_kinds,omitempty"`
+
+	// LbFilter label selector on LB labels
+	LbFilter    *string                    `json:"lb_filter,omitempty"`
+	MinSeverity *AlertRuleInputMinSeverity `json:"min_severity,omitempty"`
+}
+
+// AlertRuleInputMinSeverity defines model for AlertRuleInput.MinSeverity.
+type AlertRuleInputMinSeverity string
 
 // AttachNetwork defines model for AttachNetwork.
 type AttachNetwork struct {
@@ -1148,6 +1333,28 @@ type NodeUpdate struct {
 	Name     *string   `json:"name,omitempty"`
 }
 
+// NotificationChannel defines model for NotificationChannel.
+type NotificationChannel struct {
+	CreatedAt int64                   `json:"created_at"`
+	Enabled   bool                    `json:"enabled"`
+	Id        int64                   `json:"id"`
+	Kind      NotificationChannelKind `json:"kind"`
+	Name      string                  `json:"name"`
+}
+
+// NotificationChannelKind defines model for NotificationChannel.Kind.
+type NotificationChannelKind string
+
+// NotificationChannelInput defines model for NotificationChannelInput.
+type NotificationChannelInput struct {
+	Config map[string]string            `json:"config"`
+	Kind   NotificationChannelInputKind `json:"kind"`
+	Name   string                       `json:"name"`
+}
+
+// NotificationChannelInputKind defines model for NotificationChannelInput.Kind.
+type NotificationChannelInputKind string
+
 // Plan defines model for Plan.
 type Plan struct {
 	Currency          *string `json:"currency,omitempty"`
@@ -1423,6 +1630,12 @@ type DiffRevisionParams struct {
 	Against *int64 `form:"against,omitempty" json:"against,omitempty"`
 }
 
+// CreateAlertRuleJSONRequestBody defines body for CreateAlertRule for application/json ContentType.
+type CreateAlertRuleJSONRequestBody = AlertRuleInput
+
+// CreateAPITokenJSONRequestBody defines body for CreateAPIToken for application/json ContentType.
+type CreateAPITokenJSONRequestBody = APITokenCreate
+
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody = LoginRequest
 
@@ -1486,6 +1699,9 @@ type UpdateNodeJSONRequestBody = NodeUpdate
 // AddNodeIPJSONRequestBody defines body for AddNodeIP for application/json ContentType.
 type AddNodeIPJSONRequestBody AddNodeIPJSONBody
 
+// CreateChannelJSONRequestBody defines body for CreateChannel for application/json ContentType.
+type CreateChannelJSONRequestBody = NotificationChannelInput
+
 // CreateServerJSONRequestBody defines body for CreateServer for application/json ContentType.
 type CreateServerJSONRequestBody = ServerInput
 
@@ -1497,6 +1713,24 @@ type CreateUserJSONRequestBody = UserCreate
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (GET /alert_rules)
+	ListAlertRules(w http.ResponseWriter, r *http.Request)
+
+	// (POST /alert_rules)
+	CreateAlertRule(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /alert_rules/{id})
+	DeleteAlertRule(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (GET /api_tokens)
+	ListAPITokens(w http.ResponseWriter, r *http.Request)
+
+	// (POST /api_tokens)
+	CreateAPIToken(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api_tokens/{id})
+	DeleteAPIToken(w http.ResponseWriter, r *http.Request, id Id)
 
 	// (GET /audit)
 	ListAudit(w http.ResponseWriter, r *http.Request, params ListAuditParams)
@@ -1687,6 +1921,18 @@ type ServerInterface interface {
 	// (GET /nodes/{id}/revisions/{rev}/diff)
 	DiffRevision(w http.ResponseWriter, r *http.Request, id Id, rev int64, params DiffRevisionParams)
 
+	// (GET /notification_channels)
+	ListChannels(w http.ResponseWriter, r *http.Request)
+
+	// (POST /notification_channels)
+	CreateChannel(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /notification_channels/{id})
+	DeleteChannel(w http.ResponseWriter, r *http.Request, id Id)
+
+	// (POST /notification_channels/{id}/actions/test)
+	TestChannel(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /plans)
 	ListPlans(w http.ResponseWriter, r *http.Request)
 
@@ -1723,6 +1969,114 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListAlertRules operation middleware
+func (siw *ServerInterfaceWrapper) ListAlertRules(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAlertRules(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAlertRule operation middleware
+func (siw *ServerInterfaceWrapper) CreateAlertRule(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAlertRule(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAlertRule operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAlertRule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAlertRule(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAPITokens operation middleware
+func (siw *ServerInterfaceWrapper) ListAPITokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAPITokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAPIToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateAPIToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAPIToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteAPIToken operation middleware
+func (siw *ServerInterfaceWrapper) DeleteAPIToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteAPIToken(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListAudit operation middleware
 func (siw *ServerInterfaceWrapper) ListAudit(w http.ResponseWriter, r *http.Request) {
@@ -3420,6 +3774,86 @@ func (siw *ServerInterfaceWrapper) DiffRevision(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListChannels operation middleware
+func (siw *ServerInterfaceWrapper) ListChannels(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChannels(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateChannel operation middleware
+func (siw *ServerInterfaceWrapper) CreateChannel(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateChannel(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteChannel operation middleware
+func (siw *ServerInterfaceWrapper) DeleteChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteChannel(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TestChannel operation middleware
+func (siw *ServerInterfaceWrapper) TestChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TestChannel(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPlans operation middleware
 func (siw *ServerInterfaceWrapper) ListPlans(w http.ResponseWriter, r *http.Request) {
 
@@ -3774,6 +4208,16 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/users", wrapper.ListUsers)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/users", wrapper.CreateUser)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/users/{id}", wrapper.DeleteUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api_tokens", wrapper.ListAPITokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api_tokens", wrapper.CreateAPIToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api_tokens/{id}", wrapper.DeleteAPIToken)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/notification_channels", wrapper.ListChannels)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/notification_channels", wrapper.CreateChannel)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/notification_channels/{id}", wrapper.DeleteChannel)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/notification_channels/{id}/actions/test", wrapper.TestChannel)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/alert_rules", wrapper.ListAlertRules)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/alert_rules", wrapper.CreateAlertRule)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/alert_rules/{id}", wrapper.DeleteAlertRule)
 
 	return m
 }

@@ -244,3 +244,44 @@ func TestCertificatesAndDomains(t *testing.T) {
 		t.Fatalf("kinds: %d %v", st, b)
 	}
 }
+
+func TestAPITokens(t *testing.T) {
+	c, _ := setup(t)
+	login(c)
+	st, b := c.req("POST", "/api_tokens", map[string]any{"name": "ci", "role": "operator", "expires_in_days": 30})
+	if st != 201 {
+		t.Fatalf("create token %d %v", st, b)
+	}
+	tok := b["token"].(string)
+	call := func(method, path, token string, body any) int {
+		var rd io.Reader
+		if body != nil {
+			bb, _ := json.Marshal(body)
+			rd = bytes.NewReader(bb)
+		}
+		r, _ := http.NewRequest(method, c.srv.URL+"/api/v1"+path, rd)
+		r.Header.Set("Authorization", "Bearer "+token)
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if s := call("POST", "/load_balancers", tok, map[string]any{"name": "via-token", "plan_id": 1}); s != 201 {
+		t.Fatalf("operator token create LB: %d", s)
+	}
+	if s := call("POST", "/users", tok, map[string]any{"email": "a@b.c", "password": "xxxxxxxxxxxxxx", "role": "viewer"}); s != 403 {
+		t.Fatalf("operator token admin action: %d", s)
+	}
+	if s := call("GET", "/load_balancers", tok+"x", nil); s != 401 {
+		t.Fatalf("bad token: %d", s)
+	}
+	id := b["api_token"].(map[string]any)["id"].(float64)
+	if st, _ := c.req("DELETE", fmt.Sprintf("/api_tokens/%v", id), nil); st != 204 {
+		t.Fatal("revoke")
+	}
+	if s := call("GET", "/load_balancers", tok, nil); s != 401 {
+		t.Fatalf("revoked token: %d", s)
+	}
+}

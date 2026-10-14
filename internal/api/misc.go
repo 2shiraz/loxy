@@ -194,17 +194,12 @@ func (s *Server) DeleteUser(w http.ResponseWriter, r *http.Request, id gen.Id) {
 }
 
 func (s *Server) audit(r *http.Request, action, resType string, id int64, after any) {
-	p := userFrom(r)
-	var uid sql.NullInt64
-	actor := ""
-	if p != nil {
-		uid, actor = sql.NullInt64{Int64: p.User.ID, Valid: true}, p.User.Email
-	}
+	uid, tid, actor := actorOf(r)
 	var a sql.NullString
 	if after != nil {
 		a = sql.NullString{String: jsonStr(after), Valid: true}
 	}
-	_ = s.Store.Q.CreateAudit(r.Context(), db.CreateAuditParams{Ts: nowMs(), ActorUserID: uid, Actor: actor, Ip: clientIP(r), Action: action,
+	_ = s.Store.Q.CreateAudit(r.Context(), db.CreateAuditParams{Ts: nowMs(), ActorUserID: uid, ActorTokenID: tid, Actor: actor, Ip: clientIP(r), Action: action,
 		ResourceType: resType, ResourceID: sql.NullInt64{Int64: id, Valid: id != 0}, After: a})
 }
 
