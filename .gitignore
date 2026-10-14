@@ -20,3 +20,5 @@ internal/webui/dist/*
 bin/
 *.test
 __pycache__/
+test/e2e/test-results/
+test/e2e/playwright-report/

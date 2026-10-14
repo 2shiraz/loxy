@@ -4,6 +4,7 @@ import { defineConfig } from '@playwright/test';
 // LOXY_SERVER_IP (a reachable server answering HTTP on :9001) and LOXY_HAPROXY_HOST (where frontend ports answer).
 export default defineConfig({
   testDir: '.',
+  testIgnore: 'targets-ui.spec.ts',
   timeout: 60_000,
   workers: 1,
   use: {

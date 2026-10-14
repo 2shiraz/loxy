@@ -3,10 +3,12 @@
   import { getProject } from '$lib/stores/project';
   import { resource } from '$lib/stores/resource.svelte';
   import { confirm } from '$lib/stores/confirm.svelte';
+  import { toast } from '$lib/stores/toast.svelte';
   import { protoLabel } from '$lib/util/services';
   import { checkText } from '$lib/util/format';
   import Icon from '$lib/components/Icon.svelte';
   import Menu, { type MenuItem } from '$lib/components/Menu.svelte';
+  import ContextMenu from '$lib/components/ContextMenu.svelte';
   import Modal from '$lib/components/Modal.svelte';
   import TargetPicker from '$lib/components/TargetPicker.svelte';
   import HealthBadge from '$lib/components/HealthBadge.svelte';
@@ -34,6 +36,91 @@
   let serverErr = $state('');
   let busy = $state(false);
   let pickerKey = $state(0);
+  let selected = $state<number[]>([]);
+  let bulkBusy = $state(false);
+  let completed = $state(0);
+  let selectionAnchor = 0;
+  let selectionProject: number | undefined;
+  let contextPoint = $state<{ x: number; y: number } | null>(null);
+  const selectable = $derived((targets.data ?? []).filter((t) => !t.removing));
+  const selectedTargets = $derived(selectable.filter((t) => selected.includes(t.id)));
+  const allSelected = $derived(selectable.length > 0 && selectedTargets.length === selectable.length);
+  $effect(() => {
+    const current = id;
+    if (selectionProject !== current) { selectionProject = current; selected = []; contextPoint = null; }
+  });
+  $effect(() => {
+    if (!targets.data) return;
+    const available = new Set(targets.data.filter((t) => !t.removing).map((t) => t.id));
+    const kept = selected.filter((tid) => available.has(tid));
+    if (kept.length !== selected.length) selected = kept;
+  });
+  function selectTarget(t: Target, e: MouseEvent) {
+    if (bulkBusy || t.removing) return;
+    const index = selectable.findIndex((x) => x.id === t.id);
+    if (e.shiftKey) {
+      const range = selectable.slice(Math.min(selectionAnchor, index), Math.max(selectionAnchor, index) + 1).map((x) => x.id);
+      selected = [...new Set([...selected, ...range])];
+    } else {
+      selected = selected.includes(t.id) ? selected.filter((tid) => tid !== t.id) : [...selected, t.id];
+    }
+    selectionAnchor = index;
+  }
+  function context(t: Target, e: MouseEvent | KeyboardEvent) {
+    if (t.removing || bulkBusy) return;
+    e.preventDefault();
+    if (!selected.includes(t.id)) selected = [t.id];
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    contextPoint = e instanceof MouseEvent ? { x: e.clientX, y: e.clientY } : { x: rect.left, y: rect.bottom };
+  }
+  function contextKey(t: Target, e: KeyboardEvent) {
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) context(t, e);
+    if (e.key === 'Escape' && !bulkBusy) { selected = []; contextPoint = null; }
+  }
+  async function applyMany(list: Target[], body: TargetUpdate | null, message: string) {
+    if (!list.length || bulkBusy) return;
+    const projectId = id;
+    bulkBusy = true;
+    completed = 0;
+    const failures: string[] = [];
+    const succeeded: number[] = [];
+    try {
+      for (let i = 0; i < list.length; i += 5) {
+        const group = list.slice(i, i + 5);
+        const results = await Promise.allSettled(group.map((t) => body === null
+          ? unwrap(api.DELETE('/projects/{id}/targets/{tid}', { params: { path: { id: projectId, tid: t.id } } }))
+          : unwrap(api.PATCH('/projects/{id}/targets/{tid}', { params: { path: { id: projectId, tid: t.id } }, body }))));
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') succeeded.push(group[index].id);
+          else failures.push(`${describe(group[index])}: ${result.reason instanceof Error ? result.reason.message : 'Request failed'}`);
+        });
+        completed += group.length;
+      }
+      if (succeeded.length) toast.success(`${message}: ${succeeded.length} target${succeeded.length === 1 ? '' : 's'}`);
+      if (failures.length) toast.error(`${failures.length} target${failures.length === 1 ? '' : 's'} could not be updated. ${failures.slice(0, 2).join('; ')}${failures.length > 2 ? '; retry the remaining selection.' : ''}`);
+      if (id === projectId) selected = failures.length ? list.filter((t) => !succeeded.includes(t.id)).map((t) => t.id) : selected;
+      await Promise.all([targets.reload(), ctx.reload()]);
+    } finally { bulkBusy = false; }
+  }
+  async function bulkConfirm(list: Target[], removeTargets = false) {
+    const n = list.length;
+    const ok = await confirm({ title: removeTargets ? `Remove ${n} targets?` : `Put ${n} targets in maintenance?`,
+      message: removeTargets ? 'Selected targets are drained first, then removed when their connections finish.' : 'Selected targets stop receiving traffic immediately, including open sessions.',
+      confirmLabel: removeTargets ? 'Remove targets' : 'Maintenance', danger: true });
+    if (ok) await applyMany(list, removeTargets ? null : { admin_state: 'maint' }, removeTargets ? 'Draining, then removing' : 'In maintenance');
+  }
+  function sharedItems(list: Target[]): MenuItem[] {
+    const disabled = bulkBusy || !list.length;
+    return [
+      { label: 'Enable', onclick: () => applyMany(list, { admin_state: 'ready' }, 'Enabled'), disabled },
+      { label: 'Drain', onclick: () => applyMany(list, { admin_state: 'drain' }, 'Draining'), disabled },
+      { label: 'Maintenance', onclick: () => bulkConfirm(list), disabled },
+      { label: 'Set weight…', onclick: () => setWeight(list), disabled, separator: true },
+      { label: 'Make primary', onclick: () => applyMany(list, { backup: false }, 'Made primary'), disabled },
+      { label: 'Make backup', onclick: () => applyMany(list, { backup: true }, 'Made backup'), disabled },
+      { label: 'Remove', onclick: () => bulkConfirm(list, true), disabled, danger: true, separator: true }
+    ];
+  }
 
   function openAdd() { picked = []; pickErr = ''; serverErr = ''; pickerKey++; addOpen = true; }
 
@@ -66,14 +153,14 @@
   }
 
   let weightOpen = $state(false);
-  let weightT = $state<Target | null>(null);
+  let weightTargets = $state<Target[]>([]);
   let weight = $state(100);
   const weightOk = $derived(Number.isInteger(weight) && weight >= 0 && weight <= 256);
-  function setWeight(t: Target) { weightT = t; weight = t.weight; weightOpen = true; }
+  function setWeight(t: Target | Target[]) { weightTargets = Array.isArray(t) ? [...t] : [t]; weight = weightTargets[0]?.weight ?? 100; weightOpen = true; }
   async function saveWeight() {
-    if (!weightT || !weightOk) return;
+    if (!weightTargets.length || !weightOk || bulkBusy) return;
     weightOpen = false;
-    await update(weightT, { weight }, 'Weight updated');
+    await applyMany(weightTargets, { weight }, 'Weight updated');
   }
 
   function describeInput(t: TargetInput | undefined) {
@@ -86,6 +173,7 @@
     return `Selector ${t.label_selector}`;
   }
   function items(t: Target): MenuItem[] {
+    if (bulkBusy) return sharedItems([]);
     return [
       { label: 'Enable', onclick: () => update(t, { admin_state: 'ready' }, 'Target enabled'), disabled: t.admin_state === 'ready' || t.removing },
       { label: 'Drain', onclick: () => update(t, { admin_state: 'drain' }, 'Draining target'), disabled: t.admin_state === 'drain' || t.removing },
@@ -104,15 +192,13 @@
 
 <div class="toolbar">
   <p class="section-intro intro">Targets are the servers that receive this project's traffic. Loxy checks each one and only sends traffic to those that answer.</p>
-  <span class="spacer"></span>
-  {#if total}<span class="sum small" class:ok={healthy === total}><b>{healthy}</b> of {total} healthy</span>{/if}
-  {#if targets.data?.length}<button class="btn primary" onclick={openAdd}><Icon name="plus" size={14} />Add targets</button>{/if}
+  <div class="toolbar-actions">
+    {#if total}<span class="sum small" class:ok={healthy === total}><b>{healthy}</b> of {total} healthy</span>{/if}
+    {#if targets.data?.length}<button class="btn primary" disabled={bulkBusy} onclick={openAdd}><Icon name="plus" size={14} />Add targets</button>{/if}
+  </div>
 </div>
 
 {#snippet adminBadge(t: Target)}
-  {#if t.removing}<span class="badge warn">Removing</span>
-  {:else if t.admin_state === 'drain'}<span class="badge warn"><Icon name="minus" size={11} />Draining</span>
-  {:else if t.admin_state === 'maint'}<span class="badge"><Icon name="pause" size={11} />Maintenance</span>{/if}
   {#if t.backup}<span class="badge">Backup</span>{/if}
 {/snippet}
 
@@ -127,17 +213,32 @@
     </EmptyState>
   </div>
 {:else}
+  <div class="selection-bar" aria-live="polite" aria-busy={bulkBusy}>
+    <label class="select-all"><input type="checkbox" aria-label="Select all targets" checked={allSelected} indeterminate={selectedTargets.length > 0 && !allSelected} disabled={bulkBusy || !selectable.length} onchange={() => selected = allSelected ? [] : selectable.map((t) => t.id)} />
+      {selectedTargets.length ? `${selectedTargets.length} selected` : 'Select targets'}
+    </label>
+    {#if bulkBusy}<span class="small muted">Updating… {completed} completed</span>
+    {:else if selectedTargets.length}
+      <Menu items={sharedItems([...selectedTargets])} btnClass="btn sm" label="Selected target actions">
+        {#snippet trigger()}Actions for {selectedTargets.length}<Icon name="chevron" size={12} />{/snippet}
+      </Menu>
+      <button class="btn ghost sm" onclick={() => selected = []}>Clear selection</button>
+    {:else}<span class="small muted selection-hint">Select several targets, then right-click for shared actions.</span>{/if}
+  </div>
   <div class="table-wrap">
     <table class="tbl tt">
       <thead>
-        <tr><th>Target</th><th>Address</th><th>Status</th><th>{multiSvc ? 'Checks per service' : 'Last check'}</th><th class="right">Weight</th><th><span class="sr-only">Actions</span></th></tr>
+        <tr><th class="select-cell"><span class="sr-only">Select</span></th><th>Target</th><th>Address</th><th>Status</th><th>{multiSvc ? 'Checks per service' : 'Last check'}</th><th class="right">Weight</th><th><span class="sr-only">Actions</span></th></tr>
       </thead>
       {#each targets.data as t (t.id)}
         {@const rows = rowsOf(t)}
-        <tbody class:removing={t.removing}>
+        <!-- Right-click supplements the focusable checkbox and visible Actions button. -->
+        <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+        <tbody class:removing={t.removing} class:selected={selected.includes(t.id)} oncontextmenu={(e) => context(t, e)}>
           {#each rows as r, i (r?.slot_id ?? -1)}
             <tr>
               {#if i === 0}
+                <td rowspan={rows.length} class="select-cell"><input type="checkbox" aria-label="Select {describe(t)}" checked={selected.includes(t.id)} disabled={bulkBusy || t.removing} onclick={(e) => selectTarget(t, e)} onkeydown={(e) => contextKey(t, e)} /></td>
                 <td rowspan={rows.length} class="tcell">
                   <span class="tname" class:mono={t.type !== 'host'}>
                     <Icon name={t.type === 'label_selector' ? 'tag' : t.type === 'host' ? 'host' : 'globe'} size={14} />
@@ -154,7 +255,7 @@
               <td class="mono small addr" data-label="Address">
                 {#if r}{#if t.type === 'label_selector' && r.name}<span class="rn">{r.name}</span>{/if}<span class="mono">{r.address}</span>{:else}<span class="muted">{t.type === 'label_selector' ? 'No hosts match yet' : '—'}</span>{/if}
               </td>
-              <td data-label="Status">{#if r}<HealthBadge status={r.status} />{:else}<HealthBadge status="unknown" />{/if}</td>
+              <td data-label="Status">{#if t.removing}<HealthBadge status="draining" label="Removing" />{:else if t.admin_state === 'maint'}<HealthBadge status="maintenance" />{:else if t.admin_state === 'drain'}<HealthBadge status="draining" />{:else if r}<HealthBadge status={r.status} />{:else}<HealthBadge status="unknown" />{/if}</td>
               <td data-label={multiSvc ? 'Checks' : 'Last check'} class="ckcell"><div class="checks">
                 {#if r?.checks.length}
                   {#if multiSvc}
@@ -191,7 +292,9 @@
   {/snippet}
 </Modal>
 
-<Modal bind:open={weightOpen} title="Set weight" width={380}>
+<ContextMenu bind:point={contextPoint} items={sharedItems([...selectedTargets])} label="Actions for selected targets" />
+
+<Modal bind:open={weightOpen} title={weightTargets.length > 1 ? `Set weight for ${weightTargets.length} targets` : 'Set weight'} width={380}>
   <form id="wform" onsubmit={(e) => { e.preventDefault(); void saveWeight(); }}>
     <div class="field">
       <label for="weight">Weight (0–256)</label>
@@ -202,12 +305,21 @@
   </form>
   {#snippet footer()}
     <button class="btn" onclick={() => (weightOpen = false)}>Cancel</button>
-    <button class="btn primary" type="submit" form="wform" disabled={!weightOk}>Save weight</button>
+    <button class="btn primary" type="submit" form="wform" disabled={!weightOk || bulkBusy}>Save weight</button>
   {/snippet}
 </Modal>
 
 <style>
   .intro { margin: 0; flex: 1 1 360px; }
+  .toolbar { align-items: center; justify-content: space-between; gap: var(--sp-4); }
+  .toolbar-actions { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .selection-bar { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-3); min-height: 48px; margin-bottom: var(--sp-2); }
+  .select-all { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); font-weight: 500; cursor: pointer; min-height: 40px; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+  .tt .select-cell { width: 44px; padding-right: 0; text-align: center; vertical-align: top; }
+  .tt tbody.selected { background: var(--accent-soft); }
+  .tt .tcell { width: 24%; }
+  .tt .ckcell { white-space: normal; min-width: 150px; }
   .sum { color: var(--muted); white-space: nowrap; }
   .sum b { color: var(--warn); font-weight: 650; }
   .sum.ok b { color: var(--ok); }
@@ -216,7 +328,8 @@
   .tcell { vertical-align: top; }
   .tname { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
   .tname :global(.icon) { color: var(--muted); }
-  .meta { gap: 6px; margin-top: 3px; }
+  .meta { gap: 6px; }
+  .meta:not(:empty) { margin-top: 4px; }
   .rn { color: var(--text-2); margin-right: 8px; }
   .checks { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .ck { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -227,6 +340,10 @@
 
   /* Phones: each target becomes a card; extra addresses stack inside it. */
   @media (max-width: 699px) {
+    .toolbar-actions { width: 100%; justify-content: space-between; }
+    .selection-hint { display: none; }
+    .tt td.select-cell { position: absolute; top: 10px; left: 8px; width: 40px; height: 40px; padding: 0; justify-content: center; }
+    .tt .tcell { width: auto; }
     .table-wrap { border: 0; background: transparent; overflow: visible; border-radius: 0; }
     .tt, .tt tbody, .tt tr, .tt td { display: block; }
     .tt thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
@@ -236,7 +353,7 @@
     .tt tr + tr { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 4px; }
     .tt td { border: 0; padding: 6px 16px; white-space: normal; display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: right; }
     .tt td[data-label]::before { content: attr(data-label); color: var(--muted); font-size: var(--fs-sm); font-family: var(--font); flex: none; }
-    .tt td.tcell { display: block; text-align: left; padding: 10px 56px 6px 16px; }
+    .tt td.tcell { display: block; text-align: left; padding: 10px 56px 6px 48px; }
     .tt td.actions { position: absolute; top: 6px; right: 6px; padding: 0; width: auto; display: block; }
     .tt td.ckcell .checks { justify-content: flex-end; }
     .tt td.addr { overflow-wrap: anywhere; }

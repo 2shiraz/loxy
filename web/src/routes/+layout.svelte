@@ -224,7 +224,7 @@
   :global(.user-btn) { gap: 8px !important; padding: 0 8px 0 4px !important; }
   .avatar { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: var(--fs-xs); font-weight: 700; }
   .email { max-width: 200px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-sm); color: var(--text-2); }
-  main { padding: 28px var(--gutter) 72px; max-width: 1240px; width: 100%; outline: none; }
+  main { padding: 28px var(--gutter) 72px; min-width: 0; width: 100%; outline: none; }
   .boot { height: 40vh; }
 
   /* While the stream is down, live values are last-known: say so by fading them. */

@@ -114,6 +114,36 @@ ports you use, plus 80/443 when you use domains. Never expose ports 9090, 8405
 or 5514. See [docs/operations.md](docs/operations.md) for
 upgrades, backup/restore and break-glass procedures.
 
+## Update an existing installation
+
+For the standard `/opt/loxy` Compose install already using Projects / Targets /
+Services, update the panel with one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/update.sh | sudo bash
+```
+
+This resolves `main` to an exact commit and builds it on the server, keeping the
+installed HAProxy version. It saves an online database backup, settings, secret
+key (when stored in a file), config revisions and the previous image, then
+replaces only the Loxy container and waits for it to become healthy. HAProxy's
+container keeps running; Loxy validates and reloads the configuration as needed.
+The panel is briefly unavailable. Docker, curl, tar and Python 3 are required.
+Check CI for the selected commit before updating production.
+
+To choose a specific commit or tag, or a different install directory:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/update.sh -o /tmp/loxy-update.sh
+sudo env LOXY_REF=<commit-or-tag> LOXY_DIR=/opt/loxy bash /tmp/loxy-update.sh
+```
+
+The updater refuses the older Frontends / Backends database migration because
+that migration removes definitions. It preserves `.env` settings apart from
+`LOXY_VERSION` and does not overwrite `compose.yml` or apply host sysctls.
+If startup fails, it reports the backup directory and saved image; database
+migrations require review before rolling back.
+
 ## Configuration
 
 All settings are environment variables in `.env`; see

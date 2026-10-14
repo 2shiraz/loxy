@@ -59,7 +59,7 @@ All text tokens are ≥ 4.5:1 on `--bg`, `--surface` and `--surface-2` in both t
 
 ## Layout & breakpoints
 
-- **≥ 1100 px** desktop: 232 px sidebar (collapsible to a 64 px rail, remembered per browser) + content up to 1240 px.
+- **≥ 1100 px** desktop: 232 px sidebar (collapsible to a 64 px rail, remembered per browser) + fluid content filling the remaining width. Tables, project headers and tabs share the same edges; explanatory text stays within 68ch and forms keep their own readable widths.
 - **700–1099 px** tablet: icon rail by default; tables stay tables.
 - **< 700 px** phone: no sidebar; a bottom tab bar (Home, Projects, Domains, Activity, More) with a sheet for the rest. Tables marked `.tbl.cards` collapse into stacked cards; other wide tables scroll inside their own panel, never the page. Touch targets ≥ 40 px.
 - Side gutter 16 px on phones, 28 px from tablet up.

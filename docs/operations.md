@@ -15,9 +15,31 @@ All commands run from `/opt/loxy`.
 
 ## Upgrade loxy
 
+For an existing standard installation already using the projects model:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/2shiraz/loxy/main/deploy/update.sh | sudo bash
+```
+
+The updater builds the selected source commit (`LOXY_REF`, default `main`) with
+the installed HAProxy version. Before replacing only Loxy, it saves an online
+database copy, `.env`, `compose.yml`, the fallback `secret.key` if present, and
+HAProxy config/state files under `backups/update-<timestamp>-<pid>/`. It tags the
+previous image as `loxy-rollback:update-<commit>` and records that tag in
+`image.txt`. It waits up to 120 seconds for container health. Check System for
+config apply errors and verify production traffic after the update.
+
+The panel briefly restarts; the HAProxy container stays running. The updater
+requires Python 3 and refuses the destructive frontend/backend migration below.
+It leaves the existing Compose file and host configuration intact. If the new
+container fails, inspect its logs and the backup before rolling back: restoring
+an image alone is insufficient if its database schema has changed.
+
+For a published image release, use:
+
 ```sh
 sed -i 's/^LOXY_VERSION=.*/LOXY_VERSION=vX.Y.Z/' .env
-docker compose pull loxy && docker compose up -d loxy
+docker compose pull loxy && docker compose up -d --no-deps loxy
 ```
 
 HAProxy keeps serving; no traffic impact. DB migrations run at start after an
