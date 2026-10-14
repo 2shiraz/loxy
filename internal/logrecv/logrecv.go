@@ -72,7 +72,7 @@ func (r *Receiver) Run(ctx context.Context) {
 		slog.Warn("live logs: cannot listen", "addr", r.Addr, "err", err)
 		return
 	}
-	go func() { <-ctx.Done(); pc.Close() }()
+	go func() { <-ctx.Done(); _ = pc.Close() }()
 	buf := make([]byte, 9000)
 	for {
 		n, _, err := pc.ReadFrom(buf)
