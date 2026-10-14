@@ -1887,6 +1887,9 @@ type ServerInterface interface {
 	// (GET /load_balancers/{id}/config)
 	GetLoadBalancerConfig(w http.ResponseWriter, r *http.Request, id Id)
 
+	// (GET /load_balancers/{id}/logs/stream)
+	StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, id Id)
+
 	// (GET /load_balancers/{id}/metrics)
 	GetLoadBalancerMetrics(w http.ResponseWriter, r *http.Request, id Id, params GetLoadBalancerMetricsParams)
 
@@ -3156,6 +3159,32 @@ func (siw *ServerInterfaceWrapper) GetLoadBalancerConfig(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// StreamLoadBalancerLogs operation middleware
+func (siw *ServerInterfaceWrapper) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id Id
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamLoadBalancerLogs(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetLoadBalancerMetrics operation middleware
 func (siw *ServerInterfaceWrapper) GetLoadBalancerMetrics(w http.ResponseWriter, r *http.Request) {
 
@@ -4234,6 +4263,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/config", wrapper.GetLoadBalancerConfig)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/metrics", wrapper.GetLoadBalancerMetrics)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/metrics/stream", wrapper.StreamLoadBalancerMetrics)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/logs/stream", wrapper.StreamLoadBalancerLogs)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/load_balancers/{id}/services", wrapper.ListServices)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/load_balancers/{id}/services", wrapper.CreateService)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/load_balancers/{id}/services/{sid}", wrapper.DeleteService)

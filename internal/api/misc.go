@@ -904,3 +904,45 @@ func (s *Server) StreamEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 var _ = context.Background
+
+// StreamLoadBalancerLogs streams sampled HAProxy log lines of one LB (§20 live logs).
+func (s *Server) StreamLoadBalancerLogs(w http.ResponseWriter, r *http.Request, id gen.Id) {
+	if _, err := s.lb(id); err != nil {
+		fail(w, err)
+		return
+	}
+	if s.Logs == nil {
+		writeErr(w, 404, "not_found", "live logs are disabled (set LOXY_LIVE_LOGS=1 or a sampling rate)", nil)
+		return
+	}
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		fail(w, errors.New("streaming unsupported"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Accel-Buffering", "no")
+	recent, ch, cancel := s.Logs.Subscribe(id)
+	defer cancel()
+	for _, l := range recent {
+		b, _ := json.Marshal(l)
+		fmt.Fprintf(w, "event: log\ndata: %s\n\n", b)
+	}
+	fl.Flush()
+	ping := time.NewTicker(25 * time.Second)
+	defer ping.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ping.C:
+			fmt.Fprint(w, ": ping\n\n")
+			fl.Flush()
+		case l := <-ch:
+			b, _ := json.Marshal(l)
+			fmt.Fprintf(w, "event: log\ndata: %s\n\n", b)
+			fl.Flush()
+		}
+	}
+}

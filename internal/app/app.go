@@ -30,6 +30,7 @@ import (
 	"github.com/2shiraz/loxy/internal/haproxy/revfs"
 	"github.com/2shiraz/loxy/internal/haproxy/runtime"
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
+	"github.com/2shiraz/loxy/internal/logrecv"
 	"github.com/2shiraz/loxy/internal/metrics"
 	"github.com/2shiraz/loxy/internal/notify"
 	"github.com/2shiraz/loxy/internal/reconcile"
@@ -188,6 +189,9 @@ func New(cfg *config.Config, version string) (*App, error) {
 		}
 		return false
 	}
+	if cfg.LiveLogs > 0 {
+		a.API.Logs = logrecv.New("127.0.0.1:5514", cfg.LiveLogs)
+	}
 	a.Rec.OnApplied = func() {
 		_, _ = a.Snap.Refresh(context.Background(), st.Q, box)
 		a.Issuer.Kick()
@@ -332,6 +336,9 @@ func (a *App) Run(ctx context.Context) error {
 	go a.API.RunDomainLoop(ctx)
 	go a.API.Notifier.Run(ctx)
 	go a.runBackups(ctx)
+	if a.API.Logs != nil {
+		go a.API.Logs.Run(ctx)
+	}
 	srv := &http.Server{Addr: a.Cfg.Listen, Handler: a.API.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	errc := make(chan error, 1)
 	go func() {

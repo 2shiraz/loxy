@@ -362,6 +362,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/load_balancers/{id}/logs/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        get: operations["streamLoadBalancerLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/load_balancers/{id}/services": {
         parameters: {
             query?: never;
@@ -2254,6 +2272,29 @@ export interface operations {
                     "text/event-stream": string;
                 };
             };
+        };
+    };
+    streamLoadBalancerLogs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE: recent lines then live ones; event `log`, data {ts, text}. Sampled; off unless LOXY_LIVE_LOGS is set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            404: components["responses"]["Error"];
         };
     };
     listServices: {

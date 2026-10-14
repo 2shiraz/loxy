@@ -27,6 +27,8 @@ type Config struct {
 	StatsInterval   time.Duration
 	LogLevel        string
 	Dev             bool
+	// LiveLogs: 0 = off, N = keep 1 of N log lines (LOXY_LIVE_LOGS=off|1|10...).
+	LiveLogs int
 	// NoHAProxy disables talking to the HAProxy sockets (render/validate only).
 	NoHAProxy bool
 }
@@ -61,6 +63,13 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("LOXY_STATS_INTERVAL: invalid duration")
 	}
 	c.Dev, _ = strconv.ParseBool(env("LOXY_DEV", "false"))
+	if v := env("LOXY_LIVE_LOGS", "off"); v != "off" && v != "0" {
+		n, err := strconv.Atoi(strings.TrimPrefix(v, "1:"))
+		if err != nil || n < 1 {
+			return nil, fmt.Errorf("LOXY_LIVE_LOGS: off or a sampling rate N (keep 1 of N)")
+		}
+		c.LiveLogs = n
+	}
 	c.ACMEInsecure, _ = strconv.ParseBool(env("LOXY_ACME_INSECURE", "false"))
 	c.NoHAProxy, _ = strconv.ParseBool(env("LOXY_NO_HAPROXY", "false"))
 	for _, s := range strings.Split(env("LOXY_PANEL_ALLOW", ""), ",") {

@@ -231,6 +231,15 @@ paths:
       responses:
         "200": { description: "SSE: event `metrics.tick`, data MetricsPoint", content: { text/event-stream: { schema: { type: string } } } }
 
+  /load_balancers/{id}/logs/stream:
+    parameters: [{ $ref: "#/components/parameters/Id" }]
+    get:
+      operationId: streamLoadBalancerLogs
+      tags: [load_balancers]
+      responses:
+        "200": { description: "SSE: recent lines then live ones; event `log`, data {ts, text}. Sampled; off unless LOXY_LIVE_LOGS is set", content: { text/event-stream: { schema: { type: string } } } }
+        "404": { $ref: "#/components/responses/Error" }
+
   /load_balancers/{id}/services:
     parameters: [{ $ref: "#/components/parameters/Id" }]
     get:

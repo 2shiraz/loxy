@@ -21,6 +21,7 @@ import (
 	"github.com/2shiraz/loxy/internal/config"
 	"github.com/2shiraz/loxy/internal/events"
 	"github.com/2shiraz/loxy/internal/haproxy/validate"
+	"github.com/2shiraz/loxy/internal/logrecv"
 	"github.com/2shiraz/loxy/internal/metrics"
 	"github.com/2shiraz/loxy/internal/model"
 	"github.com/2shiraz/loxy/internal/notify"
@@ -48,6 +49,7 @@ type Server struct {
 	NodeInfo func() (version string, features []string)
 	Drain    func(lbID, targetID int64)
 	Notifier *notify.Notifier
+	Logs     *logrecv.Receiver
 }
 
 var _ gen.ServerInterface = (*Server)(nil)
