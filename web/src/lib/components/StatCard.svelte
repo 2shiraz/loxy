@@ -8,7 +8,7 @@
   <div class="value"><span class="v">{value}</span>{#if of}<span class="of"> / {of}</span>{/if}</div>
   {#if ratio != null}
     <div class="meter" role="meter" aria-label="{label} usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(Math.min(1, ratio) * 100)}>
-      <span class={level} style="width: {Math.min(100, ratio * 100)}%"></span>
+      <span class={level} style:width="{Math.min(100, ratio * 100)}%"></span>
     </div>
   {/if}
   {#if hint}<div class="hint">{hint}</div>{/if}

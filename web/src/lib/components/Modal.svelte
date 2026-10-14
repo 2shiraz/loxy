@@ -29,7 +29,7 @@
 <dialog
   bind:this={dlg}
   class="modal"
-  style="--w: {width}px"
+  style:--w="{width}px"
   aria-labelledby={id}
   onclose={() => { if (open) close(); }}
   onclick={(e) => { if (e.target === dlg) close(); }}

@@ -184,7 +184,7 @@
   {#if lb.status === 'apply_error'}
     <div class="banner err applyerr" role="alert">
       <Icon name="alert" />
-      <div class="spacer stack" style="gap: 6px">
+      <div class="spacer stack" style:gap="6px">
         <b>The last change could not be applied. HAProxy is still running the previous configuration.</b>
         {#if lb.last_error}<CodeView text={lb.last_error} maxHeight={180} label="HAProxy output" />{/if}
       </div>
@@ -206,7 +206,7 @@
 
 <Modal bind:open={cfgOpen} title="HAProxy config · {lb?.name ?? ''}" width={820}>
   {#if cfgText}<CodeView text={cfgText} label="HAProxy configuration" />{:else}<Skeleton rows={8} />{/if}
-  <p class="muted xs" style="margin-top: 8px">Read-only. These are the sections rendered for this load balancer only.</p>
+  <p class="muted xs" style:margin-top="8px">Read-only. These are the sections rendered for this load balancer only.</p>
   {#snippet footer()}
     <button class="btn" onclick={() => (cfgOpen = false)}>Close</button>
     <button class="btn primary" disabled={!cfgText} onclick={downloadConfig}><Icon name="download" size={14} />Download</button>

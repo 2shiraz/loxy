@@ -12,7 +12,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<pre class="code" style="max-height: {maxHeight}px" aria-label={label} tabindex="0">{#each lines as l, i (i)}<span class="ln {cls(l)}">{l || ' '}</span>
+<pre class="code" style:max-height="{maxHeight}px" aria-label={label} tabindex="0">{#each lines as l, i (i)}<span class="ln {cls(l)}">{l || ' '}</span>
 {/each}</pre>
 
 <style>

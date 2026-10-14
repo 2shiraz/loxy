@@ -178,12 +178,12 @@
 
   <section aria-labelledby="s-name">
     <h2 id="s-name">Name &amp; labels</h2>
-    <div class="field" style="max-width: 420px">
+    <div class="field" style:max-width="420px">
       <label for="lbname">Name</label>
       <input id="lbname" class="input" bind:value={name} placeholder="load-balancer-1" autocomplete="off" spellcheck="false" aria-invalid={nameErr || fieldErrs.name ? 'true' : undefined} />
       {#if nameErr || fieldErrs.name}<span class="ferr">{nameErr || fieldErrs.name}</span>{/if}
     </div>
-    <div class="field" style="max-width: 560px">
+    <div class="field" style:max-width="560px">
       <span class="label">Labels</span>
       <LabelEditor bind:labels bind:error={labelErr} />
     </div>

@@ -24,7 +24,7 @@ var (
 type FieldErrors map[string][]string
 
 func (f FieldErrors) Add(field, msg string) { f[field] = append(f[field], msg) }
-func (f FieldErrors) Empty() bool          { return len(f) == 0 }
+func (f FieldErrors) Empty() bool           { return len(f) == 0 }
 func (f FieldErrors) Error() string {
 	keys := make([]string, 0, len(f))
 	for k := range f {

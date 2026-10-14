@@ -76,7 +76,7 @@
     <table class="tbl">
       <thead>
         <tr>
-          <th style="width: 28px"><span class="sr-only">Status</span></th>
+          <th style:width="28px"><span class="sr-only">Status</span></th>
           <th>Name</th>
           <th>IPv4</th>
           <th>IPv6</th>

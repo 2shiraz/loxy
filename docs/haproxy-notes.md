@@ -1,0 +1,30 @@
+# HAProxy notes (verified behaviours)
+
+Pinned image: `haproxy:3.4.6-alpine` (HAProxy 3.4.6-56332c5, OpenSSL 3.5.8; features include +ACME +PROMEX +QUIC +SHM_OPEN).
+All items below are covered by `test/integration` (`make test-integration`, real container) unless noted.
+
+| Spec item | Result | Test |
+|---|---|---|
+| §7.1 `-S /run/haproxy/master.sock,mode,660,gid,1500` | **Confirmed.** master.sock and admin.sock are created `srw-rw---- root:1500`. | `TestVerifyMasterSocketPerms` |
+| §7.1 master CLI one-shot commands | **Behaviour differs from a naive client:** the master CLI only answers after the client half-closes its write side (`shutdown(SHUT_WR)`); otherwise the connection hangs. The runtime client always calls `CloseWrite()` after sending. | all integration tests |
+| §7.1 synchronous `reload` | **Confirmed.** Prints `Success=1` / `Success=0`, then `--` and the startup log (image is built with SHM_OPEN). A config that passes `-c` but fails at startup (unbindable address) returns `Success=0` and the old worker keeps serving. | `TestReloadSuccessAndFailure` |
+| §7.1 prompt mode on the worker socket | **Confirmed.** `prompt` → each answer ends with `\n> `; multiple commands per connection work. The collector still uses one connection per command (simpler, fast enough at 1 s). | `TestVerifyPromptMode` |
+| §7.4 LB-wide cap (`track-sc0 int(1) table lb<L>_cap`) across frontends | **Confirmed.** With `max_connections=1`, a held connection on one frontend makes a second connection to another frontend of the same LB get rejected. | `TestVerifyLBCapAcrossFrontends` |
+| §7.5 two `http-check expect` rules (status + string) | **Confirmed AND semantics.** 200 without the string → DOWN, 500 with the string → DOWN, 200 with the string → UP. No tcp-check fallback needed. | `TestVerifyHTTPCheckAND` |
+| §7.5 `ca-file @system-ca` | **Confirmed** accepted by the image (config with `check-ssl verify required ca-file @system-ca check-sni …` loads). | `TestVerifySSLRuntimeAndMaps` |
+| §7.6 dynamic servers | **Confirmed.** `add server` with the exact `render.ServerArgs` (incl. `cookie`) → `New server registered.`; `enable server`/`enable health` → empty output; `set server … weight/state` → empty; `del server` after maint → `Server deleted.` | `TestDynamicServers` |
+| §7.6 SSL runtime | **Confirmed.** `set ssl cert` → "Transaction created/updated", `commit ssl cert` → `Success!`, `new ssl cert` → "New empty certificate store", `add ssl crt-list` (payload) → `Success!`, `del ssl crt-list` → "deleted in crtlist", `del ssl cert` → "deleted!" (command available). | `TestVerifySSLRuntimeAndMaps` |
+| §7.6 maps | **Confirmed.** `opt@` is not part of the map name (runtime uses the plain path); `virt@acme_http01` works with `add map` and the `http-request return … lf-string` rule answers the challenge. | `TestVerifySSLRuntimeAndMaps` |
+| §14.7 minimal capability set | **Confirmed.** `--user 0:0 --group-add 1500 --cap-drop ALL --cap-add NET_BIND_SERVICE,SETUID,SETGID,KILL,CHOWN` starts, binds :80 and reloads. | `TestVerifyMinimalCapabilities` |
+
+## Other findings
+
+- **`master-worker` in `global` is deprecated since 3.3** (warning: "will be removed in 3.5"). Loxy relies on `-W` only and does not render the keyword (deviation from the §7.4 reference text).
+- **Global `maxconn 200000` requires a matching `nofile` ulimit** (≈ 2×maxconn). With a lower hard limit the worker exits ("Cannot raise FD limit"). Compose sets `nofile: 1048576`; the value is configurable (`LOXY_HAPROXY_MAXCONN`), tests use 4000.
+- Starting as root without `chroot` logs a warning recommending `chroot auto`; still off by default (§7.4), to be enabled after a dedicated test.
+- `server-state-file` missing on first start only logs a NOTICE.
+- `docker inspect .NetworkSettings.IPAddress` is empty on Docker 29; tests read `.NetworkSettings.Networks.*.IPAddress`.
+
+## Not yet verified
+- `shm-stats-file` counter preservation (§10.3) — not used.
+- `chroot auto` (§7.4) — not enabled.

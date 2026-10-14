@@ -82,10 +82,10 @@
     <span class="spacer"></span>
     <span class="when xs muted">{when}</span>
     {#each legend as l (l.label)}
-      <span class="lg small"><i style="background: var({l.color})"></i>{l.label} <b>{l.value}</b></span>
+      <span class="lg small"><i style:background="var({l.color})"></i>{l.label} <b>{l.value}</b></span>
     {/each}
   </div>
-  <div class="plot" bind:this={el} style="height: {height}px" role="img" aria-label="{title} chart"
+  <div class="plot" bind:this={el} style:height="{height}px" role="img" aria-label="{title} chart"
     onmouseenter={() => onhover?.(true)} onmouseleave={() => onhover?.(false)}></div>
 </section>
 

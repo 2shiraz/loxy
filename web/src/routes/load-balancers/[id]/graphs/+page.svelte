@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, untrack } from 'svelte';
   import { api, unwrap, type MetricsPoint } from '$lib/api/client';
   import { getLb } from '$lib/stores/lbctx';
   import { compact, bytes } from '$lib/util/format';
@@ -88,8 +88,10 @@
   $effect(() => {
     const r = range;
     void id;
-    stopLive();
-    void load(r).then(() => { if (r === 'live' && range === 'live') startLive(); });
+    untrack(() => {
+      stopLive();
+      void load(r).then(() => { if (r === 'live' && range === 'live') startLive(); });
+    });
   });
   onDestroy(stopLive);
 

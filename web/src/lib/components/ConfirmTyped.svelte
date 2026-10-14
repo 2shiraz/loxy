@@ -4,7 +4,9 @@
 
   let typed = $state('');
   let open = $state(false);
-  $effect(() => { open = confirmState.open; if (open) typed = ''; });
+  $effect(() => {
+    if (confirmState.open) { open = true; typed = ''; } else open = false;
+  });
   const o = $derived(confirmState.opts);
   const ok = $derived(!o?.typed || typed === o.typed);
 </script>

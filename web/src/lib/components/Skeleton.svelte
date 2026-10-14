@@ -4,7 +4,7 @@
 
 <div class="sk" class:card aria-busy="true" aria-label="Loading">
   {#each Array(rows) as _, i (i)}
-    <span style="height: {height}px; width: {i === rows - 1 ? 60 : 100 - (i % 3) * 12}%"></span>
+    <span style:height="{height}px" style:width="{i === rows - 1 ? 60 : 100 - (i % 3) * 12}%"></span>
   {/each}
 </div>
 

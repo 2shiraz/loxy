@@ -5,6 +5,7 @@
 *::after { box-sizing: border-box; }
 
 html, body { margin: 0; padding: 0; }
+.app-root { display: contents; }
 body {
   background: var(--bg);
   color: var(--text);

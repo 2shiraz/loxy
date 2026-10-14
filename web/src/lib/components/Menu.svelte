@@ -19,9 +19,16 @@
   let menu: HTMLDivElement | undefined = $state();
   const id = 'mn' + Math.random().toString(36).slice(2, 8);
 
+  let pos = $state({ top: 0, left: 0, right: 0, up: false });
+  function place() {
+    const b = root?.querySelector('button')?.getBoundingClientRect();
+    if (!b) return;
+    const up = b.bottom + 260 > innerHeight && b.top > 260;
+    pos = { top: up ? b.top - 4 : b.bottom + 4, left: b.left, right: innerWidth - b.right, up };
+  }
   function toggle() {
     open = !open;
-    if (open) queueMicrotask(() => focusItem(0));
+    if (open) { place(); queueMicrotask(() => focusItem(0)); }
   }
   function focusItem(i: number) {
     const els = menu?.querySelectorAll<HTMLButtonElement>('[role=menuitem]:not(:disabled)');
@@ -49,8 +56,11 @@
   $effect(() => {
     if (!open) return;
     const h = (e: MouseEvent) => { if (root && !root.contains(e.target as Node)) open = false; };
+    const c = () => (open = false);
     document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
+    addEventListener('scroll', c, true);
+    addEventListener('resize', c);
+    return () => { document.removeEventListener('mousedown', h); removeEventListener('scroll', c, true); removeEventListener('resize', c); };
   });
 </script>
 
@@ -59,7 +69,8 @@
     {#if trigger}{@render trigger()}{:else}<Icon name="more" />{/if}
   </button>
   {#if open}
-    <div class="menu {align}" role="menu" id={id} tabindex="-1" bind:this={menu} onkeydown={onkey}>
+    <div class="menu {align}" class:up={pos.up} role="menu" id={id} tabindex="-1" bind:this={menu} onkeydown={onkey}
+      style:top="{pos.top}px" style:left={align === 'left' ? `${pos.left}px` : null} style:right={align === 'right' ? `${pos.right}px` : null}>
       {#each items as it, i (i)}
         {#if it.separator}<div class="sep" role="separator"></div>{/if}
         <button role="menuitem" class:danger={it.danger} disabled={it.disabled} onclick={() => pick(it)}>{it.label}</button>
@@ -71,12 +82,12 @@
 <style>
   .menu-root { position: relative; display: inline-flex; }
   .menu {
-    position: absolute; top: calc(100% + 4px); z-index: 30; min-width: 188px; padding: 4px;
+    position: fixed; z-index: 60; min-width: 188px; padding: 4px;
     background: var(--surface-2); border-radius: 8px; box-shadow: var(--shadow-pop);
     animation: m 140ms var(--ease-out); transform-origin: top right;
   }
-  .menu.right { right: 0; }
-  .menu.left { left: 0; transform-origin: top left; }
+  .menu.left { transform-origin: top left; }
+  .menu.up { transform: translateY(-100%); animation: none; }
   .menu button {
     display: block; width: 100%; text-align: left; padding: 6px 10px; border: 0; border-radius: 5px;
     background: none; cursor: pointer; font-size: var(--fs-md); white-space: nowrap; color: var(--text);
