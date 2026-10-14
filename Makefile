@@ -66,7 +66,7 @@ image:
 
 ## seed: demo project (§17)
 seed:
-	$(GO) run ./cmd/loxy admin seed
+	@echo "seed: not implemented yet — create demo data through the UI or API (see README)"
 
 ## e2e: Playwright (placeholder until test/e2e exists)
 e2e:
