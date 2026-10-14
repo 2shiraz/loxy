@@ -33,7 +33,8 @@ type NodeInfo struct {
 type NodeTransport interface {
 	Runtime(ctx context.Context, cmds []RuntimeCmd) ([]RuntimeResult, error)
 	Reload(ctx context.Context) (*runtime.ReloadResult, error)
-	Stat(ctx context.Context) ([]stats.Row, map[string]string, error)
+	// Stat returns `show stat` rows (servers included only when withServers) and `show info`.
+	Stat(ctx context.Context, withServers bool) ([]stats.Row, map[string]string, error)
 	Info(ctx context.Context) (*NodeInfo, error)
 }
 
@@ -63,8 +64,12 @@ func (l *Local) Runtime(ctx context.Context, cmds []RuntimeCmd) ([]RuntimeResult
 
 func (l *Local) Reload(ctx context.Context) (*runtime.ReloadResult, error) { return l.RT.Reload(ctx) }
 
-func (l *Local) Stat(ctx context.Context) ([]stats.Row, map[string]string, error) {
-	out, err := l.RT.Exec(ctx, "show stat")
+func (l *Local) Stat(ctx context.Context, withServers bool) ([]stats.Row, map[string]string, error) {
+	cmd := "show stat -1 3 -1" // type mask: 1 frontends | 2 backends
+	if withServers {
+		cmd = "show stat"
+	}
+	out, err := l.RT.Exec(ctx, cmd)
 	if err != nil {
 		return nil, nil, err
 	}

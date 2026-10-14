@@ -2,14 +2,19 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
+
+// bufPool reuses read buffers: `show stat` answers are ~1.5 MB for 1 000 targets × 4 services.
+var bufPool = sync.Pool{New: func() any { return bytes.NewBuffer(make([]byte, 0, 64<<10)) }}
 
 type Client struct {
 	AdminSock  string
@@ -42,11 +47,14 @@ func (c *Client) do(ctx context.Context, sock, cmd string, timeout time.Duration
 	if uc, ok := conn.(*net.UnixConn); ok {
 		_ = uc.CloseWrite()
 	}
-	b, err := io.ReadAll(conn)
+	buf := bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer bufPool.Put(buf)
+	_, err = buf.ReadFrom(conn)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return string(b), err
+		return buf.String(), err
 	}
-	return string(b), nil
+	return buf.String(), nil
 }
 
 // Exec runs one worker command (one connection per command).

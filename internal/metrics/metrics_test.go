@@ -21,7 +21,7 @@ func (f *fakeNode) Runtime(context.Context, []agent.RuntimeCmd) ([]agent.Runtime
 }
 func (f *fakeNode) Reload(context.Context) (*runtime.ReloadResult, error) { return nil, nil }
 func (f *fakeNode) Info(context.Context) (*agent.NodeInfo, error)         { return nil, nil }
-func (f *fakeNode) Stat(context.Context) ([]stats.Row, map[string]string, error) {
+func (f *fakeNode) Stat(context.Context, bool) ([]stats.Row, map[string]string, error) {
 	return stats.ParseStat(f.stat), map[string]string{"Pid": f.pid}, nil
 }
 

@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -68,6 +71,14 @@ func run(cmd string, args []string) error {
 	setupLog(cfg.LogLevel)
 	switch cmd {
 	case "all-in-one":
+		if os.Getenv("GOMEMLIMIT") == "" {
+			// Soft heap limit keeps RSS inside the §1.4 budget; GC works harder only near it.
+			debug.SetMemoryLimit(48 << 20)
+		}
+		if addr := os.Getenv("LOXY_PPROF"); addr != "" {
+			// Opt-in profiling listener (loopback only), for performance work.
+			go func() { _ = http.ListenAndServe(addr, nil) }() //nolint:gosec
+		}
 		a, err := app.New(cfg, version)
 		if err != nil {
 			return err

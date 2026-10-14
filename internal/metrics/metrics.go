@@ -21,34 +21,45 @@ import (
 
 // Point is one 1 s sample.
 type Point struct {
-	TS                     int64 // unix seconds
-	Open                   float64
-	CPS, RPS, In, Out      float64
-	H2, H3, H4, H5, Errors float64
-	RespMS                 float64
-	Queue                  float64
+	TS int64 // unix seconds
+	// float32 halves ring memory (§1.4 budget); precision is ample for rates.
+	Open                   float32
+	CPS, RPS, In, Out      float32
+	H2, H3, H4, H5, Errors float32
+	RespMS                 float32
+	Queue                  float32
 }
 
-const ringSize = 3600
+// LB series keep 60 min of 1 s points, per-service series 15 min (§10.4).
+const (
+	lbRing  = 3600
+	svcRing = 900
+)
 
 type ring struct {
-	pts  [ringSize]Point
+	pts  []Point
 	n    int
 	head int
 }
 
+func newRing(size int) *ring { return &ring{pts: make([]Point, size)} }
+
 func (r *ring) add(p Point) {
+	size := len(r.pts)
 	r.pts[r.head] = p
-	r.head = (r.head + 1) % ringSize
-	if r.n < ringSize {
+	r.head = (r.head + 1) % size
+	if r.n < size {
 		r.n++
 	}
 }
 
+func (r *ring) last() Point { return r.pts[(r.head-1+len(r.pts))%len(r.pts)] }
+
 func (r *ring) since(ts int64) []Point {
+	size := len(r.pts)
 	out := make([]Point, 0, 64)
 	for i := 0; i < r.n; i++ {
-		p := r.pts[(r.head-r.n+i+ringSize)%ringSize]
+		p := r.pts[(r.head-r.n+i+size)%size]
 		if p.TS >= ts {
 			out = append(out, p)
 		}
@@ -71,6 +82,8 @@ type Check struct {
 	Scur                    int64
 }
 
+type checkKey struct{ lb, svc, slot int64 }
+
 type Collector struct {
 	Node     agent.NodeTransport
 	Q        *db.Queries
@@ -81,17 +94,18 @@ type Collector struct {
 	rings   map[key]*ring
 	prev    map[key]counters
 	pid     string
-	checks  map[string]*Check // "lb/svc/slot"
+	checks  map[checkKey]*Check
 	minute  map[key][]Point
 	subs    map[int64]map[chan Point]struct{}
 	info    map[string]string
 	lastOK  time.Time
+	tick    int
 	reloads int
 }
 
 func New(node agent.NodeTransport, q *db.Queries, hub *events.Hub, interval time.Duration) *Collector {
 	return &Collector{Node: node, Q: q, Hub: hub, Interval: interval, rings: map[key]*ring{}, prev: map[key]counters{},
-		checks: map[string]*Check{}, minute: map[key][]Point{}, subs: map[int64]map[chan Point]struct{}{}}
+		checks: map[checkKey]*Check{}, minute: map[key][]Point{}, subs: map[int64]map[chan Point]struct{}{}}
 }
 
 func (c *Collector) Run(ctx context.Context) {
@@ -140,7 +154,11 @@ func healthOf(status string) string {
 }
 
 func (c *Collector) poll(ctx context.Context, now time.Time) error {
-	rows, info, err := c.Node.Stat(ctx)
+	// Frontend/backend counters every tick (graphs); server rows (health) every 2nd tick:
+	// they are ~90% of the CSV with 1 000 targets (§1.4 CPU budget).
+	c.tick++
+	withServers := c.tick%2 == 1
+	rows, info, err := c.Node.Stat(ctx, withServers)
 	if err != nil {
 		return err
 	}
@@ -155,7 +173,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		pts[k] = p
 		return p
 	}
-	newChecks := map[string]*Check{}
+	newChecks := make(map[checkKey]*Check, len(c.checks))
 	for _, r := range rows {
 		switch r.Type {
 		case 0:
@@ -167,15 +185,15 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 			cur[k] = counters{connTot: float64(r.Int("conn_tot")), reqTot: float64(r.Int("req_tot")), bin: float64(r.Int("bin")), bout: float64(r.Int("bout")),
 				h2: float64(r.Int("hrsp_2xx")), h3: float64(r.Int("hrsp_3xx")), h4: float64(r.Int("hrsp_4xx")), h5: float64(r.Int("hrsp_5xx")),
 				errs: float64(r.Int("ereq") + r.Int("dreq"))}
-			get(k).Open = float64(r.Int("scur"))
+			get(k).Open = float32(r.Int("scur"))
 		case 1:
 			lb, sv, ok := parseName(r.PxName, "_be")
 			if !ok {
 				continue
 			}
 			p := get(key{lb, sv})
-			p.RespMS = float64(r.Int("rtime"))
-			p.Queue = float64(r.Int("qcur"))
+			p.RespMS = float32(r.Int("rtime"))
+			p.Queue = float32(r.Int("qcur"))
 		case 2:
 			lb, sv, ok := parseName(r.PxName, "_be")
 			if !ok {
@@ -195,7 +213,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 					ch.Detail += " · " + desc
 				}
 			}
-			newChecks[fmt.Sprintf("%d/%d/%d", lb, sv, sid)] = ch
+			newChecks[checkKey{lb, sv, sid}] = ch
 		}
 	}
 	c.mu.Lock()
@@ -207,11 +225,11 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 	c.info = info
 	c.lastOK = now
 	dt := c.Interval.Seconds()
-	d := func(cur, prev float64) float64 {
+	d := func(cur, prev float64) float32 {
 		if reset || cur < prev {
-			return cur / dt // counters restarted with the new worker (§10.3)
+			return float32(cur / dt) // counters restarted with the new worker (§10.3)
 		}
-		return (cur - prev) / dt
+		return float32((cur - prev) / dt)
 	}
 	lbSum := map[int64]*Point{}
 	month := now.UTC().Format("2006-01")
@@ -224,7 +242,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 				p.H2, p.H3, p.H4, p.H5 = d(cc.h2, pv.h2), d(cc.h3, pv.h3), d(cc.h4, pv.h4), d(cc.h5, pv.h5)
 				p.Errors = d(cc.errs, pv.errs)
 				tr := traffic[k.lb]
-				traffic[k.lb] = [2]float64{tr[0] + p.In*dt, tr[1] + p.Out*dt}
+				traffic[k.lb] = [2]float64{tr[0] + float64(p.In)*dt, tr[1] + float64(p.Out)*dt}
 			}
 			c.prev[k] = cc
 		}
@@ -244,7 +262,7 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 		s.H5 += p.H5
 		s.Errors += p.Errors
 		s.Queue += p.Queue
-		s.RespMS = math.Max(s.RespMS, p.RespMS)
+		s.RespMS = max(s.RespMS, p.RespMS)
 		c.addPoint(k, *p)
 	}
 	for lb, p := range lbSum {
@@ -258,12 +276,17 @@ func (c *Collector) poll(ctx context.Context, now time.Time) error {
 	}
 	// health transitions
 	var transitions []*Check
+	if !withServers {
+		newChecks = nil
+	}
 	for id, ch := range newChecks {
 		if old, ok := c.checks[id]; ok && old.Status != ch.Status && (ch.Status == "healthy" || ch.Status == "unhealthy") {
 			transitions = append(transitions, ch)
 		}
 	}
-	c.checks = newChecks
+	if withServers {
+		c.checks = newChecks
+	}
 	// minute rollup
 	var flush map[key][]Point
 	if now.Second() == 0 || (len(c.minute) > 0 && anyOld(c.minute, ts-60)) {
@@ -304,7 +327,11 @@ func anyOld(m map[key][]Point, before int64) bool {
 func (c *Collector) addPoint(k key, p Point) {
 	r := c.rings[k]
 	if r == nil {
-		r = &ring{}
+		size := svcRing
+		if k.svc == 0 {
+			size = lbRing
+		}
+		r = newRing(size)
 		c.rings[k] = r
 	}
 	r.add(p)
@@ -317,10 +344,10 @@ func (c *Collector) rollup(ctx context.Context, m map[key][]Point) {
 			continue
 		}
 		var a Point
-		mx := 0.0
+		var mx float32
 		for _, p := range ps {
 			a.Open += p.Open
-			mx = math.Max(mx, p.Open)
+			mx = max(mx, p.Open)
 			a.CPS += p.CPS
 			a.RPS += p.RPS
 			a.In += p.In
@@ -332,10 +359,11 @@ func (c *Collector) rollup(ctx context.Context, m map[key][]Point) {
 			a.H5 += p.H5
 			a.Errors += p.Errors
 		}
-		n := float64(len(ps))
+		n := float32(len(ps))
+		f := func(v float32) float64 { return float64(v / n) }
 		_ = c.Q.InsertMetric1m(ctx, db.InsertMetric1mParams{LbID: k.lb, ServiceID: k.svc, Ts: (ps[0].TS / 60) * 60,
-			OpenConnAvg: a.Open / n, OpenConnMax: mx, Cps: a.CPS / n, Rps: a.RPS / n, BytesIn: a.In / n, BytesOut: a.Out / n,
-			RespTimeMsAvg: a.RespMS / n, Http2xx: a.H2 / n, Http3xx: a.H3 / n, Http4xx: a.H4 / n, Http5xx: a.H5 / n, Errors: a.Errors / n})
+			OpenConnAvg: f(a.Open), OpenConnMax: float64(mx), Cps: f(a.CPS), Rps: f(a.RPS), BytesIn: f(a.In), BytesOut: f(a.Out),
+			RespTimeMsAvg: f(a.RespMS), Http2xx: f(a.H2), Http3xx: f(a.H3), Http4xx: f(a.H4), Http5xx: f(a.H5), Errors: f(a.Errors)})
 	}
 	_ = c.Q.PurgeMetrics1m(ctx, time.Now().Add(-35*24*time.Hour).Unix())
 }
@@ -361,10 +389,9 @@ func (c *Collector) Checks(lb int64) map[string]Check {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := map[string]Check{}
-	prefix := fmt.Sprintf("%d/", lb)
 	for k, v := range c.checks {
-		if strings.HasPrefix(k, prefix) {
-			out[k] = *v
+		if k.lb == lb {
+			out[fmt.Sprintf("%d/%d/%d", k.lb, k.svc, k.slot)] = *v
 		}
 	}
 	return out
@@ -374,7 +401,7 @@ func (c *Collector) Checks(lb int64) map[string]Check {
 func (c *Collector) Check(lb, svc, slot int64) (Check, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	ch, ok := c.checks[fmt.Sprintf("%d/%d/%d", lb, svc, slot)]
+	ch, ok := c.checks[checkKey{lb, svc, slot}]
 	if !ok {
 		return Check{}, false
 	}
@@ -389,7 +416,7 @@ func (c *Collector) OpenConnections(lb int64) int64 {
 	if r == nil || r.n == 0 {
 		return 0
 	}
-	return int64(r.pts[(r.head-1+ringSize)%ringSize].Open)
+	return int64(r.last().Open)
 }
 
 func (c *Collector) Info() (map[string]string, int, time.Time) {
@@ -409,7 +436,9 @@ type Series struct {
 var allTypes = []string{"open_connections", "connections_per_second", "requests_per_second", "bandwidth.in", "bandwidth.out",
 	"response_time_ms", "http_2xx", "http_3xx", "http_4xx", "http_5xx", "errors_per_second"}
 
-func pick(p Point, t string) float64 {
+func pick(p Point, t string) float64 { return float64(pick32(p, t)) }
+
+func pick32(p Point, t string) float32 {
 	switch t {
 	case "open_connections":
 		return p.Open
@@ -487,8 +516,8 @@ func (c *Collector) Query(ctx context.Context, lb, svc, start, end, step int64, 
 			return nil, err
 		}
 		for _, r := range rows {
-			pts = append(pts, Point{TS: r.Ts, Open: r.OpenConnAvg, CPS: r.Cps, RPS: r.Rps, In: r.BytesIn, Out: r.BytesOut, RespMS: r.RespTimeMsAvg,
-				H2: r.Http2xx, H3: r.Http3xx, H4: r.Http4xx, H5: r.Http5xx, Errors: r.Errors})
+			pts = append(pts, Point{TS: r.Ts, Open: float32(r.OpenConnAvg), CPS: float32(r.Cps), RPS: float32(r.Rps), In: float32(r.BytesIn), Out: float32(r.BytesOut),
+				RespMS: float32(r.RespTimeMsAvg), H2: float32(r.Http2xx), H3: float32(r.Http3xx), H4: float32(r.Http4xx), H5: float32(r.Http5xx), Errors: float32(r.Errors)})
 		}
 		if step < 60 {
 			step = 60
