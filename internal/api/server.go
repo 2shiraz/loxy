@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -331,5 +330,3 @@ func i64(v *int64) sql.NullInt64 {
 	}
 	return sql.NullInt64{Int64: *v, Valid: true}
 }
-
-func sprintf(f string, a ...any) string { return fmt.Sprintf(f, a...) }

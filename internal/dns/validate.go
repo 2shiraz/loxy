@@ -21,7 +21,8 @@ func validTarget(s string) bool {
 
 // ValidateRecord applies the per-type rules of §8.16.
 func ValidateRecord(r Record) error {
-	if r.Name != "@" && !(r.Name == "*" || model.ValidHostname(strings.ToLower(strings.TrimPrefix(r.Name, "*.")), false) || strings.HasPrefix(r.Name, "_")) {
+	validName := r.Name == "@" || r.Name == "*" || strings.HasPrefix(r.Name, "_") || model.ValidHostname(strings.ToLower(strings.TrimPrefix(r.Name, "*.")), false)
+	if !validName {
 		return fmt.Errorf("name: invalid record name %q", r.Name)
 	}
 	if r.TTL != 0 && (r.TTL < 60 || r.TTL > 86400) {
@@ -117,7 +118,7 @@ func Verify(ctx context.Context, res Resolver, fqdn, wantV4, wantV6 string) Veri
 		}
 		sort.Strings(out)
 		var de *net.DNSError
-		if errors.As(err, &de) && (de.IsNotFound || de.IsTemporary == false) {
+		if errors.As(err, &de) && (de.IsNotFound || !de.IsTemporary) {
 			return out, nil
 		}
 		return out, err

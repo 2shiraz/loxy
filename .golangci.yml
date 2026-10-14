@@ -8,6 +8,18 @@ linters:
   enable:
     - misspell
     - bodyclose
+  settings:
+    errcheck:
+      # Closing read-side resources and writing to hashes/HTTP streams: errors are not actionable.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - (*database/sql.DB).Close
+        - (*github.com/2shiraz/loxy/internal/store.Store).Close
+        - fmt.Fprintf
+        - fmt.Fprint
+        - fmt.Sscan
   exclusions:
     generated: lax
     paths:
