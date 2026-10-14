@@ -935,8 +935,13 @@ func (s *Server) buildTargets(lb *state.LB, ins []gen.TargetInput) ([]db.CreateT
 			}
 			a, err := model.ParseTargetIP(*in.Ip)
 			if err != nil {
-				fe.Add(f+".ip", err.Error())
-				continue
+				// Dev mode (make dev) allows loopback targets such as the local whoami containers.
+				if la, perr := netip.ParseAddr(strings.TrimSpace(*in.Ip)); s.Cfg.Dev && perr == nil && la.IsLoopback() {
+					a, err = la, nil
+				} else {
+					fe.Add(f+".ip", err.Error())
+					continue
+				}
 			}
 			if own[a.String()] {
 				fe.Add(f+".ip", "cannot target the load balancer's own address")

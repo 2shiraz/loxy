@@ -43,7 +43,8 @@ sudo chmod 0600 .env
 sudo docker compose up -d
 ```
 
-Open `https://<host>:8443` and log in with the one-time owner password:
+Open `https://<host>:8443` and log in as `admin@loxy.local` (override with
+`LOXY_OWNER_EMAIL`) with the one-time owner password:
 
 ```sh
 docker compose logs loxy | grep 'initial password'
@@ -73,8 +74,13 @@ make build             # bin/loxy
 make image             # ghcr.io/2shiraz/loxy:<version>-haproxy<haproxy-version>
 ```
 
-In dev the whoami targets listen on `127.0.0.1:9001-9003`, Pebble on
-`https://127.0.0.1:14000/dir`; state is kept in `.dev/`.
+In dev the whoami targets listen on `127.0.0.1:9001-9003` (loopback targets are
+accepted only when `LOXY_DEV=true`), Pebble on `https://127.0.0.1:14000/dir`;
+state is kept in `.dev/`.
+
+Other useful commands: `loxy render --dry-run` (print the config that would be
+applied), `loxy admin reset-password`, `loxy backup`, `make e2e` (Playwright
+against a running instance, see `test/e2e/playwright.config.ts`).
 
 Before contributing, read [INSTRUCTIONS.md](INSTRUCTIONS.md) (the source of
 truth) and [CLAUDE.md](CLAUDE.md). Architecture decisions live in
