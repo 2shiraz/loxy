@@ -119,7 +119,9 @@ function onTick(raw: string) {
     seen.add(p.id);
     const sig = `${p.health_sig}|${p.version}|${p.status}|${p.maintenance}`;
     const before = sigs.get(p.id);
-    if (before !== undefined && before !== sig) changed.push(`p:${p.id}`);
+    // First sight counts as a change too: a page may have fetched just before this tick, and
+    // a new target's first checks often pass within those 2 s (it would stay "Unknown").
+    if (before !== sig) changed.push(`p:${p.id}`);
     sigs.set(p.id, sig);
   }
   let membership = !!prev && prev.projects.length !== t.projects.length;
