@@ -490,6 +490,12 @@ var allTypes = []string{"open_connections", "connections_per_second", "requests_
 
 func pick(p Point, t string) float64 { return float64(pick32(p, t)) }
 
+// SeriesTypes lists every series name the metrics API serves.
+func SeriesTypes() []string { return append([]string(nil), allTypes...) }
+
+// Pick returns one series value of a point (rounded like the query API).
+func Pick(p Point, t string) float64 { return math.Round(pick(p, t)*100) / 100 }
+
 func pick32(p Point, t string) float32 {
 	switch t {
 	case "open_connections":

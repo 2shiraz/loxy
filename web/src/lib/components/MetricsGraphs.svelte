@@ -57,8 +57,10 @@
       const query = { type: types, start: end - r.sec, end, step: r.step, ...(serviceId != null ? { service_id: serviceId } : {}) };
       const m: Metrics = await unwrap(api.GET('/projects/{id}/metrics', { params: { path: { id }, query } }));
       ts = m.timestamps;
+      // Keep every series the API returned, not only the charts shown right now: the chart list
+      // depends on the project's services, which may load after this (HTTP charts appear later).
       const next: Record<string, (number | null)[]> = {};
-      for (const k of keys) next[k] = m.series[k] ?? m.timestamps.map(() => null);
+      for (const k of new Set([...keys, ...Object.keys(m.series)])) next[k] = m.series[k] ?? m.timestamps.map(() => null);
       data = next;
       present = new Set(Object.keys(m.series));
     } catch (e) {
@@ -72,14 +74,20 @@
     if (!points.length) return;
     const nts = [...ts];
     const nd: Record<string, (number | null)[]> = {};
-    for (const k of keys) nd[k] = [...(data[k] ?? [])];
+    // Every series must stay aligned with ts (pad a series that appeared late with nulls),
+    // otherwise trimming to LIVE_POINTS would cut it to nothing.
+    for (const k of new Set([...keys, ...Object.keys(data)])) {
+      const a = [...(data[k] ?? [])];
+      if (a.length < nts.length) a.unshift(...new Array(nts.length - a.length).fill(null));
+      nd[k] = a;
+    }
     for (const p of points) {
       nts.push(p.ts);
-      for (const k of keys) nd[k].push(p[k] ?? null);
+      for (const k in nd) nd[k].push(p[k] ?? null);
     }
     const cut = Math.max(0, nts.length - LIVE_POINTS);
     ts = nts.slice(cut);
-    for (const k of keys) nd[k] = nd[k].slice(cut);
+    for (const k in nd) nd[k] = nd[k].slice(cut);
     data = nd;
   }
 

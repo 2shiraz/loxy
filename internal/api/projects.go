@@ -337,8 +337,7 @@ func (s *Server) StreamProjectMetrics(w http.ResponseWriter, r *http.Request, id
 		case <-r.Context().Done():
 			return
 		case p := <-ch:
-			b, _ := json.Marshal(map[string]any{"ts": p.TS, "open_connections": p.Open, "connections_per_second": p.CPS,
-				"requests_per_second": p.RPS, "bandwidth.in": p.In, "bandwidth.out": p.Out, "response_time_ms": p.RespMS})
+			b, _ := json.Marshal(livePoint(p))
 			fmt.Fprintf(w, "event: metrics.tick\ndata: %s\n\n", b)
 			fl.Flush()
 		}
@@ -381,4 +380,14 @@ func (s *Server) GetOverview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]any{"projects": projects, "targets": tg, "certificates": certs, "node": node,
 		"traffic": map[string]any{"open_connections": t.Open, "requests_per_second": t.RPS, "bytes_in_per_second": t.In, "bytes_out_per_second": t.Out}})
+}
+
+// livePoint is one metrics.tick of the project stream. It carries every series of
+// GET /projects/{id}/metrics (same names), so all Live charts keep updating.
+func livePoint(p metrics.Point) map[string]any {
+	out := map[string]any{"ts": p.TS}
+	for _, t := range metrics.SeriesTypes() {
+		out[t] = metrics.Pick(p, t)
+	}
+	return out
 }
