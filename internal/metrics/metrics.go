@@ -570,25 +570,46 @@ func (c *Collector) Query(ctx context.Context, scope Scope, id, start, end, step
 	if minStep := span / 2000; step < minStep { // at most ~2000 points per series
 		step = minStep
 	}
+	minute := func(from, to int64) ([]Point, error) {
+		rows, err := c.Q.QueryMetrics1m(ctx, db.QueryMetrics1mParams{Scope: string(scope), ScopeID: id, Ts: from, Ts_2: to})
+		if err != nil {
+			return nil, err
+		}
+		out := make([]Point, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, Point{TS: r.Ts, Open: float32(r.OpenConnAvg), CPS: float32(r.Cps), RPS: float32(r.Rps), In: float32(r.BytesIn), Out: float32(r.BytesOut),
+				RespMS: float32(r.RespTimeMsAvg), H2: float32(r.Http2xx), H3: float32(r.Http3xx), H4: float32(r.Http4xx), H5: float32(r.Http5xx), Errors: float32(r.Errors),
+				Queue: float32(r.Queue)})
+		}
+		return out, nil
+	}
 	var pts []Point
-	if time.Now().Unix()-start <= 3600 && step < 60 {
+	if c.Q != nil && (time.Now().Unix()-start > 3600 || step >= 60) {
+		var err error
+		if pts, err = minute(start, end); err != nil {
+			return nil, err
+		}
+		if step < 60 {
+			step = 60
+		}
+	} else {
 		c.mu.RLock()
 		if r := c.rings[key{scope, id}]; r != nil {
 			pts = r.since(start)
 		}
 		c.mu.RUnlock()
-	} else {
-		rows, err := c.Q.QueryMetrics1m(ctx, db.QueryMetrics1mParams{Scope: string(scope), ScopeID: id, Ts: start, Ts_2: end})
-		if err != nil {
-			return nil, err
+		// The 1 s rings are in memory: after a restart they only cover the time since. For the
+		// aggregated ranges (30 min, 1 h) fill the older part from the 1-minute rollups (§10.2).
+		first := end + 1
+		if len(pts) > 0 {
+			first = pts[0].TS
 		}
-		for _, r := range rows {
-			pts = append(pts, Point{TS: r.Ts, Open: float32(r.OpenConnAvg), CPS: float32(r.Cps), RPS: float32(r.Rps), In: float32(r.BytesIn), Out: float32(r.BytesOut),
-				RespMS: float32(r.RespTimeMsAvg), H2: float32(r.Http2xx), H3: float32(r.Http3xx), H4: float32(r.Http4xx), H5: float32(r.Http5xx), Errors: float32(r.Errors),
-				Queue: float32(r.Queue)})
-		}
-		if step < 60 {
-			step = 60
+		if c.Q != nil && step > 1 && first-start > 60 { // the 1 s Live view stays 1 s only
+			older, err := minute(start, (first/60)*60-1)
+			if err != nil {
+				return nil, err
+			}
+			pts = append(older, pts...)
 		}
 	}
 	// bucket by step (average), fill gaps with null

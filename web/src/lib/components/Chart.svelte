@@ -17,6 +17,7 @@
 
   let el: HTMLDivElement | undefined = $state();
   let u: uPlotT | null = null;
+  let builtWindow: number | undefined; // xWindow the current instance was built for
   let UPlot: typeof uPlotT | null = null;
   let legend = $state<{ label: string; color: string; value: string }[]>([]);
   let when = $state('');
@@ -26,18 +27,26 @@
   function build() {
     if (!UPlot || !el) return;
     u?.destroy();
+    builtWindow = xWindow;
     const grid = css('--chart-grid'), axis = css('--chart-axis');
     const opts: uPlotT.Options = {
       width: el.clientWidth || 600,
       height,
       legend: { show: false },
       cursor: { sync: { key: syncKey }, points: { size: 6 }, drag: { x: false, y: false } },
-      scales: { x: { time: true, ...(xWindow ? { range: (_u: uPlotT, _min: number, max: number): uPlotT.Range.MinMax => [max - xWindow, max] } : {}) }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
+      // The x range reads the current xWindow on every redraw: the chart is reused when the time
+      // range changes (setData), so a window captured at build time would clip other ranges.
+      scales: { x: { time: true, range: (_u: uPlotT, min: number, max: number): uPlotT.Range.MinMax => (xWindow ? [max - xWindow, max] : [min, max]) }, y: { range: (_u, _min, max) => [0, max > 0 ? max * 1.1 : 1] } },
       axes: [
         { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px "Hanken Grotesk", ui-sans-serif, system-ui', size: 40 },
         { stroke: axis, grid: { stroke: grid, width: 1 }, ticks: { show: false }, font: '11px "Hanken Grotesk", ui-sans-serif, system-ui', size: 60, values: (_u, vals) => vals.map((v) => fmt(v)) }
       ],
-      series: [{}, ...series.map((s) => ({ label: s.label, stroke: css(s.color), width: 1.75, fill: css(s.color) + '1a', points: { show: false } }))],
+      // Dots only when data is sparse (e.g. a fresh install viewing 7 d): isolated values have no
+      // neighbour to draw a line to and would otherwise be invisible.
+      // Historical ranges may mix 1 s points with 1-minute rollups (after a restart): join across
+      // empty buckets there. Live keeps gaps visible.
+      series: [{}, ...series.map((s) => ({ label: s.label, stroke: css(s.color), width: 1.75, fill: css(s.color) + '1a', spanGaps: !xWindow,
+        points: { show: (uu: uPlotT, si: number) => sparse(uu.data[si] as (number | null)[]), size: 5 } }))],
       hooks: {
         setCursor: [(uu) => {
           const i = uu.cursor.idx;
@@ -48,6 +57,11 @@
       }
     };
     u = new UPlot(opts, [ts, ...series.map((s) => s.values)] as uPlotT.AlignedData, el);
+  }
+  function sparse(v: (number | null)[]) {
+    let n = 0;
+    for (const x of v) if (x != null && ++n >= 40) return false;
+    return n > 0;
   }
   function fmtV(v: number | null | undefined) { return v == null ? '—' : fmt(v); }
   function last(v: (number | null)[]) { for (let i = v.length - 1; i >= 0; i--) if (v[i] != null) return fmtV(v[i]); return '—'; }
@@ -72,7 +86,9 @@
   $effect(() => {
     const data = [ts, ...series.map((s) => s.values)];
     legend = series.map((s) => ({ label: s.label, color: s.color, value: last(s.values) }));
-    if (u && u.series.length === data.length) u.setData(data as uPlotT.AlignedData);
+    // Rebuild when switching between Live and historical ranges: gap handling and the x window
+    // are instance options, not data.
+    if (u && u.series.length === data.length && builtWindow === xWindow) u.setData(data as uPlotT.AlignedData);
     else if (UPlot) build();
   });
 </script>

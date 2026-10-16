@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/2shiraz/loxy/internal/events"
 	"github.com/2shiraz/loxy/internal/haproxy/runtime"
 	"github.com/2shiraz/loxy/internal/haproxy/stats"
+	"github.com/2shiraz/loxy/internal/store"
+	"github.com/2shiraz/loxy/internal/store/db"
 )
 
 type fakeNode struct {
@@ -82,5 +85,50 @@ func TestDeltasAndReset(t *testing.T) {
 	s, _ := c.Query(context.Background(), FE, 1, now.Unix(), now.Unix()+2, 1, []string{"requests_per_second"})
 	if v := s.Values["requests_per_second"]; len(v) != 3 || v[1] == nil || *v[1] != 50 {
 		t.Fatalf("query %v", v)
+	}
+}
+
+// After a restart the 1 s ring only covers the last few seconds; a 30-minute query must still
+// return the earlier part of the range from the persisted 1-minute rollups.
+func TestQueryFillsRingGapFromRollups(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "m.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	now := time.Now().Unix()
+	for m := int64(25); m >= 2; m-- {
+		ts := ((now - m*60) / 60) * 60
+		if err := st.Q.InsertMetric1m(ctx, db.InsertMetric1mParams{Scope: string(PR), ScopeID: 1, Ts: ts, Rps: 10}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := New(&fakeNode{}, st.Q, events.NewHub(nil), time.Second)
+	for i := int64(5); i >= 1; i-- {
+		c.addPoint(key{PR, 1}, Point{TS: now - i, RPS: 20})
+	}
+	s, err := c.Query(ctx, PR, 1, now-1800, now, 5, []string{"requests_per_second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old, recent int
+	for i, v := range s.Values["requests_per_second"] {
+		if v == nil {
+			continue
+		}
+		if s.Timestamps[i] < now-60 {
+			old++
+		} else {
+			recent++
+		}
+	}
+	if old < 20 || recent == 0 {
+		t.Fatalf("want rollup history and live points, got old=%d recent=%d", old, recent)
+	}
+	// Ranges over an hour come only from the rollups.
+	s, err = c.Query(ctx, PR, 1, now-6*3600, now, 60, []string{"requests_per_second"})
+	if err != nil || s.Step != 60 {
+		t.Fatalf("6 h query: %v step=%d", err, s.Step)
 	}
 }
